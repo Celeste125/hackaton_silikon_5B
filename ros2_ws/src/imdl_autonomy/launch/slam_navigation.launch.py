@@ -18,7 +18,7 @@ driving by hand overrides Nav2 instantly and Nav2 resumes 0.5 s after the last
 key press -- useful for nudging the robot out of a corner, or for filling in a
 part of the map Nav2 will not enter:
 
-    ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+    ros2 run teleop_twist_keyboard teleop_twist_keyboard
       --ros-args -r cmd_vel:=/Team2/cmd_vel_teleop
 
 Needs ros-humble-twist-mux. Pass use_twist_mux:=false to let Nav2 publish
