@@ -63,13 +63,23 @@ command -v tmux >/dev/null || { echo "error: tmux is not installed" >&2; exit 1;
 # typed into the panes for a human to check before pressing Enter.
 sq() { printf "'%s'" "${1//\'/\'\\''}"; }
 
+# Hand a whole command line to a remote shell as ONE argument. ssh joins its
+# arguments with spaces and drops the local quoting, so the remote shell
+# re-parses whatever is left: without this outer layer, a nested bash -ic '...'
+# is split and its tail runs on the remote host instead of being passed on.
+# $ is escaped so the remote, not this machine, expands it.
+ssh_cmd() {
+    local flags="$1" host="$2" remote="$3"
+    printf 'ssh %s %s "%s"' "${flags}" "${host}" "${remote//\$/\\\$}"
+}
+
 # A ROS command on a host's own system. bash -ic, not plain 'ssh host cmd':
 # ROS lives in ~/.bashrc, which a non-interactive remote shell never reads.
 on_host() {
     local host="$1" want_x11="$2" cmd="$3" flags="-t"
     [[ "${want_x11}" == "x11" ]] && flags="-Y -t"
-    printf 'ssh %s %s bash -ic %s' "${flags}" "${host}" \
-        "$(sq "export ROS_DOMAIN_ID=${DOMAIN}; ${cmd}")"
+    ssh_cmd "${flags}" "${host}" "$(printf 'bash -ic %s' \
+        "$(sq "export ROS_DOMAIN_ID=${DOMAIN}; ${cmd}")")"
 }
 
 # A ROS command inside the imdl container, which already holds the workspace
@@ -82,7 +92,7 @@ in_container() {
     if [[ "${USE_LOCAL_DOCKER}" == true ]]; then
         printf '%s' "${inner}"
     else
-        printf 'ssh -t %s %s' "${LAPTOP_HOST}" "${inner}"
+        ssh_cmd "-t" "${LAPTOP_HOST}" "${inner}"
     fi
 }
 
@@ -185,8 +195,8 @@ if [[ "${SPLIT}" == true ]]; then
     # needed on the laptop. DISPLAY/XAUTHORITY let run.sh's xhost reach the
     # laptop's own X session from this SSH shell, so RViz can open there.
     tmux new-window -t "${SESSION}" -n setup
-    tmux send-keys -t "${SESSION}:setup" "$(printf 'ssh -t %s %s' "${LAPTOP_HOST}" \
-        "$(sq "cd ${REPO_DIR} && git fetch ${REPO_URL} ${BRANCH} && git checkout -B ${BRANCH} FETCH_HEAD && cd docker && DISPLAY=:0 XAUTHORITY=\$HOME/.Xauthority ./run.sh --build")")"
+    tmux send-keys -t "${SESSION}:setup" "$(ssh_cmd "-t" "${LAPTOP_HOST}" \
+        "cd ${REPO_DIR} && git fetch ${REPO_URL} ${BRANCH} && git checkout -B ${BRANCH} FETCH_HEAD && cd docker && DISPLAY=:0 XAUTHORITY=\$HOME/.Xauthority ./run.sh --build")"
 
     tmux new-window -t "${SESSION}" -n build
     tmux send-keys -t "${SESSION}:build" "$(in_container 'ws_build')"
