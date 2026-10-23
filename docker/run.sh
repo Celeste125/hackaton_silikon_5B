@@ -3,6 +3,13 @@
 # already running.
 #   ./run.sh           start / attach
 #   ./run.sh --build   rebuild the image first
+#
+# ANTHROPIC_API_KEY is passed through from this shell, for dispenser_locator.
+# Exporting it inside an already-running container does not work: each
+# 'docker exec' shell gets the environment 'docker run' created, so the value
+# has to be present here, before the container starts. Put
+#   export ANTHROPIC_API_KEY=...
+# in the laptop's ~/.bashrc - never in this repo.
 set -euo pipefail
 
 IMAGE=imdl-humble
@@ -37,6 +44,7 @@ exec docker run -it --rm --name "${CONTAINER}" \
     --net=host --ipc=host --pid=host \
     -e DISPLAY="${DISPLAY:-:0}" \
     -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-2}" \
+    -e ANTHROPIC_API_KEY \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     "${GPU_ARGS[@]}" \
     -v "${WS_DIR}":/ws \

@@ -173,9 +173,14 @@ cat <<GUIDE_TEXT
  10  cam-check Left: are the camera topics publishing? Right: the live
               picture (rqt_image_view). Start here if unsure.
  11  dispenser Asks Claude which pixels are the food dispenser, then
-              uses aligned depth + TF for the position. Needs
-              ANTHROPIC_API_KEY. Take a view, from 2-3 angles:
+              uses aligned depth + TF for the position. Take a view,
+              from 2-3 angles:
                 ros2 topic pub --once /dispenser/locate std_msgs/msg/Empty "{}"
+              Needs ANTHROPIC_API_KEY in the LAPTOP's environment before
+              window 1 starts the container -- put the export in the
+              laptop's ~/.bashrc. Exporting it in a container shell does
+              not reach this window: every window opens its own shell and
+              gets the environment the container was started with.
 
   BEFORE window 4, two gates. Nav2 activates its local costmap during
   bringup and that needs the odom -> base_link TF; if odom is not
