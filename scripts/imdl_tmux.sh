@@ -32,6 +32,16 @@ DOMAIN="${ROS_DOMAIN_ID:-2}"
 NAMESPACE="${IMDL_NAMESPACE:-/Team2}"
 LIDAR_YAW="${IMDL_LIDAR_YAW:-3.14159265359}"
 MAP_NAME="${IMDL_MAP_NAME:-my_map}"
+# Where the C920 sits on the robot, base_link -> webcam_optical_frame. The
+# roll/yaw pair turns base_link (x forward, z up) into the optical convention
+# (z forward, y down). MEASURE x/y/z: with bearing-only geometry an angular
+# error scales with range and averaging will not remove it.
+CAM_X="${IMDL_CAM_X:-0.10}"
+CAM_Y="${IMDL_CAM_Y:-0.0}"
+CAM_Z="${IMDL_CAM_Z:-0.10}"
+CAM_ROLL="${IMDL_CAM_ROLL:--1.5707963}"
+CAM_PITCH="${IMDL_CAM_PITCH:-0.0}"
+CAM_YAW="${IMDL_CAM_YAW:--1.5707963}"
 MAP_DIR="${IMDL_MAP_DIR:-/root/maps}"
 REPO_DIR="${IMDL_REPO_DIR:-~/imdl-main}"
 # Default to whatever branch this checkout is on, so the laptop gets the code
@@ -168,13 +178,19 @@ cat <<GUIDE_TEXT
   8  explore  Optional: the robot maps the arena by itself. Only after
               window 4 says active. It drives as soon as you press
               Enter; teleop (6) still overrides it, ctrl-c cancels.
-   9  camera    Jetson: the C920 webcam driver, plus its base_link ->
-              webcam_optical_frame transform. For a RealSense instead,
-              run 'ros2 launch perception camera.launch.py' in the
-              laptop container and pass camera:=realsense in window 11.
- 10  cam-check Left: are the camera topics publishing? Right: the live
+  10  jetson-setup  ONCE per Jetson, and BEFORE window 9. Left: does it
+              see the C920 (expect 'C920' and a /dev/videoN)? Right:
+              installs the driver -- asks for the Jetson's sudo
+              password. Skip both once window 9 works.
+
+  9  camera    Jetson, TWO panes: left the C920 driver, right its
+              base_link -> webcam_optical_frame transform. Both are
+              needed; a bearing without the transform is meaningless.
+              Run as plain nodes, so the Jetson's workspace does not
+              have to be up to date. ctrl-b o switches pane.
+ 11  cam-check Left: are the camera topics publishing? Right: the live
               picture (rqt_image_view). Start here if unsure.
- 11  dispenser Asks Claude which pixels are the food dispenser, then
+ 12  dispenser Asks Claude which pixels are the food dispenser, then
               uses aligned depth + TF for the position. Take a view,
               from 2-3 angles:
                 ros2 topic pub --once /dispenser/locate std_msgs/msg/Empty "{}"
@@ -276,9 +292,24 @@ tmux send-keys -t "${SESSION}:explore" \
 
 # Camera, its diagnostics, and dispenser localisation. All on the Nav2 side:
 # the locator needs the map frame and the camera on the same machine.
+# Two panes, because the driver and its transform are both long-running and
+# the bearing is meaningless without the transform. v4l2_camera already
+# defaults to 640x480, so no list-valued parameter has to survive the quoting.
 tmux new-window -t "${SESSION}" -n camera
 tmux send-keys -t "${SESSION}:camera" \
-    "$(robot_side 'ros2 launch perception webcam.launch.py')"
+    "$(robot_side 'ros2 run v4l2_camera v4l2_camera_node --ros-args -r __ns:=/webcam -p video_device:=/dev/video0 -p pixel_format:=MJPG -p output_encoding:=rgb8 -p camera_frame_id:=webcam_optical_frame')"
+tmux split-window -h -t "${SESSION}:camera"
+tmux send-keys -t "${SESSION}:camera.1" \
+    "$(robot_side "ros2 run tf2_ros static_transform_publisher --x ${CAM_X} --y ${CAM_Y} --z ${CAM_Z} --roll ${CAM_ROLL} --pitch ${CAM_PITCH} --yaw ${CAM_YAW} --frame-id base_link --child-frame-id webcam_optical_frame")"
+
+# One-off Jetson preparation. Left: is the C920 even enumerated? Right: the
+# driver package, which the Jetson does not ship with.
+tmux new-window -t "${SESSION}" -n jetson-setup
+tmux send-keys -t "${SESSION}:jetson-setup" \
+    "$(robot_side 'v4l2-ctl --list-devices')"
+tmux split-window -h -t "${SESSION}:jetson-setup"
+tmux send-keys -t "${SESSION}:jetson-setup.1" \
+    "$(robot_side 'sudo apt install -y ros-humble-v4l2-camera v4l-utils')"
 
 # Two panes: left answers "is the camera publishing", right shows the picture.
 tmux new-window -t "${SESSION}" -n cam-check
