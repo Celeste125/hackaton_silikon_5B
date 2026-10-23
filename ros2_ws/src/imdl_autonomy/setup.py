@@ -21,6 +21,7 @@ setup(
         (os.path.join('share', package_name, 'behavior_trees'),
          glob('behavior_trees/*.xml')),
         (os.path.join('share', package_name, 'docs'), glob('docs/*.md')),
+        (os.path.join('share', package_name, 'scripts'), glob('scripts/check_camera.sh')),
         (os.path.join('share', package_name, 'maps'), glob('maps/*')),
     ],
     install_requires=['setuptools'],
@@ -33,6 +34,7 @@ setup(
         'console_scripts': [
             'depth_obstacle_projector = '
             'imdl_autonomy.depth_obstacle_projector:main',
+            'dispenser_locator = imdl_autonomy.dispenser_locator:main',
             'frontier_explorer = imdl_autonomy.frontier_explorer:main',
             'generate_maps = imdl_autonomy.map_from_world:main',
             'mission_manager = imdl_autonomy.mission_manager:main',
