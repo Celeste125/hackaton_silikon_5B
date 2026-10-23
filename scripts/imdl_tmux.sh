@@ -165,9 +165,20 @@ cat <<GUIDE_TEXT
               window 4 says active. It drives as soon as you press
               Enter; teleop (6) still overrides it, ctrl-c cancels.
 
-  Before window 4, make sure the container sees the robot. In window 2:
-    ros2 topic list | grep ${NAMESPACE#/}
-  Empty means the domain or the network is wrong -- fix that first.
+  BEFORE window 4, two gates. Nav2 activates its local costmap during
+  bringup and that needs the odom -> base_link TF; if odom is not
+  flowing yet the activation fails for good and no amount of waiting
+  fixes it. The Create3 can take ~30 s to start publishing odom, and
+  publishes none while asleep or docked.
+
+  1) wake it: press the Create3's centre button. Docked? In window 2:
+       ros2 action send_goal ${NAMESPACE}/undock irobot_create_msgs/action/Undock "{}"
+  2) in window 7 (right pane), confirm odom actually streams:
+       ros2 topic hz ${NAMESPACE}/odom
+     Wait for a steady rate. Only then press Enter in window 4.
+
+  A docked or sleeping robot also refuses to drive forward while still
+  turning, so if teleop only turns, start here too.
 GUIDE_TEXT
 else
 cat <<GUIDE_TEXT
