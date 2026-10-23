@@ -20,11 +20,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rmw-fastrtps-cpp \
     ros-humble-tf2-tools \
     python3-colcon-common-extensions \
+    python3-pip \
     python3-numpy \
     python3-scipy \
     python3-yaml \
     python3-pil \
  && rm -rf /var/lib/apt/lists/*
+
+# The Anthropic SDK has no apt package. dispenser_locator asks Claude which
+# pixels are the food dispenser; depth and TF still do all the geometry.
+RUN pip3 install --no-cache-dir anthropic
 
 COPY bashrc_ros.sh /etc/imdl_bashrc.sh
 RUN echo "source /etc/imdl_bashrc.sh" >> /root/.bashrc
