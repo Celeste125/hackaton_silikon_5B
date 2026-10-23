@@ -34,6 +34,35 @@ Changes to existing files work without rebuilding.
 
 ---
 
+## Shortcut: map and navigate at the same time
+
+No saved map, no AMCL, no 2D Pose Estimate. slam_toolbox keeps building the map
+while Nav2 plans on it, so you can click goals from the first second.
+
+| Terminal | Command |
+| --- | --- |
+| Jetson 1 | `ros2 launch slam mapping.launch.py` |
+| Container 1 | `ros2 launch imdl_simulation real_rviz.launch.py model_visual_yaw:=0.0 lidar_yaw:=3.14159265359` |
+| Container 2 | `ros2 launch imdl_autonomy slam_navigation.launch.py` |
+
+Wait for `Managed nodes are active`, set the Map display's **Color Scheme to
+`raw`**, then select **2D Goal Pose** and click. Unexplored area counts as
+free, so the first goals may lie outside the mapped region; the robot replans
+as the map grows. Drive short hops and keep goals **0.3 m from walls**.
+
+Want the map afterwards? Save it while this is still running:
+
+```bash
+ros2 run nav2_map_server map_saver_cli -f /root/maps/my_map
+```
+
+Teleop can run alongside it (Jetson 2) to fill in corners by hand.
+
+The two parts below are the other route: map first, then navigate on the saved
+map with AMCL. Use it when you need the exact same map across several runs.
+
+---
+
 ## Part 1: Build the map
 
 ### 1. Mark the start pose

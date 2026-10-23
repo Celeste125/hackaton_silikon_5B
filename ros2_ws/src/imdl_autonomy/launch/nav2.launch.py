@@ -2,6 +2,7 @@
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction
+from launch.conditions import UnlessCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
@@ -19,6 +20,9 @@ def generate_launch_description():
     scan_topic = LaunchConfiguration('scan_topic')
     cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
     use_front_ultrasonic = LaunchConfiguration('use_front_ultrasonic')
+    # With slam:=true the map and the map -> odom TF come from slam_toolbox,
+    # so map_server and AMCL must stay off.
+    without_slam = UnlessCondition(LaunchConfiguration('slam'))
     default_nav_to_pose_tree = PathJoinSubstitution([
         package, 'behavior_trees', 'navigate_rpp.xml',
     ])
@@ -59,6 +63,7 @@ def generate_launch_description():
             output='screen',
             parameters=[configured_params, {'yaml_filename': map_yaml}],
             remappings=topic_remaps,
+            condition=without_slam,
         ),
         Node(
             package='nav2_amcl',
@@ -67,6 +72,7 @@ def generate_launch_description():
             output='screen',
             parameters=[configured_params],
             remappings=topic_remaps,
+            condition=without_slam,
         ),
     ]
     localization_manager = Node(
@@ -79,6 +85,7 @@ def generate_launch_description():
             'autostart': autostart,
             'node_names': ['map_server', 'amcl'],
         }],
+        condition=without_slam,
     )
     navigation_nodes = [
         Node(
@@ -183,6 +190,15 @@ def generate_launch_description():
             description='Humble-compatible Nav2 autonomy parameters.',
         ),
         DeclareLaunchArgument('use_sim_time', default_value='true'),
+        DeclareLaunchArgument(
+            'slam',
+            default_value='false',
+            choices=['true', 'false'],
+            description=(
+                'Take map and map -> odom TF from a running slam_toolbox '
+                'instead of starting map_server and AMCL.'
+            ),
+        ),
         DeclareLaunchArgument('autostart', default_value='true'),
         DeclareLaunchArgument('odom_topic', default_value='/Team2/odom'),
         DeclareLaunchArgument('scan_topic', default_value='/scan'),
