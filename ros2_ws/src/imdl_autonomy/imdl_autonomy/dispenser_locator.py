@@ -6,13 +6,31 @@ camera. The split of work matters:
   Claude  decides *which pixels* are the dispenser -- a bounding box, i.e. a
           bearing. It is asked for nothing metric, because a VLM cannot
           measure range and will invent plausible numbers if asked.
-  Depth   supplies the range, from the RealSense frame aligned to colour.
-  TF      turns that into a map-frame point.
+  Geometry turns that bearing into a range, by whichever of three means is
+          available this view.
+  TF      turns the result into a map-frame point.
 
-One view lands within roughly 10-20 cm, dominated by the camera extrinsics and
-by the mask centroid sitting on the dispenser's front face rather than its
-centre. Observing from a few different angles cancels most of the second error,
-which is why estimates are fused rather than taken from a single frame.
+The three range sources, best first:
+
+  depth         An RGB-D camera aligned to colour: sample the depth inside the
+                box. ~10-20 cm, and works from one view.
+  triangulate   Two or more bearings from different robot poses intersect at
+                the object. No depth hardware at all, so this is the path for
+                a plain webcam like a C920. Needs the robot to have moved
+                between views -- near-parallel bearings are rejected rather
+                than intersected badly.
+  wall ray cast March the bearing across the SLAM occupancy grid until it hits
+                an occupied cell. The lidar never sees the dispenser, but it
+                does see the wall behind it, so for anything standing against
+                a wall this is good from a single view. It reads the dispenser
+                as being *at* the wall, so it is wrong by the standoff.
+
+Whichever is used is named in the log and on /dispenser/status, because the
+accuracy differs a lot between them.
+
+Error is dominated by the camera extrinsics and, with depth, by the box
+centroid sitting on the dispenser's front face. Viewing from several angles
+cancels most of the second, which is why estimates are fused.
 
 Trigger a view and watch the result:
 
@@ -33,6 +51,7 @@ import os
 import threading
 
 from geometry_msgs.msg import PointStamped, PoseStamped
+from nav_msgs.msg import OccupancyGrid
 import numpy as np
 import rclpy
 from rclpy.node import Node
@@ -105,6 +124,19 @@ class DispenserLocator(Node):
         self.declare_parameter('min_depth_pixels', 20)
         self.declare_parameter('auto_interval_sec', 0.0)
         self.declare_parameter('jpeg_quality', 80)
+        self.declare_parameter('map_topic', '/map')
+        # v4l2_camera publishes a zeroed K until calibrated. The C920s is
+        # ~70.4 deg horizontal at 4:3; good to a couple of degrees, which is
+        # several centimetres of cross-range error at 2 m. Calibrate for better.
+        self.declare_parameter('fallback_hfov_deg', 70.4)
+        # Do not intersect bearings the robot barely moved between: the
+        # intersection is then almost unconstrained along the view direction.
+        self.declare_parameter('min_triangulation_angle_deg', 12.0)
+        self.declare_parameter('raycast_max_range_m', 6.0)
+        # Skip the robot's own footprint, and treat unknown cells as empty:
+        # unexplored is not a wall.
+        self.declare_parameter('raycast_skip_m', 0.35)
+        self.declare_parameter('occupied_threshold', 65)
 
         self._map_frame = self.get_parameter('map_frame').value
         self._model = self.get_parameter('model').value
@@ -112,8 +144,13 @@ class DispenserLocator(Node):
         self._color: Image | None = None
         self._depth: Image | None = None
         self._info: CameraInfo | None = None
+        self._map: OccupancyGrid | None = None
         self._busy = False
         self._observations: list[tuple[float, float, float]] = []
+        self._methods: list[str] = []
+        # (origin_xy, unit_direction_xy) in the map frame, one per view that
+        # produced a usable bearing, kept for triangulation.
+        self._rays: list[tuple[np.ndarray, np.ndarray]] = []
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -127,6 +164,9 @@ class DispenserLocator(Node):
         self.create_subscription(
             CameraInfo, self.get_parameter('info_topic').value,
             self._on_info, qos_profile_sensor_data)
+        self.create_subscription(
+            OccupancyGrid, self.get_parameter('map_topic').value,
+            self._on_map, 1)
         self.create_subscription(Empty, '/dispenser/locate', self._on_trigger, 1)
 
         self._pose_pub = self.create_publisher(PoseStamped, '/dispenser/pose', 1)
@@ -170,20 +210,43 @@ class DispenserLocator(Node):
     def _on_info(self, msg: CameraInfo):
         self._info = msg
 
+    def _on_map(self, msg: OccupancyGrid):
+        self._map = msg
+
     def _report_inputs(self):
         """Say what is and is not arriving, so a dead topic is obvious."""
         state = (
             f"color={'yes' if self._color else 'NO'} "
-            f"depth={'yes' if self._depth else 'NO'} "
+            f"depth={'yes' if self._depth else 'no (bearing-only)'} "
             f"info={'yes' if self._info else 'NO'} "
+            f"map={'yes' if self._map else 'no'} "
+            f"range_by={self._available_method()} "
             f"views={len(self._observations)}"
         )
         self._status_pub.publish(String(data=state))
-        if not (self._color and self._depth and self._info):
+        # Depth is optional now; colour is not, and neither is a map or a
+        # second viewpoint if there is no depth.
+        if not self._color:
             self.get_logger().warn(
-                f'waiting on camera: {state} '
-                '(run: ros2 launch perception camera.launch.py)'
+                f'waiting on camera: {state} (run: ros2 launch perception '
+                'webcam.launch.py, or camera.launch.py for a RealSense)'
             )
+        elif self._available_method() == 'nothing':
+            self.get_logger().warn(
+                f'colour only, and no way to get range yet: {state} -- needs '
+                'depth, or /map for a wall cast, or a second view from '
+                'elsewhere to triangulate'
+            )
+
+    def _available_method(self) -> str:
+        """Which range source could serve the next view."""
+        if self._depth is not None:
+            return 'depth'
+        if len(self._rays) >= 1:
+            return 'triangulate-or-wall'
+        if self._map is not None:
+            return 'wall'
+        return 'nothing'
 
     # --------------------------------------------------------------- trigger
 
@@ -191,9 +254,14 @@ class DispenserLocator(Node):
         if self._busy:
             self.get_logger().info('a view is already in flight, skipping')
             return
-        if not (self._color and self._depth and self._info):
-            self.get_logger().warn('no camera data yet; cannot take a view')
+        if self._color is None:
+            self.get_logger().warn('no camera image yet; cannot take a view')
             return
+        if self._depth is None and self._map is None and not self._rays:
+            self.get_logger().warn(
+                'image only: no depth, no map to cast at, and no earlier '
+                'bearing to triangulate against -- taking the view anyway so '
+                'the bearing is banked for the next one')
         if self._client is None:
             self.get_logger().error(f'no Claude client: {self._client_error}')
             return
@@ -225,20 +293,46 @@ class DispenserLocator(Node):
             self.get_logger().info(f'box rejected, confidence {confidence:.2f}')
             return
 
-        depth_m, u, v = self._depth_in_box(depth, answer['box'])
-        if depth_m is None:
+        fx, fy, cx, cy = self._intrinsics(info, color)
+        u, v = self._box_centre(answer['box'], color.width, color.height)
+
+        # 1. Depth, when the camera has it: one view, best accuracy.
+        if depth is not None:
+            depth_m, du, dv = self._depth_in_box(depth, answer['box'])
+            if depth_m is not None:
+                point = self._deproject_xy(fx, fy, cx, cy, du, dv, depth_m,
+                                           info, color)
+                mapped = self._to_map(point, color.header)
+                if mapped is not None:
+                    self._record(mapped, 'depth', confidence, depth_m)
+                    return
             self.get_logger().warn(
-                'box found but no usable depth inside it -- too far, too '
-                'shiny, or outside the 0.15-3.0 m window')
+                'depth present but unusable in the box; falling back to '
+                'bearing-only geometry')
+
+        # Everything below needs the bearing as a ray in the map.
+        ray = self._bearing_ray(fx, fy, cx, cy, u, v, color, info)
+        if ray is None:
+            return
+        origin, direction = ray
+
+        # 2. Triangulate against an earlier bearing from a different pose.
+        triangulated = self._triangulate(origin, direction)
+        self._rays.append((origin, direction))
+        if triangulated is not None:
+            self._record((*triangulated, 0.0), 'triangulate', confidence, None)
             return
 
-        point = self._deproject(info, u, v, depth_m)
-        mapped = self._to_map(point, color.header)
-        if mapped is None:
+        # 3. Otherwise cast the bearing at the wall behind it.
+        hit = self._raycast(origin, direction)
+        if hit is not None:
+            self._record((*hit, 0.0), 'wall', confidence, None)
             return
 
-        self._observations.append(mapped)
-        self._publish(mapped, depth_m, confidence)
+        self.get_logger().warn(
+            'bearing taken but no range: the ray hit no mapped wall within '
+            'range, and there is no second viewpoint yet. Drive somewhere '
+            'else and take another view.')
 
     def _ask_claude(self, color: Image) -> dict | None:
         jpeg = self._to_jpeg(color)
@@ -335,6 +429,131 @@ class DispenserLocator(Node):
             return None, 0, 0
         return float(np.median(valid)), int(cx * depth.width), int(cy * depth.height)
 
+    def _intrinsics(self, info: CameraInfo | None, color: Image):
+        """fx, fy, cx, cy, from camera_info when it is calibrated.
+
+        v4l2_camera publishes a zeroed K until a calibration file is given, and
+        a zero focal length would send every bearing straight down the optical
+        axis. Fall back to the declared horizontal field of view, which is
+        good to a couple of degrees.
+        """
+        if info is not None and info.k[0] > 0.0:
+            return info.k[0], info.k[4], info.k[2], info.k[5]
+        hfov = math.radians(float(self.get_parameter('fallback_hfov_deg').value))
+        focal = (color.width / 2.0) / math.tan(hfov / 2.0)
+        self.get_logger().warn(
+            f'camera_info is uncalibrated; assuming {math.degrees(hfov):.1f} '
+            'deg HFOV. Run camera_calibration for better bearings.',
+            once=True)
+        return focal, focal, color.width / 2.0, color.height / 2.0
+
+    def _box_centre(self, box, width: int, height: int) -> tuple[int, int]:
+        x0, y0, x1, y1 = (float(value) for value in box)
+        return (int((x0 + x1) / 2.0 * width), int((y0 + y1) / 2.0 * height))
+
+    def _deproject_xy(self, fx, fy, cx, cy, u, v, z, info, color) -> PointStamped:
+        """Same geometry as _deproject, but with intrinsics already resolved."""
+        point = PointStamped()
+        point.header = info.header if info is not None else color.header
+        point.point.x = (u - cx) * z / fx
+        point.point.y = (v - cy) * z / fy
+        point.point.z = z
+        return point
+
+    def _bearing_ray(self, fx, fy, cx, cy, u, v, color, info):
+        """The sight line as (origin, unit direction) in the map, flattened.
+
+        Two points are transformed rather than the direction rotated by hand:
+        TF then owns the whole optical-frame convention, and a wrong sign in
+        the extrinsics shows up as a wrong answer rather than a silent one.
+        """
+        frame = info.header.frame_id if info is not None else color.header.frame_id
+        if not frame:
+            self.get_logger().error('no camera frame_id; cannot place a bearing')
+            return None
+        direction = np.array([(u - cx) / fx, (v - cy) / fy, 1.0])
+        direction /= np.linalg.norm(direction)
+
+        points = []
+        for scale in (0.0, 1.0):
+            point = PointStamped()
+            point.header.frame_id = frame
+            point.header.stamp = color.header.stamp
+            point.point.x = float(direction[0] * scale)
+            point.point.y = float(direction[1] * scale)
+            point.point.z = float(direction[2] * scale)
+            mapped = self._to_map(point, color.header)
+            if mapped is None:
+                return None
+            points.append(np.array(mapped[:2]))
+
+        origin, along = points
+        flat = along - origin
+        norm = float(np.linalg.norm(flat))
+        if norm < 1e-6:
+            self.get_logger().error(
+                'the sight line is vertical in the map frame; check the '
+                'camera pitch in the extrinsics')
+            return None
+        return origin, flat / norm
+
+    def _triangulate(self, origin: np.ndarray, direction: np.ndarray):
+        """Least-squares intersection with the bearings taken so far.
+
+        Each ray contributes the projection that measures perpendicular
+        distance from it; summing them and solving puts the point closest to
+        every sight line at once.
+        """
+        min_angle = math.radians(
+            float(self.get_parameter('min_triangulation_angle_deg').value))
+        usable = [
+            (o, n) for o, n in self._rays
+            if abs(math.atan2(float(np.cross(n, direction)),
+                              float(np.dot(n, direction)))) >= min_angle
+        ]
+        if not usable:
+            return None
+        rays = usable + [(origin, direction)]
+        matrix = np.zeros((2, 2))
+        vector = np.zeros(2)
+        for o, n in rays:
+            projector = np.eye(2) - np.outer(n, n)
+            matrix += projector
+            vector += projector @ o
+        if abs(np.linalg.det(matrix)) < 1e-9:
+            return None
+        point = np.linalg.solve(matrix, vector)
+        return float(point[0]), float(point[1])
+
+    def _raycast(self, origin: np.ndarray, direction: np.ndarray):
+        """March the bearing over the occupancy grid to the first wall."""
+        grid = self._map
+        if grid is None:
+            return None
+        resolution = grid.info.resolution
+        origin_x = grid.info.origin.position.x
+        origin_y = grid.info.origin.position.y
+        data = np.asarray(grid.data, dtype=np.int16).reshape(
+            grid.info.height, grid.info.width)
+        occupied = int(self.get_parameter('occupied_threshold').value)
+        distance = float(self.get_parameter('raycast_skip_m').value)
+        limit = float(self.get_parameter('raycast_max_range_m').value)
+        step = max(resolution * 0.5, 1e-3)
+
+        while distance <= limit:
+            x = origin[0] + direction[0] * distance
+            y = origin[1] + direction[1] * distance
+            column = int((x - origin_x) / resolution)
+            row = int((y - origin_y) / resolution)
+            if not (0 <= column < grid.info.width and 0 <= row < grid.info.height):
+                return None
+            value = data[row, column]
+            # -1 is unexplored, not a wall: casting through it is correct.
+            if value >= occupied:
+                return float(x), float(y)
+            distance += step
+        return None
+
     def _deproject(self, info: CameraInfo, u: int, v: int, z: float) -> PointStamped:
         """Pixel plus depth to a point in the camera's optical frame."""
         fx, fy = info.k[0], info.k[4]
@@ -360,7 +579,16 @@ class DispenserLocator(Node):
 
     # --------------------------------------------------------------- outputs
 
-    def _publish(self, latest, depth_m: float, confidence: float):
+    def _record(self, latest, method: str, confidence: float,
+                depth_m: float | None):
+        """Keep the view and republish the fused estimate.
+
+        Wall casts are kept separate in the log because they are biased by the
+        dispenser's standoff from the wall, so a run that mixes them with
+        depth or triangulated views has a floor on how good the mean can be.
+        """
+        self._observations.append(latest)
+        self._methods.append(method)
         array = np.array(self._observations)
         mean = array.mean(axis=0)
         spread = (
@@ -387,13 +615,22 @@ class DispenserLocator(Node):
             0.1, 0.9, 0.2, 0.85)
         self._marker_pub.publish(marker)
 
+        range_note = f'at {depth_m:.2f} m ' if depth_m is not None else ''
         self.get_logger().info(
-            f'dispenser view {len(self._observations)}: '
-            f'this one ({latest[0]:.2f}, {latest[1]:.2f}) at {depth_m:.2f} m, '
+            f'dispenser view {len(self._observations)} by {method}: '
+            f'this one ({latest[0]:.2f}, {latest[1]:.2f}) {range_note}'
             f'confidence {confidence:.2f} | fused ({mean[0]:.2f}, {mean[1]:.2f})'
             + (f', spread {spread:.3f} m' if not math.isnan(spread) else
-               ' -- take another view from a different angle')
+               ' -- take another view from somewhere else')
+            + (' | NOTE: wall casts read the dispenser as being at the wall'
+               if 'wall' in self._methods else '')
         )
+        self._status_pub.publish(String(data=(
+            f'fused=({mean[0]:.3f},{mean[1]:.3f}) views={len(self._observations)} '
+            f'methods={",".join(sorted(set(self._methods)))} '
+            f'spread={spread:.3f}' if not math.isnan(spread) else
+            f'fused=({mean[0]:.3f},{mean[1]:.3f}) views=1 methods={method}'
+        )))
 
 
 def main(args=None):

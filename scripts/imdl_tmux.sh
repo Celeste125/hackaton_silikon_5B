@@ -168,14 +168,20 @@ cat <<GUIDE_TEXT
   8  explore  Optional: the robot maps the arena by itself. Only after
               window 4 says active. It drives as soon as you press
               Enter; teleop (6) still overrides it, ctrl-c cancels.
-  9  camera    RealSense driver + the perception pipeline. Needed by
-              windows 10 and 11.
+   9  camera    Jetson: the C920 webcam driver, plus its base_link ->
+              webcam_optical_frame transform. For a RealSense instead,
+              run 'ros2 launch perception camera.launch.py' in the
+              laptop container and pass camera:=realsense in window 11.
  10  cam-check Left: are the camera topics publishing? Right: the live
               picture (rqt_image_view). Start here if unsure.
  11  dispenser Asks Claude which pixels are the food dispenser, then
               uses aligned depth + TF for the position. Take a view,
               from 2-3 angles:
                 ros2 topic pub --once /dispenser/locate std_msgs/msg/Empty "{}"
+              The webcam has NO depth, so range comes from geometry:
+              view 2 from a DIFFERENT spot is triangulated against
+              view 1, else the bearing is cast at the SLAM wall map.
+              Two views from one spot cannot fix a distance.
               Needs ANTHROPIC_API_KEY in the LAPTOP's environment before
               window 1 starts the container -- put the export in the
               laptop's ~/.bashrc. Exporting it in a container shell does
@@ -272,7 +278,7 @@ tmux send-keys -t "${SESSION}:explore" \
 # the locator needs the map frame and the camera on the same machine.
 tmux new-window -t "${SESSION}" -n camera
 tmux send-keys -t "${SESSION}:camera" \
-    "$(nav_side 'ros2 launch perception camera.launch.py' x11)"
+    "$(robot_side 'ros2 launch perception webcam.launch.py')"
 
 # Two panes: left answers "is the camera publishing", right shows the picture.
 tmux new-window -t "${SESSION}" -n cam-check
@@ -280,7 +286,7 @@ tmux send-keys -t "${SESSION}:cam-check" \
     "$(nav_side 'bash $(ros2 pkg prefix imdl_autonomy)/share/imdl_autonomy/scripts/check_camera.sh')"
 tmux split-window -h -t "${SESSION}:cam-check"
 tmux send-keys -t "${SESSION}:cam-check.1" \
-    "$(nav_side 'rqt_image_view /camera/camera/color/image_raw' x11)"
+    "$(nav_side 'rqt_image_view /webcam/image_raw' x11)"
 
 tmux new-window -t "${SESSION}" -n dispenser
 tmux send-keys -t "${SESSION}:dispenser" \
