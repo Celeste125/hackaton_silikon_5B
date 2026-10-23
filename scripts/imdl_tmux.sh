@@ -148,9 +148,11 @@ cat <<GUIDE_TEXT
 
   Every run:
 
-  3  slam     Jetson: lidar + slam_toolbox + odom TF. Put the robot on
-              its start mark first; that pose becomes map (0, 0, yaw 0).
-  4  nav      Nav2 on the live SLAM map, plus twist_mux for teleop.
+  3  lidar    Jetson: the lidar only. Put the robot on its start mark
+              first; that pose becomes map (0, 0, yaw 0).
+  4  nav      SLAM and Nav2 together, plus twist_mux for teleop. The
+              whole TF chain runs here, on one clock, because TF
+              cannot cross the WiFi within its 0.2 s tolerances.
               Wait for "Managed nodes are active" (10-20 s).
   5  rviz     Opens on the LAPTOP's screen, not here. Set the Map
               display's Color Scheme to 'raw', then 2D Goal Pose.
@@ -170,8 +172,8 @@ GUIDE_TEXT
 else
 cat <<GUIDE_TEXT
 
-  1  slam     lidar + slam_toolbox + odom TF. Put the robot on its start
-              mark first; that pose becomes map (0, 0, yaw 0).
+  1  lidar    The lidar only. Put the robot on its start mark first;
+              that pose becomes map (0, 0, yaw 0).
   2  nav      Nav2 on the live SLAM map, plus twist_mux for teleop.
               Wait for "Managed nodes are active" (10-20 s).
   3  rviz     Set the Map display's Color Scheme to 'raw', then use
@@ -208,9 +210,9 @@ if [[ "${SPLIT}" == true ]]; then
     tmux send-keys -t "${SESSION}:build" "$(in_container 'ws_build')"
 fi
 
-tmux new-window -t "${SESSION}" -n slam
-tmux send-keys -t "${SESSION}:slam" \
-    "$(robot_side 'ros2 launch slam mapping.launch.py')"
+tmux new-window -t "${SESSION}" -n lidar
+tmux send-keys -t "${SESSION}:lidar" \
+    "$(robot_side 'ros2 launch slam lidar.launch.py fix_timestamps:=false')"
 
 tmux new-window -t "${SESSION}" -n nav
 tmux send-keys -t "${SESSION}:nav" \

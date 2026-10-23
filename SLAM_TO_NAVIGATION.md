@@ -41,9 +41,22 @@ while Nav2 plans on it, so you can click goals from the first second.
 
 | Terminal | Command |
 | --- | --- |
-| Jetson 1 | `ros2 launch slam mapping.launch.py` |
+| Jetson 1 | `ros2 launch slam lidar.launch.py fix_timestamps:=false` |
 | Container 1 | `ros2 launch imdl_simulation real_rviz.launch.py model_visual_yaw:=0.0 lidar_yaw:=3.14159265359` |
 | Container 2 | `ros2 launch imdl_autonomy slam_navigation.launch.py` |
+
+The Jetson runs **only the lidar**. SLAM, the odom TF and the scan restamping
+all run next to Nav2, because a TF lookup inside a message-filter chain has a
+0.2 s tolerance and cannot cross a busy WiFi link. Splitting the chain between
+the two machines makes slam_toolbox drop every scan with `queue is full` while
+Nav2 fails every transform by 0.6-2.2 s, and Nav2 then never reaches
+`Managed nodes are active`. Sensor topics tolerate that lag; TF does not.
+
+Keeping the restamping on the same machine as the TF also means the two
+clocks no longer have to agree -- hence `fix_timestamps:=false` on the Jetson,
+so exactly one machine stamps `/scan`.
+
+Running slam_toolbox somewhere else after all? `run_slam:=false`.
 
 Wait for `Managed nodes are active`, set the Map display's **Color Scheme to
 `raw`**, then select **2D Goal Pose** and click. Unexplored area counts as

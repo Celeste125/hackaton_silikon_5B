@@ -2,9 +2,24 @@
 
 No saved map, no AMCL, no 2D Pose Estimate. slam_toolbox owns the /map topic
 and the map -> odom TF, Nav2 plans on top of it, and goals come from RViz
-(2D Goal Pose). The Jetson runs mapping.launch.py (lidar + scan timestamp fix
-+ odom TF + slam_toolbox), this launch file runs the Nav2 servers, and
-real_rviz.launch.py runs alongside it for base_link -> lidar_link.
+(2D Goal Pose).
+
+With run_slam (the default) this machine runs the whole TF chain -- scan
+restamping, odom -> base_link, slam_toolbox's map -> odom -- and the Jetson
+runs only the lidar:
+
+    jetson$  ros2 launch slam lidar.launch.py fix_timestamps:=false
+
+That split matters. TF lookups inside a message-filter chain have tolerances
+of 0.2 s, so they cannot cross a busy WiFi link: splitting the chain between
+the Jetson and the laptop makes slam_toolbox drop every scan with a full
+queue and Nav2 fail every transform by 0.6-2.2 s. Sensor topics tolerate that
+lag; TF does not. Keeping scan stamps and TF on one clock also removes any
+dependence on the two machines' clocks agreeing.
+
+Pass run_slam:=false to consume a slam_toolbox running elsewhere, as when the
+Jetson runs mapping.launch.py. Either way real_rviz.launch.py runs alongside
+for base_link -> lidar_link.
 
 Unexplored area counts as free (global_costmap track_unknown_space: false), so
 goals may be placed outside the mapped region; the robot replans as the map
@@ -100,6 +115,51 @@ def generate_launch_description():
         }.items(),
     )
 
+    # The whole TF chain, so every lookup is local and single-clock.
+    # Mirrors mapping.launch.py, minus the lidar driver itself.
+    run_slam = IfCondition(LaunchConfiguration('run_slam'))
+
+    # /scan_raw (Jetson) -> /scan stamped with this machine's clock, the same
+    # clock that stamps the TF slam_toolbox matches each scan against.
+    scan_timestamp_fixer = Node(
+        package='slam',
+        executable='scan_timestamp_fixer',
+        name='scan_timestamp_fixer',
+        output='screen',
+        parameters=[{'use_sim_time': False}],
+        condition=IfCondition(LaunchConfiguration('fix_scan_timestamps')),
+    )
+
+    # <namespace>/odom -> odom -> base_link TF.
+    odom_tf = Node(
+        package='slam',
+        executable='odom_tf_republisher',
+        name='odom_tf_republisher',
+        output='screen',
+        parameters=[{
+            'use_sim_time': False,
+            'odom_topic': [namespace, '/odom'],
+            'namespaced_tf_topic': [namespace, '/tf'],
+        }],
+        condition=run_slam,
+    )
+
+    slam_toolbox = Node(
+        package='slam_toolbox',
+        executable='async_slam_toolbox_node',
+        name='slam_toolbox',
+        output='screen',
+        parameters=[
+            PathJoinSubstitution([
+                FindPackageShare('slam'), 'config', 'slam_toolbox_params.yaml',
+            ]),
+            {'use_sim_time': False},
+        ],
+        # Keep slam_toolbox's own /pose off Nav2's topic, as mapping.launch.py does.
+        remappings=[('/pose', '/robot_pose')],
+        condition=run_slam,
+    )
+
     # Teleop beats Nav2 (see config/twist_mux.yaml). Runs in the robot
     # namespace, so the relative topic names resolve to <ns>/cmd_vel_nav,
     # <ns>/cmd_vel_teleop and <ns>/cmd_vel.
@@ -140,12 +200,31 @@ def generate_launch_description():
             description='Lower = planned paths may run closer to walls.',
         ),
         DeclareLaunchArgument(
+            'run_slam', default_value='true', choices=['true', 'false'],
+            description=(
+                'Run slam_toolbox and the odom TF here, so the whole TF chain '
+                'shares one machine and one clock. false expects them '
+                'elsewhere, e.g. the Jetson running mapping.launch.py.'
+            ),
+        ),
+        DeclareLaunchArgument(
+            'fix_scan_timestamps', default_value='true',
+            choices=['true', 'false'],
+            description=(
+                'Restamp /scan_raw as /scan here. Launch the lidar with '
+                'fix_timestamps:=false so only one machine restamps.'
+            ),
+        ),
+        DeclareLaunchArgument(
             'use_twist_mux', default_value='true', choices=['true', 'false'],
             description=(
                 'Route Nav2 through twist_mux so teleop on '
                 '<namespace>/cmd_vel_teleop can override it.'
             ),
         ),
+        scan_timestamp_fixer,
+        odom_tf,
+        slam_toolbox,
         nav2,
         twist_mux,
     ])
