@@ -10,15 +10,26 @@
 # Anything marked MISSING means the locator cannot work yet.
 set -uo pipefail
 
-COLOR="${IMDL_COLOR_TOPIC:-/camera/camera/color/image_raw}"
-DEPTH="${IMDL_DEPTH_TOPIC:-/camera/camera/aligned_depth_to_color/image_raw}"
-INFO="${IMDL_INFO_TOPIC:-/camera/camera/aligned_depth_to_color/camera_info}"
+# Pick whichever camera is actually publishing, so one script covers the
+# webcam and the RealSense without being told which is plugged in.
+if ros2 topic list 2>/dev/null | grep -qx "/webcam/image_raw"; then
+    DETECTED="webcam (no depth -- range comes from geometry)"
+    COLOR="${IMDL_COLOR_TOPIC:-/webcam/image_raw}"
+    DEPTH="${IMDL_DEPTH_TOPIC:-/webcam/none}"
+    INFO="${IMDL_INFO_TOPIC:-/webcam/camera_info}"
+else
+    DETECTED="realsense (or nothing yet)"
+    COLOR="${IMDL_COLOR_TOPIC:-/camera/camera/color/image_raw}"
+    DEPTH="${IMDL_DEPTH_TOPIC:-/camera/camera/aligned_depth_to_color/image_raw}"
+    INFO="${IMDL_INFO_TOPIC:-/camera/camera/aligned_depth_to_color/camera_info}"
+fi
 TARGET_FRAME="${IMDL_TARGET_FRAME:-map}"
 HZ_SECS="${IMDL_HZ_SECS:-5}"
 
 hr() { printf '%s\n' "------------------------------------------------------------"; }
 
 echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-unset}"
+echo "camera detected: ${DETECTED}"
 hr
 echo "All camera-ish topics currently advertised:"
 mapfile -t found < <(ros2 topic list 2>/dev/null | grep -iE "camera|image|depth|points" || true)
@@ -69,11 +80,13 @@ timeout 8 ros2 topic echo --once --field k "${INFO}" 2>/dev/null | head -3 \
     | sed 's/^/  K: /' || echo "  (no camera_info)"
 hr
 
-echo "Camera extrinsics -- base_link to the colour optical frame:"
-if timeout 8 ros2 run tf2_ros tf2_echo base_link camera_color_optical_frame 2>&1 \
+OPTICAL="${IMDL_OPTICAL_FRAME:-camera_color_optical_frame}"
+case "${DETECTED}" in webcam*) OPTICAL="webcam_optical_frame";; esac
+echo "Camera extrinsics -- base_link to ${OPTICAL}:"
+if timeout 8 ros2 run tf2_ros tf2_echo base_link "${OPTICAL}" 2>&1 \
     | grep -A4 -m1 "Translation" | sed 's/^/  /'; then :; else
-    echo "  MISSING -- camera.launch.py publishes base_link->camera_link"
-    echo "  (publish_camera_tf:=true); the optical frames come from the driver."
+    echo "  MISSING -- webcam.launch.py (or camera.launch.py) publishes this"
+    echo "  with publish_camera_tf:=true. Without it a bearing is meaningless."
 fi
 hr
 echo "Dispenser pose -> ${TARGET_FRAME}: needs the above plus ${TARGET_FRAME}->base_link."

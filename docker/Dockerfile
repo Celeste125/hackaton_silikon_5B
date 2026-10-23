@@ -19,6 +19,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-irobot-create-msgs \
     ros-humble-rmw-fastrtps-cpp \
     ros-humble-tf2-tools \
+    ros-humble-realsense2-camera \
+    ros-humble-v4l2-camera \
+    ros-humble-usb-cam \
+    ros-humble-rqt-image-view \
+    ros-humble-camera-calibration \
+    ros-humble-image-transport-plugins \
     python3-colcon-common-extensions \
     python3-pip \
     python3-numpy \
