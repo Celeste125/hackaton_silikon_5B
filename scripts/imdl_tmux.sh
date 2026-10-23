@@ -159,6 +159,9 @@ cat <<GUIDE_TEXT
               last key press.
   7  tools    Left: save the map (while window 4 still runs).
               Right: check the odom feed.
+  8  explore  Optional: the robot maps the arena by itself. Only after
+              window 4 says active. It drives as soon as you press
+              Enter; teleop (6) still overrides it, ctrl-c cancels.
 
   Before window 4, make sure the container sees the robot. In window 2:
     ros2 topic list | grep ${NAMESPACE#/}
@@ -175,6 +178,9 @@ cat <<GUIDE_TEXT
               2D Goal Pose to send the robot somewhere.
   4  teleop   Only when you need it. Press z about 6 times to slow down.
   5  tools    Save the map, and check the odom feed.
+  6  explore  Optional: the robot maps the arena by itself. Only after
+              window 2 says active. It drives as soon as you press
+              Enter; teleop still overrides it, ctrl-c cancels.
 GUIDE_TEXT
 fi
 cat <<GUIDE_TEXT
@@ -225,6 +231,12 @@ tmux send-keys -t "${SESSION}:tools" \
 tmux split-window -h -t "${SESSION}:tools"
 tmux send-keys -t "${SESSION}:tools.1" \
     "$(nav_side "ros2 topic hz ${NAMESPACE}/odom")"
+
+# Autonomous exploration. Runs where Nav2 runs, since it drives through the
+# navigate_to_pose action and reads /map. Last, so the numbers above are stable.
+tmux new-window -t "${SESSION}" -n explore
+tmux send-keys -t "${SESSION}:explore" \
+    "$(nav_side 'ros2 launch imdl_autonomy frontier_explore.launch.py')"
 
 tmux select-window -t "${SESSION}:guide"
 exec tmux attach -t "${SESSION}"
