@@ -23,6 +23,10 @@ part of the map Nav2 will not enter:
 
 Needs ros-humble-twist-mux. Pass use_twist_mux:=false to let Nav2 publish
 <ns>/cmd_vel directly, as map_navigation.launch.py does.
+
+The collision monitor runs on the lidar scan alone here: this mode is
+lidar-only, so its camera-fed tracked_objects source is switched off rather
+than left waiting for a cloud that never arrives.
 """
 
 from launch import LaunchDescription
@@ -68,6 +72,12 @@ def generate_launch_description():
             'cost_scaling_factor': cost_scaling_factor,
             'planner_server.ros__parameters.GridBased.cost_travel_multiplier':
                 LaunchConfiguration('cost_travel_multiplier'),
+            # Mapping with the lidar alone: there is no camera obstacle cloud,
+            # so the collision monitor must not keep a source it will never
+            # receive. (nav2_params.yaml enables it for the camera missions,
+            # where imdl_autonomy's object_registry feeds it.)
+            'collision_monitor.ros__parameters.tracked_objects.enabled':
+                'false',
         },
         convert_types=True,
     )
@@ -109,22 +119,6 @@ def generate_launch_description():
         condition=IfCondition(use_twist_mux),
     )
 
-    # The collision monitor in nav2_params.yaml lists
-    # /autonomy/tracked_obstacle_cloud as a source; object_registry publishes
-    # it at 10 Hz (empty without camera) so that source never goes stale.
-    object_registry = Node(
-        package='imdl_autonomy',
-        executable='object_registry',
-        name='object_registry',
-        output='screen',
-        parameters=[
-            PathJoinSubstitution([
-                FindPackageShare('imdl_autonomy'), 'config', 'solver_params.yaml',
-            ]),
-            {'use_sim_time': False},
-        ],
-    )
-
     return LaunchDescription([
         DeclareLaunchArgument(
             'namespace',
@@ -153,6 +147,5 @@ def generate_launch_description():
             ),
         ),
         nav2,
-        object_registry,
         twist_mux,
     ])

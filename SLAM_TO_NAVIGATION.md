@@ -215,3 +215,5 @@ ros2 topic pub --rate 10 /Team2/cmd_vel geometry_msgs/msg/Twist "{}"
 | Goal fails: `Starting point in lethal space` | Localization is wrong (see above), or the lidar sees parts of the robot itself. Check in RViz with Fixed Frame `base_link`. |
 | Goal fails right away (`ABORTED`) | Goal too close to a wall. Click further into open space. |
 | Container sees no robot topics | `echo $ROS_DOMAIN_ID` must be `2` on the Jetson and in the container. Then `ros2 daemon stop`. |
+| `object_registry` dies with `NameError` | Known: `imdl_autonomy/object_registry.py` calls `is_navigation_candidate`, `block_color` and `stamp_seconds`, which are not defined anywhere in the package, and `DetectedObjectArray` is in `imdl_msgs`, not `imdl_interfaces`. `slam_navigation.launch.py` does not start it and switches the collision monitor's `tracked_objects` source off instead. `map_navigation.launch.py` still starts it, and still leaves that source enabled. |
+| Nothing moves on a Mac | A container on a Mac cannot reach the robot's LAN at all (see the tmux section). Run the stack on the Jetson. |
