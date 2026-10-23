@@ -56,7 +56,46 @@ Want the map afterwards? Save it while this is still running:
 ros2 run nav2_map_server map_saver_cli -f /root/maps/my_map
 ```
 
-Teleop can run alongside it (Jetson 2) to fill in corners by hand.
+### Teleop fallback
+
+`slam_navigation.launch.py` puts a `twist_mux` between Nav2 and the robot, so
+teleop and Nav2 can share `cmd_vel` safely:
+
+```
+Nav2  -> /Team2/cmd_vel_nav     priority 10
+teleop -> /Team2/cmd_vel_teleop  priority 100  --> twist_mux -> /Team2/cmd_vel
+```
+
+Teleop wins the moment you press a key, and Nav2 drives again 0.5 s after the
+last key press. Use it to nudge the robot out of a corner, or to drive into a
+part of the arena Nav2 will not enter on its own:
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/Team2/cmd_vel_teleop
+```
+
+Note the topic: plain `/Team2/cmd_vel` fights the mux instead of going through
+it. Needs `ros-humble-twist-mux` on the machine that runs the launch file
+(already in `docker/Dockerfile`; on the Jetson
+`sudo apt install ros-humble-twist-mux`). Pass `use_twist_mux:=false` for the
+old direct wiring.
+
+### One tmux session for all of it
+
+```bash
+./scripts/imdl_tmux.sh --host jetson@<jetson-ip>   # ROS runs on the Jetson, over SSH
+./scripts/imdl_tmux.sh --docker                    # ROS runs in the local container
+```
+
+Each window comes up with its command typed in but not executed, so you press
+Enter window by window: `slam`, `nav`, `rviz`, `teleop`, `tools` (map saver and
+a spare shell). Window 0 lists the order and the emergency stop. The script
+exports `ROS_DOMAIN_ID=2` into every pane.
+
+On a **Mac**, only `--host` works. Docker Desktop runs containers on its own
+VM network, which has no route to the robot's LAN, so a container on a Mac
+cannot see the Create3 or the Jetson over DDS at all. Use `--host` and let the
+Jetson run the stack; `rviz` goes over SSH X11 forwarding into XQuartz.
 
 The two parts below are the other route: map first, then navigate on the saved
 map with AMCL. Use it when you need the exact same map across several runs.

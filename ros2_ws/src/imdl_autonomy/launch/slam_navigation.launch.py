@@ -11,12 +11,29 @@ goals may be placed outside the mapped region; the robot replans as the map
 grows. Save the finished map while this is still running:
 
     ros2 run nav2_map_server map_saver_cli -f /root/maps/my_map
+
+Teleop fallback (use_twist_mux, on by default): Nav2 drives <ns>/cmd_vel_nav
+and twist_mux forwards it to <ns>/cmd_vel. Teleop has the higher priority, so
+driving by hand overrides Nav2 instantly and Nav2 resumes 0.5 s after the last
+key press -- useful for nudging the robot out of a corner, or for filling in a
+part of the map Nav2 will not enter:
+
+    ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+      --ros-args -r cmd_vel:=/Team2/cmd_vel_teleop
+
+Needs ros-humble-twist-mux. Pass use_twist_mux:=false to let Nav2 publish
+<ns>/cmd_vel directly, as map_navigation.launch.py does.
 """
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
+)
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
@@ -26,6 +43,14 @@ def generate_launch_description():
     namespace = LaunchConfiguration('namespace')
     inflation_radius = LaunchConfiguration('inflation_radius')
     cost_scaling_factor = LaunchConfiguration('cost_scaling_factor')
+    use_twist_mux = LaunchConfiguration('use_twist_mux')
+
+    # With the mux in front of the robot, Nav2 may only reach cmd_vel_nav.
+    # Without it, Nav2 keeps the direct cmd_vel wiring.
+    nav_cmd_vel_topic = PythonExpression([
+        "'", namespace, "/cmd_vel_nav' if '", use_twist_mux,
+        "' == 'true' else '", namespace, "/cmd_vel'",
+    ])
 
     params_file = RewrittenYaml(
         source_file=PathJoinSubstitution([
@@ -61,8 +86,27 @@ def generate_launch_description():
             'use_sim_time': 'false',
             'odom_topic': [namespace, '/odom'],
             'scan_topic': '/scan',
-            'cmd_vel_topic': [namespace, '/cmd_vel'],
+            'cmd_vel_topic': nav_cmd_vel_topic,
         }.items(),
+    )
+
+    # Teleop beats Nav2 (see config/twist_mux.yaml). Runs in the robot
+    # namespace, so the relative topic names resolve to <ns>/cmd_vel_nav,
+    # <ns>/cmd_vel_teleop and <ns>/cmd_vel.
+    twist_mux = Node(
+        package='twist_mux',
+        executable='twist_mux',
+        name='twist_mux',
+        namespace=namespace,
+        output='screen',
+        parameters=[
+            PathJoinSubstitution([
+                FindPackageShare('imdl_autonomy'), 'config', 'twist_mux.yaml',
+            ]),
+            {'use_sim_time': False},
+        ],
+        remappings=[('cmd_vel_out', 'cmd_vel')],
+        condition=IfCondition(use_twist_mux),
     )
 
     # The collision monitor in nav2_params.yaml lists
@@ -101,6 +145,14 @@ def generate_launch_description():
             'cost_travel_multiplier', default_value='1.0',
             description='Lower = planned paths may run closer to walls.',
         ),
+        DeclareLaunchArgument(
+            'use_twist_mux', default_value='true', choices=['true', 'false'],
+            description=(
+                'Route Nav2 through twist_mux so teleop on '
+                '<namespace>/cmd_vel_teleop can override it.'
+            ),
+        ),
         nav2,
         object_registry,
+        twist_mux,
     ])
