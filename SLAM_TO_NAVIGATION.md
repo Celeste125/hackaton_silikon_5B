@@ -83,14 +83,27 @@ old direct wiring.
 ### One tmux session for all of it
 
 ```bash
-./scripts/imdl_tmux.sh --host jetson@<jetson-ip>   # ROS runs on the Jetson, over SSH
-./scripts/imdl_tmux.sh --docker                    # ROS runs in the local container
+# Two machines: Jetson carries the lidar, a Linux laptop runs Nav2 + RViz
+./scripts/imdl_tmux.sh --jetson jetson@<jetson-ip> --laptop <user>@<laptop-ip>
+
+./scripts/imdl_tmux.sh --host jetson@<jetson-ip>   # one machine, no container
+./scripts/imdl_tmux.sh --docker                    # this machine's container
 ```
 
 Each window comes up with its command typed in but not executed, so you press
-Enter window by window: `slam`, `nav`, `rviz`, `teleop`, `tools` (map saver and
-a spare shell). Window 0 lists the order and the emergency stop. The script
-exports `ROS_DOMAIN_ID=2` into every pane.
+Enter window by window. Window 0 lists the order and the emergency stop, and
+the script exports `ROS_DOMAIN_ID=2` into every pane.
+
+With `--jetson` + `--laptop` you get two extra windows first, needed once per
+laptop: `setup` fetches the branch, builds the image and starts the container
+(that window **owns** the container, so leave it running), and `build` runs
+`ws_build` inside it. Then `slam` and `teleop` go to the Jetson, while `nav`,
+`rviz` and `tools` run inside the laptop's container.
+
+RViz opens on the **laptop's** screen, not on the machine you launched from.
+`setup` passes `DISPLAY=:0` and `XAUTHORITY` through so `run.sh`'s `xhost` can
+reach the laptop's X session over SSH; if RViz still says it cannot open the
+display, start that one window from a terminal sitting at the laptop.
 
 On a **Mac**, only `--host` works. Docker Desktop runs containers on its own
 VM network, which has no route to the robot's LAN, so a container on a Mac
