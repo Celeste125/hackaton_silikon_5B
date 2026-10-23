@@ -23,6 +23,7 @@
 set -euo pipefail
 
 SESSION=imdl
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JETSON_HOST=""
 LAPTOP_HOST=""
 SINGLE_HOST=""
@@ -33,7 +34,10 @@ LIDAR_YAW="${IMDL_LIDAR_YAW:-3.14159265359}"
 MAP_NAME="${IMDL_MAP_NAME:-my_map}"
 MAP_DIR="${IMDL_MAP_DIR:-/root/maps}"
 REPO_DIR="${IMDL_REPO_DIR:-~/imdl-main}"
-BRANCH="${IMDL_BRANCH:-slam-navigation-live}"
+# Default to whatever branch this checkout is on, so the laptop gets the code
+# you are actually running, not whichever branch was current when this was
+# written. Override with IMDL_BRANCH.
+BRANCH="${IMDL_BRANCH:-$(git -C "${SCRIPT_DIR:-.}/.." rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)}"
 # Public HTTPS URL, so the laptop needs no GitHub key of its own.
 REPO_URL="${IMDL_REPO_URL:-https://github.com/Celeste125/hackaton_silikon_5B.git}"
 CONTAINER="${IMDL_CONTAINER:-imdl}"
