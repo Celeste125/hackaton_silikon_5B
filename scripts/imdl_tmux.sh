@@ -164,6 +164,14 @@ cat <<GUIDE_TEXT
   8  explore  Optional: the robot maps the arena by itself. Only after
               window 4 says active. It drives as soon as you press
               Enter; teleop (6) still overrides it, ctrl-c cancels.
+  9  camera    RealSense driver + the perception pipeline. Needed by
+              windows 10 and 11.
+ 10  cam-check Left: are the camera topics publishing? Right: the live
+              picture (rqt_image_view). Start here if unsure.
+ 11  dispenser Asks Claude which pixels are the food dispenser, then
+              uses aligned depth + TF for the position. Needs
+              ANTHROPIC_API_KEY. Take a view, from 2-3 angles:
+                ros2 topic pub --once /dispenser/locate std_msgs/msg/Empty "{}"
 
   BEFORE window 4, two gates. Nav2 activates its local costmap during
   bringup and that needs the odom -> base_link TF; if odom is not
@@ -250,6 +258,24 @@ tmux send-keys -t "${SESSION}:tools.1" \
 tmux new-window -t "${SESSION}" -n explore
 tmux send-keys -t "${SESSION}:explore" \
     "$(nav_side 'ros2 launch imdl_autonomy frontier_explore.launch.py')"
+
+# Camera, its diagnostics, and dispenser localisation. All on the Nav2 side:
+# the locator needs the map frame and the camera on the same machine.
+tmux new-window -t "${SESSION}" -n camera
+tmux send-keys -t "${SESSION}:camera" \
+    "$(nav_side 'ros2 launch perception camera.launch.py' x11)"
+
+# Two panes: left answers "is the camera publishing", right shows the picture.
+tmux new-window -t "${SESSION}" -n cam-check
+tmux send-keys -t "${SESSION}:cam-check" \
+    "$(nav_side 'bash $(ros2 pkg prefix imdl_autonomy)/share/imdl_autonomy/scripts/check_camera.sh')"
+tmux split-window -h -t "${SESSION}:cam-check"
+tmux send-keys -t "${SESSION}:cam-check.1" \
+    "$(nav_side 'rqt_image_view /camera/camera/color/image_raw' x11)"
+
+tmux new-window -t "${SESSION}" -n dispenser
+tmux send-keys -t "${SESSION}:dispenser" \
+    "$(nav_side 'ros2 launch imdl_autonomy dispenser_locate.launch.py')"
 
 tmux select-window -t "${SESSION}:guide"
 exec tmux attach -t "${SESSION}"
