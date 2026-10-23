@@ -1,12 +1,12 @@
-# Hackathon Guide: SLAM, Navigation and Your Own Behavior Tree
+# Hackathon Guide: SLAM, Navigation and Your Own State Machine
 
-This guide gets you from "robot switched on" to "robot runs my own behavior tree".
+This guide gets you from "robot switched on" to "robot runs my own state machine".
 You will work through four stages:
 
 1. **Get connected** to the robot and drive it by keyboard.
 2. **Build a map** of the room with SLAM.
 3. **Navigate** to single goals on that map.
-4. **Write a behavior tree** that drives to positions, runs actions there,
+4. **Write a state machine** that drives to positions, runs actions there,
    follows waypoints and turns around.
 
 The robot is an iRobot Create3 with a SLAMTEC 2D lidar on a Jetson.
@@ -36,7 +36,7 @@ laptop will see and command the other team's robot.
 | --- | --- |
 | **Create3** | Robot firmware: odometry (`/Team2/odom`), wheel commands (`/Team2/cmd_vel`), bumpers |
 | **Jetson** (via SSH) | Lidar driver; during mapping also SLAM; keyboard driving |
-| **Laptop** (Docker container) | RViz, saving maps, localization (AMCL), Nav2, your behavior tree |
+| **Laptop** (Docker container) | RViz, saving maps, localization (AMCL), Nav2, your state machine |
 
 All three talk over Wi-Fi via ROS 2 (Humble). Jetson and laptop must be in the
 same network.
@@ -337,7 +337,7 @@ The output ends with the status:
 | `CANCELED` | You pressed Ctrl-C |
 
 Several goals in a row: send the next goal after the previous one finished
-with `SUCCEEDED`. To automate this, write a behavior tree (section 5).
+with `SUCCEEDED`. To automate this, write a state machine (section 5).
 
 ### 4.5 When a goal fails
 
@@ -390,30 +390,22 @@ collision monitor still slows the robot down near obstacles.
 
 ---
 
-## 5. Your own behavior tree
+## 5. Your own state machine
 
 ### 5.1 The example
 
-The package `imdl_statemachine` contains a working behavior tree (built with
-[py_trees](https://py-trees.readthedocs.io)) you can copy and extend:
+The package `imdl_statemachine` contains a working example you can copy and
+extend:
 
 ```
-Mission (Sequence)
- ├── Nav2Ready
- ├── GoToActionPoint
- ├── DoAction
- ├── GoToRouteStart
- ├── SlowRoute
- └── Turn
+INIT → GO_TO_ACTION_POINT → DO_ACTION → GO_TO_ROUTE_START → SLOW_ROUTE → TURN → DONE
+                        (any failure or timeout → FAILED)
 ```
-
-A Sequence ticks its children in order. The first child that fails fails the
-whole mission, and anything still running is cancelled.
 
 | File | Purpose |
 | --- | --- |
 | `ros2_ws/src/imdl_statemachine/config/waypoints.yaml` | All poses, speeds and timeouts |
-| `ros2_ws/src/imdl_statemachine/imdl_statemachine/behavior_tree.py` | The leaves and the tree |
+| `ros2_ws/src/imdl_statemachine/imdl_statemachine/state_machine.py` | The state machine |
 | `ros2_ws/src/imdl_autonomy/launch/map_navigation.launch.py` | AMCL + Nav2 (section 4.1) |
 
 **The example poses in `waypoints.yaml` belong to a different map.** Replace
@@ -422,108 +414,114 @@ them with free points from *your* map (section 4.3) before the first run.
 ### 5.2 Run it
 
 1. Start lidar, RViz and `map_navigation.launch.py` as in section 4.1, steps 1–3.
-2. Put the robot on the start mark. `Nav2Ready` sets the start pose from
-   `initial_pose` in the YAML, so no 2D Pose Estimate is needed.
+2. Put the robot on the start mark. The state machine sets the start pose
+   from `initial_pose` in the YAML, so no 2D Pose Estimate is needed.
 3. Container terminal 3:
    ```bash
-   ros2 run imdl_statemachine behavior_tree
+   ros2 run imdl_statemachine state_machine
    ```
-4. Watch the running leaf in another terminal:
+4. Watch the current state in another terminal:
    ```bash
-   ros2 topic echo /behavior_tree/state
+   ros2 topic echo /state_machine/state
    ```
 
-Ctrl-C stops the tree and cancels the running navigation goal.
+Ctrl-C stops the state machine and cancels the running navigation goal.
 
 Use your own waypoint file:
 
 ```bash
-ros2 run imdl_statemachine behavior_tree --ros-args -p waypoints_file:=/root/maps/our_points.yaml
+ros2 run imdl_statemachine state_machine --ros-args -p waypoints_file:=/root/maps/our_points.yaml
 ```
 
-The first time after pulling this change, rebuild the image (`py_trees` was
-added to the Dockerfile) and run `ws_build` (the entry point changed). After
-that, changes to `.py` and `.yaml` files take effect on the next start.
+Changes to `.py` and `.yaml` files take effect on the next start without
+rebuilding. Run `ws_build` only after adding new files or packages.
 
 ### 5.3 How it works
 
-Every leaf is a `py_trees.behaviour.Behaviour`. The main loop ticks the tree
-10 times per second and each leaf answers `SUCCESS`, `FAILURE` or `RUNNING`:
-
-- `initialise()` runs when the leaf starts (send the Nav2 goal).
-- `update()` runs every tick (is the goal done? timed out?).
-- `terminate()` runs when the leaf ends or is interrupted (cancel the goal).
-
-`GoToPose`, `GoThroughPoses` and `Turn` share the base class `NavTask`, which
-handles the timeout (`step_timeout_sec`), the progress log and cancelling. A
-subclass only implements `start()`:
+Each state is one method that does its work and **returns the next state**:
 
 ```python
-class Turn(NavTask):
-    def start(self):
-        return self.nav.spin(spin_dist=self.angle_rad, time_allowance=30)
+def on_go_to_action_point(self) -> State:
+    # drive to 'action_point' from the YAML; on success continue with DO_ACTION
+    return self.go_to('action_point', State.DO_ACTION)
 ```
 
-`SlowRoute` sets the speed limit when it starts and removes it when it ends,
-also on failure or Ctrl-C.
+`go_to(target, next_state)` takes either a **name from the YAML** or a pose
+given directly as `[x, y, yaw]`. If driving fails, it returns `State.FAILED`.
+You can pass a different third argument, e.g. a state that retries.
 
-`build_tree()` at the bottom of `behavior_tree.py` is the mission. Reorder,
-add or remove leaves there.
+```python
+return self.go_to('kitchen', State.BEEP)                 # named point in the YAML
+return self.go_to([-1.0, 0.3, 3.14], State.BEEP)         # pose written directly
+return self.go_to('kitchen', State.BEEP, State.GO_HOME)  # on failure go to GO_HOME
+```
+
+A named point is just one more line in the YAML:
+
+```yaml
+kitchen: [-1.0, 0.3, 3.14159]
+```
+
+`run()` calls the method of the current state over and over until the state is
+`DONE` or `FAILED`. The mapping from state to method is in `self._handlers`.
+
+`run_task(label, start)` starts a Nav2 task, waits until it finishes, prints
+progress, and returns `True` on success. On timeout it cancels the task.
 
 ### 5.4 Building blocks
 
-`self.nav` inside a leaf is a `BasicNavigator` from `nav2_simple_commander`:
+`self.nav` is a `BasicNavigator` from `nav2_simple_commander`:
 
 | What | Code |
 | --- | --- |
-| Drive to a pose | add `GoToPose('Name', nav, [x, y, yaw], timeout)` to `build_tree` |
-| Drive through several poses | `GoThroughPoses('Name', nav, [p1, p2, p3], timeout, speed_limit_mps=0.08)` |
-| Turn in place (rad, + = left) | `Turn('Name', nav, 3.14, timeout)` |
-| Build a pose message | `make_pose(nav, [x, y, yaw])` |
-| Read a value from the YAML | `config['my_key']` in `build_tree` |
+| Drive to a pose | `return self.go_to('name_in_yaml', State.NEXT)` or `self.go_to([x, y, yaw], State.NEXT)` |
+| Drive through several poses | `self.run_task('label', lambda: self.nav.goThroughPoses([p1, p2, p3]))` |
+| Turn in place (rad, + = left) | `self.run_task('label', lambda: self.nav.spin(spin_dist=3.14, time_allowance=30))` |
+| Limit speed (m/s, 0 = no limit) | `self.set_speed_limit(0.08)` |
+| Wait without blocking ROS | `self.sleep(2.0)` |
+| Build a pose | `self.pose([x, y, yaw])` |
+| Read a value from the YAML | `self.config['my_key']` |
 | Log | `self.nav.info('text')`, `self.nav.warn(...)`, `self.nav.error(...)` |
 
-Useful py_trees composites (`py_trees.composites`):
-
-| Composite | Meaning |
-| --- | --- |
-| `Sequence(memory=True)` | Run children in order, stop at the first failure |
-| `Selector(memory=False)` | Try children in order until one succeeds (fallback / retry) |
-| `py_trees.decorators.Retry(child=..., num_failures=3)` | Repeat a failing child |
-| `py_trees.decorators.Timeout(child=..., duration=30)` | Fail a child that runs too long |
-
-### 5.5 Adding a leaf: step by step
+### 5.5 Adding a state: step by step
 
 Example: the robot beeps at the action point.
 
-**1. Write the leaf in `behavior_tree.py`:**
+**1. Add the state to the enum:**
+
+```python
+class State(Enum):
+    ...
+    BEEP = auto()
+```
+
+**2. Write the method:**
 
 ```python
 from builtin_interfaces.msg import Duration
 from irobot_create_msgs.msg import AudioNote, AudioNoteVector
 
-class Beep(py_trees.behaviour.Behaviour):
-    def __init__(self, nav):
-        super().__init__(name='Beep')
-        self.audio_pub = nav.create_publisher(AudioNoteVector, '/Team2/cmd_audio', 10)
-
-    def update(self) -> Status:
-        msg = AudioNoteVector()
-        msg.notes = [AudioNote(frequency=880, max_runtime=Duration(sec=0, nanosec=300_000_000))]
-        self.audio_pub.publish(msg)
-        return Status.SUCCESS
+def on_beep(self) -> State:
+    msg = AudioNoteVector()
+    msg.notes = [AudioNote(frequency=880, max_runtime=Duration(sec=0, nanosec=300_000_000))]
+    self.audio_pub.publish(msg)
+    self.sleep(0.5)
+    return State.GO_TO_ROUTE_START
 ```
 
-**2. Add it to the Sequence in `build_tree`:**
+**3. Create the publisher in `__init__`:**
 
 ```python
-DoAction(nav, ...),
-Beep(nav),
-GoToPose('GoToRouteStart', ...),
+self.audio_pub = navigator.create_publisher(AudioNoteVector, '/Team2/cmd_audio', 10)
 ```
 
-A leaf that takes time returns `Status.RUNNING` until it is done (see
-`DoAction`); never block inside `update()`.
+**4. Register the method in `self._handlers` and connect it:**
+
+```python
+State.BEEP: self.on_beep,
+```
+
+Then let a previous state return `State.BEEP`, e.g. `on_do_action`.
 
 Other Create3 topics you can use for actions:
 
@@ -542,13 +540,13 @@ Start simple and build up:
 
 1. **Your points:** change `waypoints.yaml` to points on your map and run the
    example unchanged.
-2. **Beep:** add the `Beep` leaf from section 5.5 at the action point.
+2. **Beep:** add the `BEEP` state from section 5.5 at the action point.
 3. **Patrol:** visit a list of points from the YAML in a loop, three times,
    then return to the start.
 4. **Turn and look:** at every point, turn 360° slowly before moving on.
-5. **Recover:** when a goal fails, try the next point instead of failing
-   (hint: a `Selector`). Count the failures.
-6. **Button start:** wait in a `WaitForButton` leaf until a robot button is
+5. **Recover:** when a goal fails, try the next point instead of going to
+   `FAILED`. Count the failures.
+6. **Button start:** wait in a `WAIT_FOR_BUTTON` state until a robot button is
    pressed (`/Team2/interface_buttons`).
 7. **Your idea:** a delivery route, a light show, a "follow the walls" tour …
 

@@ -225,21 +225,19 @@ ros2 launch imdl_autonomy run_task.launch.py mission_file:=/root/maps/test01.yam
 
 ---
 
-## 4. Eigener Behavior Tree (Paket `imdl_statemachine`)
+## 4. Eigene Statemachine (Paket `imdl_statemachine`)
 
 Fährt einen festen Ablauf, ohne Missionsdatei und ohne Task-Solver:
 
 ```
-Mission (Sequence)
- ├── Nav2Ready → GoToActionPoint → DoAction
- └── GoToRouteStart → SlowRoute → Turn
-     (der erste Fehler / Timeout bricht die Mission ab)
+INIT → GO_TO_ACTION_POINT → DO_ACTION → GO_TO_ROUTE_START → SLOW_ROUTE → TURN → DONE
+                       (jeder Fehler / Timeout → FAILED)
 ```
 
 | Datei | Inhalt |
 | --- | --- |
 | `ros2_ws/src/imdl_statemachine/config/waypoints.yaml` | Startpose, Punkte, langsames Tempo, Wendewinkel |
-| `ros2_ws/src/imdl_statemachine/imdl_statemachine/behavior_tree.py` | Blätter (py_trees) und `build_tree()`. Die eigene Aktion gehört in `DoAction`. |
+| `ros2_ws/src/imdl_statemachine/imdl_statemachine/state_machine.py` | Zustände. Je Zustand eine Methode `on_...`, die den nächsten Zustand zurückgibt. Die eigene Aktion gehört in `on_do_action`. |
 | `ros2_ws/src/imdl_autonomy/launch/map_navigation.launch.py` | AMCL + Nav2 mit der gespeicherten Karte, ohne Missionen |
 
 Einmalig im Container bauen (`ws_build` enthält das Paket bereits):
@@ -271,15 +269,15 @@ ros2 launch imdl_autonomy map_navigation.launch.py map:=/root/maps/meine_karte.y
 Container-Terminal 3: Roboter an die SLAM-Startmarkierung stellen, dann:
 
 ```bash
-ros2 run imdl_statemachine behavior_tree
+ros2 run imdl_statemachine state_machine
 # andere Punkte-Datei:
-ros2 run imdl_statemachine behavior_tree --ros-args -p waypoints_file:=/root/maps/meine_punkte.yaml
+ros2 run imdl_statemachine state_machine --ros-args -p waypoints_file:=/root/maps/meine_punkte.yaml
 ```
 
 - Ctrl-C bricht die laufende Fahrt ab (Nav2-Goal wird gecancelt).
-- Das laufende Blatt zeigt `ros2 topic echo /behavior_tree/state`.
+- Den aktuellen Zustand zeigt `ros2 topic echo /state_machine/state`.
 - Das langsame Tempo wird über `/speed_limit` gesetzt und danach wieder aufgehoben.
-- Nach Änderungen an `waypoints.yaml` oder `behavior_tree.py` ist kein Build
+- Nach Änderungen an `waypoints.yaml` oder `state_machine.py` ist kein Build
   nötig (`--symlink-install`), nur neu starten.
 
 ---

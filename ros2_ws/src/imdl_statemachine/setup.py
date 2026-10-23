@@ -20,11 +20,11 @@ setup(
     zip_safe=True,
     maintainer='Lennart Troesken',
     maintainer_email='lennart.troesken@tum.de',
-    description='Waypoint behavior tree on top of Nav2 and a saved SLAM map.',
+    description='Waypoint state machine on top of Nav2 and a saved SLAM map.',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            'behavior_tree = imdl_statemachine.behavior_tree:main',
+            'state_machine = imdl_statemachine.state_machine:main',
         ],
     },
 )
