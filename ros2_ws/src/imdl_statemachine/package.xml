@@ -2,7 +2,7 @@
 <package format="3">
   <name>imdl_statemachine</name>
   <version>0.1.0</version>
-  <description>Waypoint state machine on top of Nav2 and a saved SLAM map.</description>
+  <description>Waypoint behavior tree on top of Nav2 and a saved SLAM map.</description>
   <maintainer email="lennart.troesken@tum.de">Lennart Troesken</maintainer>
   <license>Apache-2.0</license>
 
@@ -13,6 +13,7 @@
   <exec_depend>nav2_msgs</exec_depend>
   <exec_depend>nav2_simple_commander</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>py_trees</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>slam</exec_depend>
   <exec_depend>std_msgs</exec_depend>
