@@ -1,0 +1,11 @@
+mission_id: task5_a
+task: task5
+frame_id: map
+coordinate_mode: absolute
+obstacle_mode: unknown
+map_yaml: ../../maps/arena_unknown.yaml
+time_limit_sec: 600.0
+color_order: [red, blue, yellow]
+poses:
+  A: {x: 0.50, y: -0.50, yaw: 2.356194}
+  C: {x: -0.55, y: 0.00, yaw: 0.00}

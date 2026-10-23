@@ -1,0 +1,9 @@
+build/
+install/
+log/
+build_humble/
+install_humble/
+log_humble/
+src/sllidar_ros2/
+**/__pycache__/
+.pytest_cache/

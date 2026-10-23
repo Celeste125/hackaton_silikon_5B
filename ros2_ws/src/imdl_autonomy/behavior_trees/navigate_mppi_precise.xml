@@ -1,0 +1,27 @@
+<!--
+  Precise camera/manipulator positioning with path commitment. The caller
+  preflights the live costmap before starting this tree. MPPI still reacts to
+  the rolling local costmap, while the global route remains stable until a
+  genuine FollowPath failure triggers a bounded recomputation.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="2" name="NavigatePreciseRecovery">
+      <Sequence name="NavigatePreciseCommittedPath">
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+        <FollowPath path="{path}" controller_id="RobustMPPI" goal_checker_id="precise_goal_checker"/>
+      </Sequence>
+      <ReactiveFallback name="PreciseRecoveryFallback">
+        <GoalUpdated/>
+        <RoundRobin name="PreciseRecoveryActions">
+          <Sequence name="ClearPreciseCostmaps">
+            <ClearEntireCostmap name="ClearPreciseLocalRecovery" service_name="local_costmap/clear_entirely_local_costmap"/>
+            <ClearEntireCostmap name="ClearPreciseGlobalRecovery" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </Sequence>
+          <Spin spin_dist="0.35"/>
+          <Wait wait_duration="0.5"/>
+        </RoundRobin>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

@@ -1,0 +1,21 @@
+uint8 PICK=1
+uint8 PLACE=2
+uint8 RELEASE=3
+
+uint8 operation
+string object_id
+string color
+geometry_msgs/PoseStamped target_pose
+uint32 stack_index
+---
+uint16 OK=0
+uint16 INVALID_REQUEST=1
+uint16 OBJECT_NOT_CONFIRMED=2
+uint16 OUT_OF_REACH=3
+uint16 GAZEBO_UNAVAILABLE=4
+uint16 NOT_CARRYING=5
+uint16 INTERNAL_ERROR=255
+
+bool success
+uint16 error_code
+string message

@@ -1,0 +1,53 @@
+# Local Codex/editor state, backups, and operating-system files.
+/.codex
+/.sync_backups/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Python environments, caches, and local test reports.
+.venv/
+venv/
+env/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Local credentials. Commit a separately named example file when needed.
+.env
+.env.*
+!.env.example
+
+# ROS 2 generated workspace outputs. These are also listed in ros2_ws/.gitignore
+# so that the workspace remains clean if it is used independently.
+/ros2_ws/build/
+/ros2_ws/install/
+/ros2_ws/log/
+
+# Recorded ROS bags are reproducible test evidence, not Git source files.
+*.bag
+*.db3
+*.mcap
+
+# Demonstration recordings are local evidence, not source-controlled artifacts.
+/document/*.mp4
+/document/*.webm
+
+# Large local ML artifacts. Keep only layout documentation and model provenance
+# in Git. The deployable model is versioned with the ROS perception package.
+/yolo_seg/data/
+/yolo_seg/experiment/
+/yolo_seg/model/*
+!/yolo_seg/README.md
+!/yolo_seg/model/README.md
+!/yolo_seg/registry/
+!/yolo_seg/registry/**

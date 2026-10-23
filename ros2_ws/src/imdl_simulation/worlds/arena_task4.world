@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <world name="imdl_arena_task4">
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so"><update_rate>1.0</update_rate></plugin>
+    <scene><shadows>false</shadows></scene>
+    <include><uri>model://ground_plane</uri></include>
+    <include><uri>model://sun</uri></include>
+    <physics name="default_physics" type="ode"><max_step_size>0.001</max_step_size><real_time_update_rate>1000</real_time_update_rate></physics>
+    <model name="arena_walls"><static>true</static><link name="walls">
+      <collision name="north_wall_collision"><pose>0 0.815 0.15 0 0 0</pose><geometry><box><size>1.63 0.05 0.30</size></box></geometry></collision><visual name="north_wall_visual"><pose>0 0.815 0.15 0 0 0</pose><geometry><box><size>1.63 0.05 0.30</size></box></geometry></visual>
+      <collision name="south_wall_collision"><pose>0 -0.815 0.15 0 0 0</pose><geometry><box><size>1.63 0.05 0.30</size></box></geometry></collision><visual name="south_wall_visual"><pose>0 -0.815 0.15 0 0 0</pose><geometry><box><size>1.63 0.05 0.30</size></box></geometry></visual>
+      <collision name="east_wall_collision"><pose>0.815 0 0.15 0 0 0</pose><geometry><box><size>0.05 1.63 0.30</size></box></geometry></collision><visual name="east_wall_visual"><pose>0.815 0 0.15 0 0 0</pose><geometry><box><size>0.05 1.63 0.30</size></box></geometry></visual>
+      <collision name="west_wall_collision"><pose>-0.815 0 0.15 0 0 0</pose><geometry><box><size>0.05 1.63 0.30</size></box></geometry></collision><visual name="west_wall_visual"><pose>-0.815 0 0.15 0 0 0</pose><geometry><box><size>0.05 1.63 0.30</size></box></geometry></visual>
+    </link></model>
+    <model name="obstacle_cylinder_1"><static>true</static><pose>-0.42 0.15 0.10 0 0 0</pose><link name="link"><visual name="visual"><geometry><cylinder><radius>0.115</radius><length>0.20</length></cylinder></geometry></visual><collision name="collision"><geometry><cylinder><radius>0.115</radius><length>0.20</length></cylinder></geometry></collision></link></model>
+    <model name="obstacle_cylinder_2"><static>true</static><pose>0.28 -0.22 0.10 0 0 0</pose><link name="link"><visual name="visual"><geometry><cylinder><radius>0.115</radius><length>0.20</length></cylinder></geometry></visual><collision name="collision"><geometry><cylinder><radius>0.115</radius><length>0.20</length></cylinder></geometry></collision></link></model>
+    <model name="red_block"><static>false</static><allow_auto_disable>true</allow_auto_disable><pose>0.52 0.48 0.0175 0 0 0</pose><link name="link"><gravity>false</gravity><inertial><mass>0.03</mass><inertia><ixx>0.000006125</ixx><iyy>0.000006125</iyy><izz>0.000006125</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial><visual name="visual"><geometry><box><size>0.035 0.035 0.035</size></box></geometry><material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material></visual><collision name="collision"><geometry><box><size>0.035 0.035 0.035</size></box></geometry></collision></link></model>
+  </world>
+</sdf>

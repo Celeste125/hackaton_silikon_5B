@@ -1,0 +1,10 @@
+bool open
+---
+bool success
+bool gripped
+int32 status
+string message
+---
+int32 position
+int32 current
+string message

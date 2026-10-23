@@ -1,0 +1,38 @@
+model_version: imdl_yolo_seg_v1
+artifact: yolo11n_seg_imdl.pt
+sha256: 63481d80ed1d4f9b2a70e6c540cc484c28631308d189d6c4b565b22f14de086e
+architecture: YOLO11n-seg
+task: instance_segmentation
+input_size: 640
+reference_runtime:
+  ultralytics: 8.4.87
+  torch: 2.5.1+cu121
+classes:
+  0: red_block
+  1: yellow_block
+  2: green_block
+  3: blue_block
+  4: blue_obstacle
+default_inference:
+  confidence_threshold: 0.35
+  iou_threshold: 0.70
+  max_inference_rate_hz: 10.0
+evaluation:
+  dataset: final_v1
+  split: test
+  images: 28
+  instances: 46
+  corrected_test_labels: true
+  mask_precision: 0.990
+  mask_recall: 0.985
+  mask_map50: 0.984
+  mask_map50_95: 0.865
+  fixed_threshold:
+    confidence: 0.35
+    mask_iou: 0.50
+    true_positives: 45
+    false_positives: 0
+    false_negatives: 1
+notes:
+  - The test images come from the same two recording sessions as the training data.
+  - Jetson latency and independent-session generalization are not yet validated.

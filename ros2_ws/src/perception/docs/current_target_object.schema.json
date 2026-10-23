@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://imdl.local/schemas/current-target-object-v1.json",
+  "title": "IMDL current target v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["selected", "requested_class", "is_stale", "selection_reason", "object"],
+  "properties": {
+    "selected": {"type": "boolean"},
+    "requested_class": {"enum": ["red_block", "yellow_block", "green_block", "blue_block"]},
+    "is_stale": {"type": "boolean"},
+    "selection_reason": {"enum": ["fresh_match", "stale_last_known", "no_eligible_target"]},
+    "object": {"type": ["object", "null"]}
+  }
+}

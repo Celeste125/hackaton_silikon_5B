@@ -1,0 +1,194 @@
+mission_manager:
+  ros__parameters:
+    startup_timeout_sec: 90.0
+    # Task 3-5 support nodes are launched after the Gazebo readiness gate.
+    # Allow their service discovery to settle instead of failing on one tick.
+    manipulator_startup_timeout_sec: 12.0
+    localization_loss_grace_sec: 1.5
+    navigation_timeout_sec: 75.0
+    navigation_retries: 2
+    search_timeout_sec: 85.0
+    max_search_viewpoints: 12
+    # Every candidate is checked against Nav2's live costmap before driving.
+    # Task 5 has a larger official time budget and may require a wider sweep.
+    task5_search_timeout_sec: 180.0
+    task5_max_search_viewpoints: 24
+    search_candidate_pool: 60
+    search_rejected_radius_m: 0.16
+    search_plan_timeout_sec: 5.0
+    # A search pose is an observation location, not a manipulation target.
+    # Accept a nearby collision-free pose and reject local-controller minima
+    # quickly when neither translation, rotation nor path distance improves.
+    search_view_position_tolerance_m: 0.08
+    # Keep observation poses away from walls. The margin covers the endpoint
+    # tolerance and localization noise, preventing a nominally valid view from
+    # leaving the circular Create3 unable to turn.
+    search_view_clearance_margin_m: 0.10
+    search_stall_timeout_sec: 8.0
+    # Rotation is useful for heading alignment, but cannot mask a controller
+    # that makes no translational progress toward a distant viewpoint.
+    search_translation_stall_timeout_sec: 7.0
+    search_progress_distance_m: 0.03
+    search_progress_yaw_rad: 0.12
+    # The camera has roughly a 1.21 rad horizontal FOV. Six safe 1 rad Nav2
+    # spins at the first three high-value viewpoints cover every azimuth with
+    # overlap, closing the blind-direction gap of single-heading NBV samples.
+    search_sweep_viewpoints: 3
+    search_sweep_segments: 6
+    search_sweep_step_rad: 1.0
+    search_sweep_segment_timeout_sec: 8.0
+    # Candidate poses come from the walls-only mission map, then Nav2 checks
+    # each one against the current lidar costmap. This keeps unknown cylinders
+    # unknown while avoiding long controller failures at blocked ring poses.
+    transport_plan_timeout_sec: 3.0
+    camera_approach_candidate_limit: 8
+    manipulation_approach_candidate_limit: 12
+    camera_dwell_sec: 0.8
+    camera_confirmation_timeout_sec: 4.0
+    # A PICK is allowed only after three new frames place the selected block
+    # within about 2.9 degrees of the optical axis. Nav2 Spin performs bounded
+    # corrections; the solver never bypasses the safety command chain.
+    camera_center_timeout_sec: 15.0
+    camera_observation_max_age_sec: 0.75
+    camera_center_tolerance_rad: 0.05
+    camera_center_samples: 3
+    camera_center_max_corrections: 4
+    camera_center_max_step_rad: 0.25
+    camera_center_gain: 0.55
+    camera_center_settle_sec: 0.55
+    # The final perception stack publishes the typed YOLO + RealSense contract.
+    typed_perception_topic: /perception/detected_objects
+    perception_minimum_confidence: 0.35
+    # RealSense range_m is the primary metric confirmation for a typed block.
+    realsense_range_match_tolerance_m: 0.06
+    # Canonical contract for either Gazebo or a future Arduino/micro-ROS
+    # publisher. It is a distance cross-check only, never a color detector.
+    ultrasonic_topic: /ultrasonic/front/range
+    ultrasonic_required_for_pick: false
+    ultrasonic_max_age_sec: 0.35
+    ultrasonic_samples: 3
+    ultrasonic_sensor_offset_x_m: 0.190
+    ultrasonic_object_half_extent_m: 0.0175
+    ultrasonic_match_tolerance_m: 0.035
+    ultrasonic_max_target_bearing_rad: 0.10
+    # Camera optical center is about 0.183 m ahead of base_link. Observe from
+    # farther away, then move into the overlap of camera and simulated reach.
+    camera_view_distance_m: 0.36
+    approach_distance_m: 0.27
+    # Keep enough departure room after placing a still-collidable block at C.
+    drop_approach_distance_m: 0.31
+    # A manipulation approach is a valid annulus around the object, not one
+    # exact sampled point. Camera evidence identifies the intended block.
+    pick_terminal_min_distance_m: 0.24
+    # Leave 5 mm reserve below the manipulator's independently enforced 34 cm.
+    pick_terminal_max_distance_m: 0.335
+    pick_terminal_max_bearing_rad: 0.55
+    pick_terminal_camera_error_rad: 0.58
+    pick_terminal_track_age_sec: 1.0
+    drop_terminal_min_distance_m: 0.285
+    drop_terminal_max_distance_m: 0.345
+    drop_terminal_max_bearing_rad: 0.22
+    # Reach the ring in a forward-drivable yaw, then face C with Nav2 Spin.
+    drop_alignment_timeout_sec: 12.0
+    terminal_stop_settle_sec: 0.30
+    # The manipulator publishes a placement event. Low-obstacle fusion consumes
+    # it before stale costmap marks are cleared and the next Task-5 leg starts.
+    placed_object_sync_sec: 0.35
+    placed_costmap_settle_sec: 0.45
+    camera_retry_separation_m: 0.20
+    manipulation_retry_separation_m: 0.14
+    # Circumscribed Create3 footprint including the forward camera and padding.
+    robot_clearance_m: 0.205
+    final_yaw_tolerance_rad: 0.10
+    diagnostic_log_period_sec: 2.0
+    create3_motion_control_node: /Team2/motion_control
+
+object_registry:
+  ros__parameters:
+    target_frame: map
+    typed_input_topic: /perception/detected_objects
+    minimum_detection_confidence: 0.35
+    output_topic: /tracked_objects
+    confirmations_required: 3
+    gate_chi2: 9.21
+    stale_after_sec: 1.5
+    track_lifetime_sec: 5.0
+    measurement_variance_m2: 0.0016
+    max_detection_age_sec: 2.0
+    # Confirmed camera tracks are also lightweight geometric obstacles. This
+    # protects against 3.5 cm blocks below the main lidar plane without using
+    # color semantics in the navigation controller.
+    obstacle_output_topic: /autonomy/tracked_obstacle_cloud
+    obstacle_min_confidence: 0.42
+    obstacle_max_age_sec: 1.5
+    obstacle_half_extent_m: 0.0175
+    placed_object_event_topic: /autonomy/placed_object_event
+    placed_obstacle_exclusion_radius_m: 0.075
+
+depth_obstacle_projector:
+  ros__parameters:
+    # Geometry-only safety source. The aligned RGB-D image is sampled at
+    # roughly 1/64 of its pixels, transformed with TF, and restricted to the
+    # height band occupied by the 3.5 cm blocks.
+    depth_topic: /camera/camera/aligned_depth_to_color/image_raw
+    camera_info_topic: /camera/camera/aligned_depth_to_color/camera_info
+    output_topic: /autonomy/depth_obstacle_cloud
+    height_reference_frame: base_link
+    pixel_stride: 8
+    minimum_range_m: 0.08
+    maximum_range_m: 0.90
+    minimum_height_m: 0.008
+    maximum_height_m: 0.080
+    voxel_size_m: 0.012
+    maximum_points: 900
+    publish_rate_hz: 10.0
+    transform_timeout_sec: 0.08
+    placed_object_frame: map
+    placed_object_event_topic: /autonomy/placed_object_event
+    placed_obstacle_exclusion_radius_m: 0.075
+
+localization_guard:
+  ros__parameters:
+    map_frame: map
+    base_frame: base_link
+    scan_timeout_sec: 1.5
+    odom_timeout_sec: 0.8
+    amcl_timeout_sec: 1.5
+    amcl_motion_limit_m: 0.04
+    amcl_motion_limit_rad: 0.10
+    position_std_limit_m: 0.20
+    yaw_std_limit_rad: 0.60
+    active_scan_after_sec: 4.0
+
+safety_monitor:
+  ros__parameters:
+    scan_timeout_sec: 1.5
+    odom_timeout_sec: 0.8
+    startup_grace_sec: 5.0
+    hazard_hold_sec: 2.0
+
+simulation_manipulator:
+  ros__parameters:
+    map_frame: map
+    base_frame: base_link
+    # Covers the 0.27 m nominal ring plus Nav2's 0.07 m positional tolerance.
+    pick_max_distance_m: 0.34
+    # Independent last-line check: the block must be centered in front of the
+    # robot even if a solver regression attempts to skip visual alignment.
+    pick_max_bearing_rad: 0.10
+    pick_target_tolerance_m: 0.08
+    # Prevent the Gazebo adapter from teleporting a block from a false track.
+    entity_track_tolerance_m: 0.06
+    # A collision-free virtual tray behind the lidar; no raw Gazebo attachment
+    # plugin is required and the carried block stays outside the lidar plane.
+    carry_offset_x_m: -0.08
+    carry_height_m: 0.16
+    block_size_m: 0.035
+    service_timeout_sec: 2.0
+    entity_set_retries: 3
+    entity_pose_tolerance_m: 0.012
+    entity_yaw_tolerance_rad: 0.05
+    place_max_distance_m: 0.36
+    place_max_bearing_rad: 0.25
+    placed_object_event_topic: /autonomy/placed_object_event
+    placed_obstacle_exclusion_radius_m: 0.075

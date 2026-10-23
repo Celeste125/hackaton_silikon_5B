@@ -1,0 +1,609 @@
+amcl:
+  ros__parameters:
+    use_sim_time: true
+    alpha1: 0.15
+    alpha2: 0.15
+    alpha3: 0.12
+    alpha4: 0.12
+    alpha5: 0.10
+    base_frame_id: base_link
+    global_frame_id: map
+    odom_frame_id: odom
+    beam_skip_distance: 0.35
+    beam_skip_error_threshold: 0.90
+    beam_skip_threshold: 0.30
+    do_beamskip: false
+    lambda_short: 0.1
+    laser_likelihood_max_dist: 0.30
+    laser_max_range: 3.0
+    laser_min_range: 0.12
+    laser_model_type: likelihood_field
+    max_beams: 90
+    max_particles: 1800
+    min_particles: 500
+    pf_err: 0.04
+    pf_z: 0.99
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    resample_interval: 1
+    robot_model_type: nav2_amcl::DifferentialMotionModel
+    save_pose_rate: 0.5
+    sigma_hit: 0.12
+    tf_broadcast: true
+    transform_tolerance: 0.35
+    update_min_a: 0.03
+    update_min_d: 0.01
+    z_hit: 0.75
+    z_max: 0.05
+    z_rand: 0.18
+    z_short: 0.02
+    scan_topic: scan
+    set_initial_pose: false
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: true
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: odom
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    wait_for_service_timeout: 2000
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_smooth_path_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_drive_on_heading_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_truncate_path_local_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_goal_updated_controller_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+      - nav2_controller_cancel_bt_node
+      - nav2_path_longer_on_approach_bt_node
+      - nav2_wait_cancel_bt_node
+      - nav2_spin_cancel_bt_node
+      - nav2_back_up_cancel_bt_node
+      - nav2_drive_on_heading_cancel_bt_node
+
+bt_navigator_navigate_to_pose_rclcpp_node:
+  ros__parameters:
+    use_sim_time: true
+
+bt_navigator_navigate_through_poses_rclcpp_node:
+  ros__parameters:
+    use_sim_time: true
+
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_frequency: 20.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.20
+    odom_topic: odom
+    progress_checker_plugin: progress_checker
+    goal_checker_plugins: [general_goal_checker, mission_pose_goal_checker, precise_goal_checker, task1_goal_checker]
+    controller_plugins: [FastRPP, RobustMPPI, ReverseMPPI]
+
+    progress_checker:
+      plugin: nav2_controller::PoseProgressChecker
+      required_movement_radius: 0.02
+      required_movement_angle: 0.12
+      movement_time_allowance: 8.0
+
+    general_goal_checker:
+      plugin: nav2_controller::SimpleGoalChecker
+      stateful: true
+      # Transport/search positions may settle a few centimeters off the
+      # sampled ring on a differential drive. The 0.27 m ring plus this
+      # tolerance remains inside the independently checked 0.34 m reach.
+      xy_goal_tolerance: 0.07
+      # Camera, pick, and drop rings carry meaningful viewing direction. The
+      # camera and manipulator still perform independent final verification.
+      yaw_goal_tolerance: 0.20
+
+    precise_goal_checker:
+      plugin: nav2_controller::SimpleGoalChecker
+      stateful: true
+      xy_goal_tolerance: 0.025
+      yaw_goal_tolerance: 0.10
+
+    mission_pose_goal_checker:
+      plugin: nav2_controller::SimpleGoalChecker
+      stateful: true
+      # Stay inside the PDF's full-score limits while retaining margin for
+      # localization noise and avoiding unsafe over-correction in tight gaps.
+      xy_goal_tolerance: 0.09
+      yaw_goal_tolerance: 0.70
+
+    task1_goal_checker:
+      plugin: nav2_controller::SimpleGoalChecker
+      stateful: true
+      # Task 1 is accepted at the official 10 cm positioning limit. A final
+      # Nav2 Spin independently restores the requested yaw at A.
+      xy_goal_tolerance: 0.10
+      yaw_goal_tolerance: 0.25
+
+    FastRPP:
+      plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
+      desired_linear_vel: 0.18
+      lookahead_dist: 0.16
+      min_lookahead_dist: 0.09
+      max_lookahead_dist: 0.28
+      lookahead_time: 1.0
+      rotate_to_heading_angular_vel: 0.90
+      transform_tolerance: 0.20
+      use_velocity_scaled_lookahead_dist: true
+      min_approach_linear_velocity: 0.035
+      approach_velocity_scaling_dist: 0.22
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.2
+      use_regulated_linear_velocity_scaling: true
+      use_cost_regulated_linear_velocity_scaling: true
+      regulated_linear_scaling_min_radius: 0.32
+      regulated_linear_scaling_min_speed: 0.035
+      use_rotate_to_heading: true
+      allow_reversing: false
+      # Avoid switching in and out of heading-only mode on the small lateral
+      # steps produced by the 2 cm Smac grid.
+      rotate_to_heading_min_angle: 0.60
+      max_angular_accel: 2.0
+      max_robot_pose_search_dist: 1.0
+      use_interpolation: true
+
+    RobustMPPI:
+      # Humble uses a string-valued primary_controller on the same namespace.
+      # The shim gives MPPI a drivable initial heading without bypassing Nav2.
+      plugin: nav2_rotation_shim_controller::RotationShimController
+      primary_controller: nav2_mppi_controller::MPPIController
+      angular_dist_threshold: 0.45
+      angular_disengage_threshold: 0.18
+      forward_sampling_distance: 0.18
+      rotate_to_heading_angular_vel: 0.90
+      max_angular_accel: 2.0
+      simulate_ahead_time: 1.0
+      # Mission poses have a separate full-score checker. Precise camera poses
+      # still use the shim's collision-checked final heading correction.
+      rotate_to_goal_heading: true
+      closed_loop: true
+      time_steps: 64
+      model_dt: 0.05
+      batch_size: 2000
+      vx_std: 0.20
+      vy_std: 0.0
+      wz_std: 0.45
+      vx_max: 0.16
+      # Tasks 2-5 escape tight geometry by rotating and replanning. The
+      # official Create3 safety controller can reject reverse commands near a
+      # hazard, leaving MPPI active while odometry remains stationary. Only
+      # Task 1's dedicated ReverseMPPI may command vx < 0.
+      vx_min: 0.0
+      vy_max: 0.0
+      wz_max: 0.90
+      iteration_count: 1
+      retry_attempt_limit: 2
+      temperature: 0.25
+      gamma: 0.015
+      motion_model: DiffDrive
+      visualize: false
+      reset_period: 1.0
+      regenerate_noises: false
+      prune_distance: 0.65
+      transform_tolerance: 0.20
+      critics: [ConstraintCritic, CostCritic, GoalCritic, GoalAngleCritic, PathAlignCritic, PathFollowCritic, PathAngleCritic, PreferForwardCritic, VelocityDeadbandCritic]
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.5
+        critical_cost: 300.0
+        consider_footprint: true
+        collision_cost: 1000000.0
+        # Keep footprint collision checks, but stop optimizing for the
+        # inflation gradient near valid goals close to arena boundaries.
+        near_goal_distance: 0.50
+        trajectory_point_step: 1
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 6.0
+        threshold_to_consider: 0.35
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        # Prioritize reaching the measured position. Blending the final yaw
+        # too early can leave a confined goal behind the differential drive.
+        threshold_to_consider: 0.15
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 8.0
+        max_path_occupancy_ratio: 0.20
+        trajectory_point_step: 2
+        threshold_to_consider: 0.30
+        offset_from_furthest: 6
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.45
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.2
+        offset_from_furthest: 3
+        threshold_to_consider: 0.30
+        max_angle_to_furthest: 0.85
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.40
+      VelocityDeadbandCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 18.0
+        deadband_velocities: [0.04, 0.0, 0.04]
+
+    ReverseMPPI:
+      plugin: nav2_mppi_controller::MPPIController
+      time_steps: 36
+      model_dt: 0.05
+      batch_size: 1200
+      # Sample enough of the negative range to avoid converging to a
+      # near-zero local optimum on the straight B -> A return path.
+      vx_std: 0.10
+      vy_std: 0.0
+      wz_std: 0.24
+      vx_max: 0.0
+      vx_min: -0.14
+      vy_max: 0.0
+      wz_max: 0.75
+      iteration_count: 1
+      temperature: 0.22
+      gamma: 0.015
+      motion_model: DiffDrive
+      visualize: false
+      reset_period: 1.0
+      regenerate_noises: false
+      prune_distance: 0.60
+      transform_tolerance: 0.20
+      critics: [ConstraintCritic, CostCritic, GoalCritic, GoalAngleCritic, PathAlignCritic, PathFollowCritic, PathAngleCritic, VelocityDeadbandCritic]
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        critical_cost: 300.0
+        consider_footprint: true
+        collision_cost: 1000000.0
+        near_goal_distance: 0.20
+        trajectory_point_step: 1
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 6.0
+        threshold_to_consider: 0.35
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.25
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 18.0
+        max_path_occupancy_ratio: 0.15
+        trajectory_point_step: 2
+        threshold_to_consider: 0.30
+        offset_from_furthest: 8
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 14.0
+        offset_from_furthest: 6
+        threshold_to_consider: 0.40
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        offset_from_furthest: 3
+        threshold_to_consider: 0.30
+        max_angle_to_furthest: 0.85
+        forward_preference: false
+      VelocityDeadbandCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 20.0
+        deadband_velocities: [0.055, 0.0, 0.04]
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 12.0
+      publish_frequency: 5.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 2
+      height: 2
+      resolution: 0.02
+      footprint: "[[0.19, 0.06], [0.15, 0.13], [0.07, 0.17], [-0.12, 0.16], [-0.17, 0.08], [-0.17, -0.08], [-0.12, -0.16], [0.07, -0.17], [0.15, -0.13], [0.19, -0.06]]"
+      footprint_padding: 0.01
+      plugins: [obstacle_layer, front_ultrasonic_layer, inflation_layer]
+      obstacle_layer:
+        plugin: nav2_costmap_2d::ObstacleLayer
+        enabled: true
+        observation_sources: scan tracked_objects depth_obstacles
+        scan:
+          topic: scan
+          max_obstacle_height: 1.0
+          clearing: true
+          marking: true
+          data_type: LaserScan
+          inf_is_valid: true
+          raytrace_max_range: 2.0
+          raytrace_min_range: 0.12
+          obstacle_max_range: 1.7
+          obstacle_min_range: 0.12
+        tracked_objects:
+          topic: /autonomy/tracked_obstacle_cloud
+          min_obstacle_height: -0.02
+          max_obstacle_height: 0.10
+          clearing: false
+          marking: true
+          data_type: PointCloud2
+          observation_persistence: 0.50
+          obstacle_max_range: 3.0
+          obstacle_min_range: 0.0
+        depth_obstacles:
+          topic: /autonomy/depth_obstacle_cloud
+          min_obstacle_height: -0.02
+          max_obstacle_height: 0.10
+          clearing: true
+          marking: true
+          data_type: PointCloud2
+          observation_persistence: 0.30
+          raytrace_max_range: 0.95
+          raytrace_min_range: 0.08
+          obstacle_max_range: 0.90
+          obstacle_min_range: 0.08
+      front_ultrasonic_layer:
+        plugin: nav2_costmap_2d::RangeSensorLayer
+        enabled: false
+        topics: [/ultrasonic/front/range]
+        input_sensor_type: VARIABLE
+        clear_on_max_reading: true
+        no_readings_timeout: 0.75
+        phi: 1.2
+        inflate_cone: 1.0
+        clear_threshold: 0.25
+        mark_threshold: 0.70
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer
+        cost_scaling_factor: 7.5
+        inflation_radius: 0.28
+      always_send_full_costmap: true
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 5.0
+      publish_frequency: 3.0
+      global_frame: map
+      robot_base_frame: base_link
+      resolution: 0.02
+      track_unknown_space: false
+      footprint: "[[0.19, 0.06], [0.15, 0.13], [0.07, 0.17], [-0.12, 0.16], [-0.17, 0.08], [-0.17, -0.08], [-0.12, -0.16], [0.07, -0.17], [0.15, -0.13], [0.19, -0.06]]"
+      footprint_padding: 0.01
+      plugins: [static_layer, obstacle_layer, inflation_layer]
+      static_layer:
+        plugin: nav2_costmap_2d::StaticLayer
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: nav2_costmap_2d::ObstacleLayer
+        enabled: true
+        observation_sources: scan tracked_objects
+        scan:
+          topic: scan
+          max_obstacle_height: 1.0
+          clearing: true
+          marking: true
+          data_type: LaserScan
+          # Retain several complete 360-degree scans so a global-costmap clear
+          # cannot briefly erase an unknown static cylinder before replanning.
+          observation_persistence: 4.0
+          inf_is_valid: true
+          raytrace_max_range: 2.0
+          raytrace_min_range: 0.12
+          obstacle_max_range: 1.7
+          obstacle_min_range: 0.12
+        tracked_objects:
+          topic: /autonomy/tracked_obstacle_cloud
+          min_obstacle_height: -0.02
+          max_obstacle_height: 0.10
+          clearing: false
+          marking: true
+          data_type: PointCloud2
+          observation_persistence: 0.75
+          obstacle_max_range: 3.0
+          obstacle_min_range: 0.0
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer
+        cost_scaling_factor: 7.5
+        inflation_radius: 0.28
+      always_send_full_costmap: true
+
+map_server:
+  ros__parameters:
+    use_sim_time: true
+    yaml_filename: ""
+
+planner_server:
+  ros__parameters:
+    use_sim_time: true
+    expected_planner_frequency: 8.0
+    planner_plugins: [GridBased]
+    GridBased:
+      plugin: nav2_smac_planner/SmacPlanner2D
+      tolerance: 0.04
+      downsample_costmap: false
+      allow_unknown: false
+      max_iterations: 100000
+      max_on_approach_iterations: 1000
+      max_planning_time: 0.75
+      cost_travel_multiplier: 2.0
+      # Preserve the measured mission yaw in the final path pose. Task 2 uses
+      # the precise goal checker, while GoalAlignment verifies the result.
+      use_final_approach_orientation: false
+      smoother:
+        max_iterations: 800
+        w_smooth: 0.30
+        w_data: 0.20
+
+smoother_server:
+  ros__parameters:
+    use_sim_time: true
+    smoother_plugins: [simple_smoother]
+    simple_smoother:
+      plugin: nav2_smoother::SimpleSmoother
+      tolerance: 1.0e-10
+      max_its: 800
+      do_refinement: true
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: true
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 15.0
+    behavior_plugins: [spin, wait]
+    spin:
+      plugin: nav2_behaviors/Spin
+    wait:
+      plugin: nav2_behaviors/Wait
+    global_frame: odom
+    robot_base_frame: base_link
+    transform_tolerance: 0.20
+    simulate_ahead_time: 1.5
+    max_rotational_vel: 0.75
+    min_rotational_vel: 0.08
+    rotational_acc_lim: 2.0
+
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: true
+    smoothing_frequency: 30.0
+    scale_velocities: false
+    # The downstream Collision Monitor may scale commands. OPEN_LOOP prevents
+    # that safety scaling from becoming a false low-speed feedback equilibrium.
+    feedback: OPEN_LOOP
+    max_velocity: [0.18, 0.0, 0.90]
+    min_velocity: [-0.10, 0.0, -0.90]
+    max_accel: [0.35, 0.0, 2.0]
+    max_decel: [-0.45, 0.0, -4.0]
+    odom_topic: odom
+    odom_duration: 0.15
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 0.5
+
+collision_monitor:
+  ros__parameters:
+    use_sim_time: true
+    base_frame_id: base_link
+    odom_frame_id: odom
+    cmd_vel_in_topic: cmd_vel_smoothed
+    cmd_vel_out_topic: cmd_vel_safe
+    transform_tolerance: 0.20
+    # Gazebo can briefly miss a 10 Hz scan deadline on slower laptops. This
+    # remains fail-closed while avoiding false stops for a single delayed scan.
+    source_timeout: 0.80
+    base_shift_correction: true
+    stop_pub_timeout: 0.30
+    polygons: [StopZone, SlowZone]
+    StopZone:
+      type: polygon
+      # A static all-around stop polygon can trap a differential-drive robot
+      # beside an obstacle by forbidding the in-place turn needed to escape.
+      # Nav2's approach model instead projects the exact footprint along the
+      # requested velocity and scales only commands that would collide. It
+      # also protects the front camera overhang without a second static zone
+      # that could latch while the robot is trying to turn away.
+      action_type: approach
+      footprint_topic: /local_costmap/published_footprint
+      time_before_collision: 1.0
+      simulation_time_step: 0.05
+      max_points: 2
+      visualize: true
+      polygon_pub_topic: /autonomy/collision_stop_zone
+      enabled: true
+    SlowZone:
+      type: polygon
+      points: [0.29, 0.09, 0.23, 0.20, 0.10, 0.27, -0.19, 0.25, -0.26, 0.12, -0.26, -0.12, -0.19, -0.25, 0.10, -0.27, 0.23, -0.20, 0.29, -0.09]
+      action_type: slowdown
+      max_points: 2
+      slowdown_ratio: 0.60
+      visualize: true
+      polygon_pub_topic: /autonomy/collision_slow_zone
+      enabled: true
+    # Keep the hard real-time gate on predictable sensors. RGB-D geometry is
+    # fused into the rolling local costmap, where an occasional slow camera
+    # frame cannot deadlock every velocity command.
+    observation_sources: [scan, front_ultrasonic, tracked_objects]
+    scan:
+      type: scan
+      topic: scan
+      enabled: true
+    front_ultrasonic:
+      type: range
+      topic: /ultrasonic/front/range
+      obstacles_angle: 0.0261799388
+      source_timeout: 0.60
+      enabled: false
+    tracked_objects:
+      type: pointcloud
+      topic: /autonomy/tracked_obstacle_cloud
+      min_height: -0.02
+      max_height: 0.10
+      source_timeout: 0.60
+      enabled: true

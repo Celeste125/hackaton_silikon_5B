@@ -1,0 +1,191 @@
+[INFO] [launch]: All log files can be found below /root/.ros/log/2026-10-23-12-23-37-783848-ThinkpadERL-125991
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [map_server-1]: process started with pid [125993]
+[INFO] [amcl-2]: process started with pid [125995]
+[INFO] [odom_tf_republisher-3]: process started with pid [125997]
+[INFO] [object_registry-4]: process started with pid [125999]
+[amcl-2] [INFO] [1792758218.114256136] [amcl]: 
+[amcl-2] 	amcl lifecycle node launched. 
+[amcl-2] 	Waiting on external lifecycle transitions to activate
+[amcl-2] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[amcl-2] [INFO] [1792758218.114960778] [amcl]: Creating
+[map_server-1] [INFO] [1792758218.117819149] [map_server]: 
+[map_server-1] 	map_server lifecycle node launched. 
+[map_server-1] 	Waiting on external lifecycle transitions to activate
+[map_server-1] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[map_server-1] [INFO] [1792758218.117932261] [map_server]: Creating
+[object_registry-4] Traceback (most recent call last):
+[object_registry-4]   File "/ws/install_humble/imdl_autonomy/lib/imdl_autonomy/object_registry", line 33, in <module>
+[object_registry-4]     sys.exit(load_entry_point('imdl-autonomy', 'console_scripts', 'object_registry')())
+[object_registry-4]   File "/ws/build_humble/imdl_autonomy/imdl_autonomy/object_registry.py", line 304, in main
+[object_registry-4]     node = ObjectRegistryNode()
+[object_registry-4]   File "/ws/build_humble/imdl_autonomy/imdl_autonomy/object_registry.py", line 99, in __init__
+[object_registry-4]     self.tf_buffer = Buffer(cache_time=Duration(seconds=10.0))
+[object_registry-4] NameError: name 'Duration' is not defined
+[odom_tf_republisher-3] [INFO] [1792758218.292901784] [odom_tf_republisher]: odom_tf_republisher started: odom=/Team2/odom, tf fallback=/Team2/tf, transform=odom -> base_link, stamp=local clock
+[ERROR] [object_registry-4]: process has died [pid 125999, exit code 1, cmd '/ws/install_humble/imdl_autonomy/lib/imdl_autonomy/object_registry --ros-args -r __node:=object_registry --params-file /ws/install_humble/imdl_autonomy/share/imdl_autonomy/config/solver_params.yaml --params-file /tmp/launch_params_3va0o7f_'].
+[INFO] [lifecycle_manager-5]: process started with pid [126041]
+[lifecycle_manager-5] [INFO] [1792758219.123972815] [lifecycle_manager_localization]: Creating
+[lifecycle_manager-5] [INFO] [1792758219.126375691] [lifecycle_manager_localization]: [34m[1mCreating and initializing lifecycle service clients[0m[0m
+[lifecycle_manager-5] [INFO] [1792758219.129041511] [lifecycle_manager_localization]: [34m[1mStarting managed nodes bringup...[0m[0m
+[lifecycle_manager-5] [INFO] [1792758219.129075755] [lifecycle_manager_localization]: [34m[1mConfiguring map_server[0m[0m
+[map_server-1] [INFO] [1792758219.129300797] [map_server]: Configuring
+[map_server-1] [INFO] [1792758219.129366771] [map_io]: Loading yaml file: /root/maps/my_map.yaml
+[map_server-1] [INFO] [1792758219.129637840] [map_io]: resolution: 0.05
+[map_server-1] [INFO] [1792758219.129648950] [map_io]: origin[0]: -1.69
+[map_server-1] [INFO] [1792758219.129656695] [map_io]: origin[1]: -1.13
+[map_server-1] [INFO] [1792758219.129665251] [map_io]: origin[2]: 0
+[map_server-1] [INFO] [1792758219.129672264] [map_io]: free_thresh: 0.25
+[map_server-1] [INFO] [1792758219.129677294] [map_io]: occupied_thresh: 0.65
+[map_server-1] [INFO] [1792758219.129682834] [map_io]: mode: trinary
+[map_server-1] [INFO] [1792758219.129688465] [map_io]: negate: 0
+[map_server-1] [INFO] [1792758219.129925870] [map_io]: Loading image_file: /root/maps/my_map.pgm
+[map_server-1] [INFO] [1792758219.131544746] [map_io]: Read map /root/maps/my_map.pgm: 107 X 120 map @ 0.05 m/cell
+[lifecycle_manager-5] [INFO] [1792758219.134993324] [lifecycle_manager_localization]: [34m[1mConfiguring amcl[0m[0m
+[amcl-2] [INFO] [1792758219.135216753] [amcl]: Configuring
+[amcl-2] [INFO] [1792758219.135329714] [amcl]: initTransforms
+[amcl-2] [INFO] [1792758219.142139546] [amcl]: initPubSub
+[amcl-2] [INFO] [1792758219.145511250] [amcl]: Subscribed to map topic.
+[lifecycle_manager-5] [INFO] [1792758219.147768383] [lifecycle_manager_localization]: [34m[1mActivating map_server[0m[0m
+[map_server-1] [INFO] [1792758219.147909377] [map_server]: Activating
+[map_server-1] [INFO] [1792758219.148087832] [map_server]: Creating bond (map_server) to lifecycle manager.
+[amcl-2] [INFO] [1792758219.148198129] [amcl]: Received a 107 X 120 map @ 0.050 m/pix
+[lifecycle_manager-5] [INFO] [1792758219.251247315] [lifecycle_manager_localization]: Server map_server connected with bond.
+[lifecycle_manager-5] [INFO] [1792758219.251297419] [lifecycle_manager_localization]: [34m[1mActivating amcl[0m[0m
+[amcl-2] [INFO] [1792758219.251532560] [amcl]: Activating
+[amcl-2] [INFO] [1792758219.251577003] [amcl]: Creating bond (amcl) to lifecycle manager.
+[lifecycle_manager-5] [INFO] [1792758219.354795817] [lifecycle_manager_localization]: Server amcl connected with bond.
+[lifecycle_manager-5] [INFO] [1792758219.354852543] [lifecycle_manager_localization]: [34m[1mManaged nodes are active[0m[0m
+[lifecycle_manager-5] [INFO] [1792758219.354867291] [lifecycle_manager_localization]: [34m[1mCreating bond timer...[0m[0m
+[INFO] [ros2-6]: process started with pid [126056]
+[INFO] [controller_server-7]: process started with pid [126068]
+[INFO] [smoother_server-8]: process started with pid [126070]
+[INFO] [planner_server-9]: process started with pid [126072]
+[INFO] [behavior_server-10]: process started with pid [126074]
+[INFO] [bt_navigator-11]: process started with pid [126076]
+[INFO] [velocity_smoother-12]: process started with pid [126078]
+[INFO] [collision_monitor-13]: process started with pid [126080]
+[bt_navigator-11] [INFO] [1792758221.150684801] [bt_navigator]: 
+[bt_navigator-11] 	bt_navigator lifecycle node launched. 
+[bt_navigator-11] 	Waiting on external lifecycle transitions to activate
+[bt_navigator-11] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[bt_navigator-11] [INFO] [1792758221.150865550] [bt_navigator]: Creating
+[planner_server-9] [INFO] [1792758221.153679327] [planner_server]: 
+[planner_server-9] 	planner_server lifecycle node launched. 
+[planner_server-9] 	Waiting on external lifecycle transitions to activate
+[planner_server-9] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[controller_server-7] [INFO] [1792758221.160450907] [controller_server]: 
+[controller_server-7] 	controller_server lifecycle node launched. 
+[controller_server-7] 	Waiting on external lifecycle transitions to activate
+[controller_server-7] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[planner_server-9] [INFO] [1792758221.163092250] [planner_server]: Creating
+[collision_monitor-13] [INFO] [1792758221.169257363] [collision_monitor]: 
+[collision_monitor-13] 	collision_monitor lifecycle node launched. 
+[collision_monitor-13] 	Waiting on external lifecycle transitions to activate
+[collision_monitor-13] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[velocity_smoother-12] [INFO] [1792758221.169480541] [velocity_smoother]: 
+[velocity_smoother-12] 	velocity_smoother lifecycle node launched. 
+[velocity_smoother-12] 	Waiting on external lifecycle transitions to activate
+[velocity_smoother-12] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[smoother_server-8] [INFO] [1792758221.171022603] [smoother_server]: 
+[smoother_server-8] 	smoother_server lifecycle node launched. 
+[smoother_server-8] 	Waiting on external lifecycle transitions to activate
+[smoother_server-8] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[smoother_server-8] [INFO] [1792758221.174776143] [smoother_server]: Creating smoother server
+[controller_server-7] [INFO] [1792758221.177045168] [controller_server]: Creating controller server
+[behavior_server-10] [INFO] [1792758221.183266536] [behavior_server]: 
+[behavior_server-10] 	behavior_server lifecycle node launched. 
+[behavior_server-10] 	Waiting on external lifecycle transitions to activate
+[behavior_server-10] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[planner_server-9] [INFO] [1792758221.187795951] [global_costmap.global_costmap]: 
+[planner_server-9] 	global_costmap lifecycle node launched. 
+[planner_server-9] 	Waiting on external lifecycle transitions to activate
+[planner_server-9] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[planner_server-9] [INFO] [1792758221.188773444] [global_costmap.global_costmap]: Creating Costmap
+[controller_server-7] [INFO] [1792758221.198121225] [local_costmap.local_costmap]: 
+[controller_server-7] 	local_costmap lifecycle node launched. 
+[controller_server-7] 	Waiting on external lifecycle transitions to activate
+[controller_server-7] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[controller_server-7] [INFO] [1792758221.198993792] [local_costmap.local_costmap]: Creating Costmap
+[amcl-2] [INFO] [1792758221.262763599] [amcl]: initialPoseReceived
+[amcl-2] [INFO] [1792758221.262887070] [amcl]: Setting pose (1792758221.262887): 0.000 0.000 0.000
+[amcl-2] [INFO] [1792758222.264145694] [amcl]: initialPoseReceived
+[amcl-2] [INFO] [1792758222.264252995] [amcl]: Setting pose (1792758222.264253): 0.000 0.000 0.000
+[amcl-2] [INFO] [1792758223.263781750] [amcl]: initialPoseReceived
+[amcl-2] [INFO] [1792758223.263867741] [amcl]: Setting pose (1792758223.263868): 0.000 0.000 0.000
+[odom_tf_republisher-3] [INFO] [1792758223.891222144] [odom_tf_republisher]: Publishing odom TF from odom
+[INFO] [lifecycle_manager-14]: process started with pid [126152]
+[amcl-2] [INFO] [1792758224.263802224] [amcl]: initialPoseReceived
+[amcl-2] [INFO] [1792758224.263962916] [amcl]: Setting pose (1792758224.263963): 0.000 0.000 0.000
+[lifecycle_manager-14] [INFO] [1792758224.800371259] [lifecycle_manager_navigation]: Creating
+[lifecycle_manager-14] [INFO] [1792758224.804675912] [lifecycle_manager_navigation]: [34m[1mCreating and initializing lifecycle service clients[0m[0m
+[amcl-2] [INFO] [1792758225.264178933] [amcl]: initialPoseReceived
+[amcl-2] [INFO] [1792758225.264303968] [amcl]: Setting pose (1792758225.264304): 0.000 0.000 0.000
+[lifecycle_manager-14] [INFO] [1792758225.474391424] [lifecycle_manager_navigation]: [34m[1mStarting managed nodes bringup...[0m[0m
+[lifecycle_manager-14] [INFO] [1792758225.474443251] [lifecycle_manager_navigation]: [34m[1mConfiguring controller_server[0m[0m
+[controller_server-7] [INFO] [1792758225.474697919] [controller_server]: Configuring controller interface
+[controller_server-7] [INFO] [1792758225.474887194] [controller_server]: getting goal checker plugins..
+[controller_server-7] [INFO] [1792758225.474913423] [controller_server]: Controller frequency set to 20.0000Hz
+[controller_server-7] [INFO] [1792758225.474946946] [local_costmap.local_costmap]: Configuring
+[controller_server-7] [INFO] [1792758225.480445588] [local_costmap.local_costmap]: Using plugin "obstacle_layer"
+[controller_server-7] [INFO] [1792758225.483774862] [local_costmap.local_costmap]: Subscribed to Topics: scan tracked_objects depth_obstacles
+[controller_server-7] [INFO] [1792758225.491821452] [local_costmap.local_costmap]: Initialized plugin "obstacle_layer"
+[controller_server-7] [INFO] [1792758225.491891995] [local_costmap.local_costmap]: Using plugin "front_ultrasonic_layer"
+[controller_server-7] [INFO] [1792758225.492776594] [local_costmap.local_costmap]: front_ultrasonic_layer: VARIABLE as input_sensor_type given
+[controller_server-7] [INFO] [1792758225.493558520] [local_costmap.local_costmap]: RangeSensorLayer: subscribed to topic /ultrasonic/front/range
+[controller_server-7] [INFO] [1792758225.493590069] [local_costmap.local_costmap]: Initialized plugin "front_ultrasonic_layer"
+[controller_server-7] [INFO] [1792758225.493602583] [local_costmap.local_costmap]: Using plugin "inflation_layer"
+[controller_server-7] [INFO] [1792758225.494312083] [local_costmap.local_costmap]: Initialized plugin "inflation_layer"
+[controller_server-7] [INFO] [1792758225.503458506] [controller_server]: Created progress_checker : progress_checker of type nav2_controller::PoseProgressChecker
+[controller_server-7] [INFO] [1792758225.504423676] [controller_server]: Created goal checker : general_goal_checker of type nav2_controller::SimpleGoalChecker
+[controller_server-7] [INFO] [1792758225.504860045] [controller_server]: Created goal checker : mission_pose_goal_checker of type nav2_controller::SimpleGoalChecker
+[controller_server-7] [INFO] [1792758225.505217475] [controller_server]: Created goal checker : precise_goal_checker of type nav2_controller::SimpleGoalChecker
+[controller_server-7] [INFO] [1792758225.505608228] [controller_server]: Created goal checker : task1_goal_checker of type nav2_controller::SimpleGoalChecker
+[controller_server-7] [INFO] [1792758225.505889606] [controller_server]: Controller Server has general_goal_checker mission_pose_goal_checker precise_goal_checker task1_goal_checker  goal checkers available.
+[controller_server-7] [INFO] [1792758225.506645603] [controller_server]: Created controller : FastRPP of type nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
+[controller_server-7] [INFO] [1792758225.513414077] [controller_server]: Created controller : RobustMPPI of type nav2_rotation_shim_controller::RotationShimController
+[controller_server-7] [INFO] [1792758225.515466075] [controller_server]: Created internal controller for rotation shimming: RobustMPPI of type nav2_mppi_controller::MPPIController
+[controller_server-7] [INFO] [1792758225.517149803] [controller_server]: Controller period is equal to model dt. Control sequence shifting is ON
+[controller_server-7] [INFO] [1792758225.518673601] [controller_server]: ConstraintCritic instantiated with 1 power and 4.000000 weight.
+[controller_server-7] [INFO] [1792758225.518734896] [controller_server]: Critic loaded : mppi::critics::ConstraintCritic
+[controller_server-7] [INFO] [1792758225.519505100] [controller_server]: InflationCostCritic instantiated with 1 power and 300.000000 / 0.017717 weights. Critic will collision check based on footprint cost.
+[controller_server-7] [INFO] [1792758225.519538202] [controller_server]: Critic loaded : mppi::critics::CostCritic
+[controller_server-7] [INFO] [1792758225.520031998] [controller_server]: GoalCritic instantiated with 1 power and 6.000000 weight.
+[controller_server-7] [INFO] [1792758225.520060001] [controller_server]: Critic loaded : mppi::critics::GoalCritic
+[controller_server-7] [INFO] [1792758225.520483936] [controller_server]: GoalAngleCritic instantiated with 1 power, 2.000000 weight, and 0.150000 angular threshold.
+[controller_server-7] [INFO] [1792758225.520557915] [controller_server]: Critic loaded : mppi::critics::GoalAngleCritic
+[controller_server-7] [INFO] [1792758225.521488179] [controller_server]: ReferenceTrajectoryCritic instantiated with 1 power and 8.000000 weight
+[controller_server-7] [INFO] [1792758225.521517634] [controller_server]: Critic loaded : mppi::critics::PathAlignCritic
+[controller_server-7] [INFO] [1792758225.522164758] [controller_server]: Critic loaded : mppi::critics::PathFollowCritic
+[INFO] [ros2-6]: process has finished cleanly [pid 126056]
+[controller_server-7] [INFO] [1792758225.523052773] [controller_server]: PathAngleCritic instantiated with 1 power and 2.200000 weight. Reversing not allowed.
+[controller_server-7] [INFO] [1792758225.523087709] [controller_server]: Critic loaded : mppi::critics::PathAngleCritic
+[controller_server-7] [INFO] [1792758225.523570574] [controller_server]: PreferForwardCritic instantiated with 1 power and 5.000000 weight.
+[controller_server-7] [INFO] [1792758225.523593888] [controller_server]: Critic loaded : mppi::critics::PreferForwardCritic
+[controller_server-7] [INFO] [1792758225.524124183] [controller_server]: VelocityDeadbandCritic instantiated with 1 power, 18 weight, deadband_velocity [0.04,0,0.04]
+[controller_server-7] [INFO] [1792758225.524156233] [controller_server]: Critic loaded : mppi::critics::VelocityDeadbandCritic
+[controller_server-7] [INFO] [1792758225.534030671] [controller_server]: Optimizer reset
+[controller_server-7] [INFO] [1792758225.537632656] [MPPIController]: Configured MPPI Controller: RobustMPPI
+[controller_server-7] [INFO] [1792758225.538014292] [controller_server]: Created controller : ReverseMPPI of type nav2_mppi_controller::MPPIController
+[controller_server-7] [INFO] [1792758225.539756780] [controller_server]: Controller period is equal to model dt. Control sequence shifting is ON
+[controller_server-7] [INFO] [1792758225.540866812] [controller_server]: ConstraintCritic instantiated with 1 power and 4.000000 weight.
+[controller_server-7] [INFO] [1792758225.540900485] [controller_server]: Critic loaded : mppi::critics::ConstraintCritic
+[controller_server-7] [INFO] [1792758225.541777129] [controller_server]: InflationCostCritic instantiated with 1 power and 300.000000 / 0.019685 weights. Critic will collision check based on footprint cost.
+[controller_server-7] [INFO] [1792758225.541808187] [controller_server]: Critic loaded : mppi::critics::CostCritic
+[controller_server-7] [INFO] [1792758225.542239115] [controller_server]: GoalCritic instantiated with 1 power and 6.000000 weight.
+[controller_server-7] [INFO] [1792758225.542264884] [controller_server]: Critic loaded : mppi::critics::GoalCritic
+[controller_server-7] [INFO] [1792758225.542718514] [controller_server]: GoalAngleCritic instantiated with 1 power, 3.000000 weight, and 0.250000 angular threshold.
+[controller_server-7] [INFO] [1792758225.542746036] [controller_server]: Critic loaded : mppi::critics::GoalAngleCritic
+[controller_server-7] [INFO] [1792758225.543544574] [controller_server]: ReferenceTrajectoryCritic instantiated with 1 power and 18.000000 weight
+[controller_server-7] [INFO] [1792758225.543567196] [controller_server]: Critic loaded : mppi::critics::PathAlignCritic
+[controller_server-7] [INFO] [1792758225.544117037] [controller_server]: Critic loaded : mppi::critics::PathFollowCritic
+[controller_server-7] [INFO] [1792758225.544882092] [controller_server]: PathAngleCritic instantiated with 1 power and 3.000000 weight. Reversing allowed.
+[controller_server-7] [INFO] [1792758225.544912519] [controller_server]: Critic loaded : mppi::critics::PathAngleCritic
+[controller_server-7] [INFO] [1792758225.545390555] [controller_server]: VelocityDeadbandCritic instantiated with 1 power, 20 weight, deadband_velocity [0.055,0,0.04]
+[controller_server-7] [INFO] [1792758225.545413549] [controller_server]: Critic loaded : mppi::critics::VelocityDeadbandCritic
+[controller_server-7] [INFO] [1792758225.549244794] [controller_server]: Optimizer reset
+[controller_server-7] [INFO] [1792758225.551613306] [MPPIController]: Configured MPPI Controller: ReverseMPPI
+[controller_server-7] [INFO] [1792758225.551643452] [controller_server]: Controller Server has FastRPP RobustMPPI ReverseMPPI  controllers available.
+[controller_server-7] [WARN] [1792758225.659308276] [controller_server.rclcpp]: failed to send response to /controller_server/change_state (timeout): client will not receive response, at ./src/rmw_response.cpp:154, at ./src/rcl/service.c:314
+[odom_tf_republisher-3] [INFO] [1792759242.331563372] [odom_tf_republisher]: Publishing odom TF from namespaced_tf
+[odom_tf_republisher-3] [INFO] [1792759244.191558873] [odom_tf_republisher]: Publishing odom TF from odom

@@ -1,0 +1,11 @@
+mission_id: task2_b
+task: task2
+frame_id: map
+coordinate_mode: absolute
+obstacle_mode: unknown
+map_yaml: ../../maps/arena_unknown.yaml
+time_limit_sec: 180.0
+poses:
+  A: {x: -0.50, y: -0.55, yaw: 0.00}
+  B: {x: 0.50, y: -0.55, yaw: 1.570796}
+  C: {x: 0.15, y: 0.55, yaw: 3.141593}
