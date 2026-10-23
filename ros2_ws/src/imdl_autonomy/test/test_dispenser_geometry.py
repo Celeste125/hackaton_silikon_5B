@@ -89,3 +89,80 @@ def test_offset_pixel_deprojects_by_similar_triangles(node):
     point = node._deproject(_camera_info(), 420, 240, 2.0)
     assert point.point.x == pytest.approx(100 * 2.0 / 600.0)
     assert point.point.y == pytest.approx(0.0)
+
+
+# --------------------------------------------------------------------------
+# Bearing-only geometry: the path a depthless camera such as a C920 takes.
+# --------------------------------------------------------------------------
+
+import math
+
+from nav_msgs.msg import OccupancyGrid
+
+
+def test_intrinsics_fall_back_to_field_of_view(node):
+    """v4l2_camera publishes a zeroed K until calibrated."""
+    info = CameraInfo()
+    info.k = [0.0] * 9
+    colour = Image(width=640, height=480)
+    fx, fy, cx, cy = node._intrinsics(info, colour)
+    hfov = math.radians(node.get_parameter('fallback_hfov_deg').value)
+    assert fx == pytest.approx((640 / 2) / math.tan(hfov / 2))
+    assert (cx, cy) == pytest.approx((320.0, 240.0))
+    assert fy == pytest.approx(fx)
+
+
+def test_calibrated_intrinsics_are_preferred(node):
+    info = CameraInfo()
+    info.k = [600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0]
+    fx, _, cx, _ = node._intrinsics(info, Image(width=640, height=480))
+    assert (fx, cx) == pytest.approx((600.0, 320.0))
+
+
+def test_perpendicular_bearings_intersect(node):
+    """A ray east from the origin and one north from (2, -2) meet at (2, 0)."""
+    node._rays = [(np.array([0.0, 0.0]), np.array([1.0, 0.0]))]
+    point = node._triangulate(np.array([2.0, -2.0]), np.array([0.0, 1.0]))
+    assert point == pytest.approx((2.0, 0.0), abs=1e-9)
+
+
+def test_near_parallel_bearings_are_refused(node):
+    """Barely moving leaves the intersection unconstrained along the view."""
+    node._rays = [(np.array([0.0, 0.0]), np.array([1.0, 0.0]))]
+    assert node._triangulate(np.array([0.0, 0.1]), np.array([1.0, 0.0])) is None
+
+
+def _grid_with_wall_at_x(wall_x: float, fill: int) -> OccupancyGrid:
+    grid = OccupancyGrid()
+    grid.info.resolution = 0.05
+    grid.info.width = 200
+    grid.info.height = 200
+    grid.info.origin.position.x = -5.0
+    grid.info.origin.position.y = -5.0
+    cells = np.full((200, 200), fill, dtype=np.int8)
+    column = int((wall_x - grid.info.origin.position.x) / grid.info.resolution)
+    cells[:, column:column + 2] = 100
+    grid.data = cells.flatten().tolist()
+    return grid
+
+
+def test_raycast_stops_at_the_first_wall(node):
+    node._map = _grid_with_wall_at_x(2.0, fill=0)
+    hit = node._raycast(np.array([0.0, 0.0]), np.array([1.0, 0.0]))
+    assert hit is not None
+    assert hit[0] == pytest.approx(2.0, abs=0.06)
+    assert hit[1] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_raycast_passes_through_unexplored_cells(node):
+    """-1 is unknown, not an obstacle; stopping there would be wrong."""
+    node._map = _grid_with_wall_at_x(2.0, fill=-1)
+    hit = node._raycast(np.array([0.0, 0.0]), np.array([1.0, 0.0]))
+    assert hit is not None
+    assert hit[0] == pytest.approx(2.0, abs=0.06)
+
+
+def test_raycast_gives_up_past_its_range(node):
+    node._map = _grid_with_wall_at_x(2.0, fill=0)
+    # Pointing away from the wall: nothing to hit before the grid edge.
+    assert node._raycast(np.array([0.0, 0.0]), np.array([-1.0, 0.0])) is None
