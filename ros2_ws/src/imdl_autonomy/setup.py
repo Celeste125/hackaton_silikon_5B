@@ -33,6 +33,7 @@ setup(
         'console_scripts': [
             'depth_obstacle_projector = '
             'imdl_autonomy.depth_obstacle_projector:main',
+            'frontier_explorer = imdl_autonomy.frontier_explorer:main',
             'generate_maps = imdl_autonomy.map_from_world:main',
             'mission_manager = imdl_autonomy.mission_manager:main',
             'object_registry = imdl_autonomy.object_registry:main',

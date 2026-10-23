@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-tf2-tools \
     python3-colcon-common-extensions \
     python3-numpy \
+    python3-scipy \
     python3-yaml \
     python3-pil \
  && rm -rf /var/lib/apt/lists/*

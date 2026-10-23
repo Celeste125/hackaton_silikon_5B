@@ -80,6 +80,36 @@ it. Needs `ros-humble-twist-mux` on the machine that runs the launch file
 `sudo apt install ros-humble-twist-mux`). Pass `use_twist_mux:=false` for the
 old direct wiring.
 
+### Let it map the arena by itself
+
+`frontier_explore.launch.py` adds a frontier explorer on top of the live SLAM
+run: it finds the borders between known free space and unknown space, sends the
+best one to Nav2 as a goal, and repeats until nothing actionable is left. Start
+the normal run first, wait for `Managed nodes are active`, then:
+
+```bash
+ros2 launch imdl_autonomy frontier_explore.launch.py
+```
+
+**The robot drives itself as soon as this starts.** It only ever sends Nav2
+goals, so the collision monitor still gates every motion, and teleop on
+`/Team2/cmd_vel_teleop` outranks it the moment you press a key. Ctrl-C cancels
+the goal in flight.
+
+Ported from the AckermannRover project (branch
+`26-automatically-scan-whole-map`) with its logic untouched so it stays
+diffable against upstream. Its own defaults were tuned for a car-like rover in
+office corridors, so the launch file overrides them for the Create3 in this
+arena -- most importantly `min_frontier_distance`, which upstream sets to 1.0 m
+and which would reject every frontier in a few-metre arena and declare the map
+finished before moving. Needs `python3-scipy` (already in `docker/Dockerfile`).
+
+Tune from the command line, e.g. in a tight arena:
+
+```bash
+ros2 launch imdl_autonomy frontier_explore.launch.py min_frontier_distance:=0.25 min_frontier_size:=4
+```
+
 ### One tmux session for all of it
 
 ```bash
