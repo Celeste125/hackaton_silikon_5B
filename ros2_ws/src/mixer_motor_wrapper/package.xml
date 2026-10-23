@@ -3,13 +3,13 @@
 <package format="3">
   <name>mixer_motor_wrapper</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>BTS7960 driver for the 2 mixer motors.</description>
   <maintainer email="fudayl@todo.todo">fudayl</maintainer>
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
-  <depend>geometry_msgs</depend>
+  <!-- Also needs python3-lgpio (apt) on the Pi. -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

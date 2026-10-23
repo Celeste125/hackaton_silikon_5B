@@ -15,7 +15,7 @@ setup(
     zip_safe=True,
     maintainer='fudayl',
     maintainer_email='fudayl@todo.todo',
-    description='TODO: Package description',
+    description='HX711 load cells under the mixer container: publishes total weight.',
     license='TODO: License declaration',
     extras_require={
         'test': [
@@ -24,7 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'loadcell_node = loadcell_wrapper.loadcell_node:main'
+            'loadcell_node = loadcell_wrapper.loadcell_node:main',
+            'calibrate = loadcell_wrapper.calibrate:main',
         ],
     },
 )

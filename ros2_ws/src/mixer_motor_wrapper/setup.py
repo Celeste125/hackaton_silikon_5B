@@ -15,7 +15,7 @@ setup(
     zip_safe=True,
     maintainer='fudayl',
     maintainer_email='fudayl@todo.todo',
-    description='TODO: Package description',
+    description='BTS7960 driver for the 2 mixer motors.',
     license='TODO: License declaration',
     extras_require={
         'test': [
