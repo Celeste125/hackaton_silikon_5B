@@ -11,34 +11,48 @@ IMDL_CAM_* in the tmux script) when the geometry actually matters.
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+
+def _nodes(context, *args, **kwargs):
+    """Built here so width/height/fps can be plain integers on the command
+    line. v4l2_camera wants lists, and a list argument cannot survive the
+    ssh -> bash -ic quoting the Jetson is driven through."""
+    width = int(LaunchConfiguration('width').perform(context))
+    height = int(LaunchConfiguration('height').perform(context))
+    fps = int(LaunchConfiguration('fps').perform(context))
+    return [Node(
+        package='v4l2_camera',
+        executable='v4l2_camera_node',
+        name='webcam',
+        namespace='webcam',
+        output='screen',
+        parameters=[{
+            'video_device': LaunchConfiguration('video_device'),
+            # YUYV, not MJPG: this v4l2_camera sets MJPG happily and then
+            # cannot decode it ('Unrecognized image encoding []').
+            'pixel_format': 'YUYV',
+            'output_encoding': 'rgb8',
+            'image_size': [width, height],
+            'time_per_frame': [1, fps],
+            'camera_frame_id': 'webcam_optical_frame',
+        }],
+    )]
 
 
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('video_device', default_value='/dev/video0'),
-        Node(
-            package='v4l2_camera',
-            executable='v4l2_camera_node',
-            name='webcam',
-            namespace='webcam',
-            output='screen',
-            parameters=[{
-                'video_device': LaunchConfiguration('video_device'),
-                # YUYV, not MJPG: this v4l2_camera sets MJPG happily and then
-                # cannot decode it ('Unrecognized image encoding []' and the
-                # node aborts). YUYV is what it actually supports.
-                'pixel_format': 'YUYV',
-                'output_encoding': 'rgb8',
-                'image_size': [640, 480],
-                # rgb8 at VGA is ~0.9 MB a frame, so cap the rate rather than
-                # flood a WiFi shared with a hundred other hosts.
-                'time_per_frame': [1, 5],
-                'camera_frame_id': 'webcam_optical_frame',
-            }],
-        ),
+        # rgb8 is 3 bytes a pixel and DDS fragments every frame into hundreds
+        # of UDP packets; losing one loses the frame. On a congested network
+        # 640x480 can drop nearly everything, so these are tunable:
+        #   width:=320 height:=240  is a quarter of the bytes.
+        DeclareLaunchArgument('width', default_value='640'),
+        DeclareLaunchArgument('height', default_value='480'),
+        DeclareLaunchArgument('fps', default_value='5'),
+        OpaqueFunction(function=_nodes),
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
