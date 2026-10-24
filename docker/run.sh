@@ -34,7 +34,10 @@ fi
 
 mkdir -p "${MAPS_DIR}"
 # The container carries no X cookie of its own: it relies on this xhost call
-# opening the laptop's X server to local connections. Over SSH, DISPLAY=:0
+# opening the laptop's X server to local connections. '+local:' and not
+# '+local:docker': the named form adds an entry nothing matches on an Xwayland
+# session, so xhost succeeds and RViz still dies with "Authorization required,
+# but no authorization protocol specified". Over SSH, DISPLAY=:0
 # alone is not enough -- GDM keeps the cookie under /run/user, not in
 # ~/.Xauthority, so xhost fails and RViz never opens.
 if [[ -z "${XAUTHORITY:-}" || ! -f "${XAUTHORITY:-}" ]]; then
@@ -49,10 +52,10 @@ if [[ -z "${XAUTHORITY:-}" || ! -f "${XAUTHORITY:-}" ]]; then
     done
 fi
 
-if ! xhost +local:docker >/dev/null 2>&1; then
+if ! xhost +local: >/dev/null 2>&1; then
     echo "warning: xhost failed, so RViz will not open on this machine's screen."
     echo "  DISPLAY=${DISPLAY:-unset} XAUTHORITY=${XAUTHORITY:-unset}"
-    echo "  Fix: run 'xhost +local:docker' once in a terminal ON this machine's"
+    echo "  Fix: run 'xhost +local:' once in a terminal ON this machine's"
     echo "  desktop (not over SSH), then start this script again."
 fi
 
