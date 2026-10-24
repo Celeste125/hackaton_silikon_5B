@@ -104,6 +104,8 @@ class LoadCellNode(Node):
             # stops publishing rather than reporting a wrong total.
             if all(fresh):
                 kg = cell_weights([median(w) for w in windows], self.cal)
+                if not rclpy.ok():
+                    break  # Ctrl+C: ROS is already shut down, publishing would fail
                 self.weight_pub.publish(Float32(data=float(sum(kg))))
                 self.cells_pub.publish(Float32MultiArray(data=[float(k) for k in kg]))
                 fresh = [False] * n
