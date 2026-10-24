@@ -33,7 +33,28 @@ if docker ps --format '{{.Names}}' | grep -qx "${CONTAINER}"; then
 fi
 
 mkdir -p "${MAPS_DIR}"
-xhost +local:docker >/dev/null 2>&1 || echo "warning: xhost failed, RViz may not open"
+# The container carries no X cookie of its own: it relies on this xhost call
+# opening the laptop's X server to local connections. Over SSH, DISPLAY=:0
+# alone is not enough -- GDM keeps the cookie under /run/user, not in
+# ~/.Xauthority, so xhost fails and RViz never opens.
+if [[ -z "${XAUTHORITY:-}" || ! -f "${XAUTHORITY:-}" ]]; then
+    for candidate in \
+        "/run/user/$(id -u)/gdm/Xauthority" \
+        "/run/user/$(id -u)/.mutter-Xwaylandauth."* \
+        "${USER_HOME}/.Xauthority"; do
+        if [[ -f "${candidate}" ]]; then
+            export XAUTHORITY="${candidate}"
+            break
+        fi
+    done
+fi
+
+if ! xhost +local:docker >/dev/null 2>&1; then
+    echo "warning: xhost failed, so RViz will not open on this machine's screen."
+    echo "  DISPLAY=${DISPLAY:-unset} XAUTHORITY=${XAUTHORITY:-unset}"
+    echo "  Fix: run 'xhost +local:docker' once in a terminal ON this machine's"
+    echo "  desktop (not over SSH), then start this script again."
+fi
 
 GPU_ARGS=()
 [[ -e /dev/dri ]] && GPU_ARGS+=(--device /dev/dri)
