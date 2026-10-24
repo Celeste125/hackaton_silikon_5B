@@ -27,7 +27,9 @@ from std_msgs.msg import Float32, Float32MultiArray, Int32MultiArray
 from std_srvs.srv import Trigger
 
 from mixer_esp_driver import config
-from mixer_esp_driver.calibration import cell_weights, load_calibration, save_calibration
+from mixer_esp_driver.calibration import (
+    calibration_path, cell_weights, load_calibration, save_calibration,
+)
 
 
 class EspDriverNode(Node):
@@ -75,11 +77,11 @@ class EspDriverNode(Node):
             return False
         if self.cal is None:
             self.get_logger().warn(
-                f'No calibration at {config.CALIBRATION_FILE}: only /loadcell/raw '
+                f'No calibration at {calibration_path()}: only /loadcell/raw '
                 f'is published. Run: ros2 run mixer_esp_driver calibrate'
             )
             return False
-        self.get_logger().info(f'Loaded calibration from {config.CALIBRATION_FILE}')
+        self.get_logger().info(f'Loaded calibration from {calibration_path()}')
         return True
 
     def on_reload(self, request, response):

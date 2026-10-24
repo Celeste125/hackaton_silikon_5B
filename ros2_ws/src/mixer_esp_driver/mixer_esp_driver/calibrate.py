@@ -14,7 +14,9 @@ from std_msgs.msg import Int32MultiArray
 from std_srvs.srv import Trigger
 
 from mixer_esp_driver import config
-from mixer_esp_driver.calibration import cell_weights, compute_calibration, save_calibration
+from mixer_esp_driver.calibration import (
+    calibration_path, cell_weights, compute_calibration, save_calibration,
+)
 
 SETTLE_S = 1.5  # wait after each step: lets the load settle, drops queued old samples
 
@@ -99,7 +101,7 @@ def run(node):
         print(f'   cell {i}: {share:5.1%} of the load{note}')
 
     save_calibration(cal)
-    print(f'   saved to {config.CALIBRATION_FILE}')
+    print(f'   saved to {calibration_path()}')
     node.reload_driver()
 
     print(f'4) Check: move the weight to the corners, total should stay '

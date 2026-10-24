@@ -15,9 +15,10 @@ BAUD = 115200  # must match SERIAL_BAUD in the firmware
 NUM_CELLS = 4
 NUM_MOTORS = 2
 
-# Written by `ros2 run mixer_esp_driver calibrate`. /ws is the mounted
-# workspace, so the file survives container rebuilds.
-CALIBRATION_FILE = '/ws/loadcell_calibration.json'
+# Written by `ros2 run mixer_esp_driver calibrate`. Relative to the directory
+# you run from: start the driver AND calibrate from the ros2_ws folder, so
+# both use ros2_ws/loadcell_calibration.json. An absolute path also works.
+CALIBRATION_FILE = 'loadcell_calibration.json'
 
 # Samples averaged for tare/calibration (HX711 runs at ~10 Hz -> 30 = 3 s).
 CALIBRATION_SAMPLES = 30

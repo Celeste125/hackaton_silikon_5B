@@ -11,6 +11,11 @@ import os
 from mixer_esp_driver import config
 
 
+def calibration_path():
+    """Absolute path of the calibration file, for log messages."""
+    return os.path.abspath(config.CALIBRATION_FILE)
+
+
 def load_calibration(path=config.CALIBRATION_FILE):
     """Return the calibration dict, or None if the file doesn't exist."""
     if not os.path.exists(path):
