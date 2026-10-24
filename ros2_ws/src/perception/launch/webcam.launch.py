@@ -5,9 +5,10 @@ where the USB cable goes. The frames cross the network to wherever the
 dispenser locator runs, which is fine: an image topic tolerates WiFi lag in a
 way a TF lookup inside a message filter does not.
 
-Deliberately 640x480 at 10 fps by default. The C920 will happily do 1080p30,
+Deliberately 640x480 at a low frame rate. The C920 will happily do 1080p30,
 but the arena WiFi is congested and a VLM needs no more than VGA to put a box
-around a dispenser; MJPEG keeps it to roughly a megabit.
+around a dispenser. Raw YUYV rather than MJPEG, because this v4l2_camera
+cannot decode MJPEG even though it will set it.
 
 This camera has no depth. The locator therefore falls back to bearing-only
 geometry (ray-cast onto the SLAM wall map, and triangulation across views),
@@ -97,8 +98,11 @@ def generate_launch_description():
             description='VGA is plenty for a bounding box and kind to the WiFi.',
         ),
         DeclareLaunchArgument(
-            'pixel_format', default_value='MJPG',
-            description='MJPG keeps the USB and the network load down.',
+            'pixel_format', default_value='YUYV',
+            description=(
+                'YUYV, not MJPG: this v4l2_camera accepts MJPG and then dies '
+                'decoding it (Unrecognized image encoding []).'
+            ),
         ),
         DeclareLaunchArgument(
             'camera_info_url', default_value='',

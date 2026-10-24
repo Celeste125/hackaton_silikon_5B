@@ -27,9 +27,15 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'video_device': LaunchConfiguration('video_device'),
-                # MJPG keeps a VGA stream to about a megabit on a busy WiFi.
-                'pixel_format': 'MJPG',
+                # YUYV, not MJPG: this v4l2_camera sets MJPG happily and then
+                # cannot decode it ('Unrecognized image encoding []' and the
+                # node aborts). YUYV is what it actually supports.
+                'pixel_format': 'YUYV',
                 'output_encoding': 'rgb8',
+                'image_size': [640, 480],
+                # rgb8 at VGA is ~0.9 MB a frame, so cap the rate rather than
+                # flood a WiFi shared with a hundred other hosts.
+                'time_per_frame': [1, 5],
                 'camera_frame_id': 'webcam_optical_frame',
             }],
         ),

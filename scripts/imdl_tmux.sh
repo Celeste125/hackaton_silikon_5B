@@ -297,7 +297,7 @@ tmux send-keys -t "${SESSION}:explore" \
 # defaults to 640x480, so no list-valued parameter has to survive the quoting.
 tmux new-window -t "${SESSION}" -n camera
 tmux send-keys -t "${SESSION}:camera" \
-    "$(robot_side 'ros2 run v4l2_camera v4l2_camera_node --ros-args -r __ns:=/webcam -p video_device:=/dev/video0 -p pixel_format:=MJPG -p output_encoding:=rgb8 -p camera_frame_id:=webcam_optical_frame')"
+    "$(robot_side 'ros2 run v4l2_camera v4l2_camera_node --ros-args -r __ns:=/webcam -p video_device:=/dev/video0 -p pixel_format:=YUYV -p output_encoding:=rgb8 -p camera_frame_id:=webcam_optical_frame')"
 tmux split-window -h -t "${SESSION}:camera"
 tmux send-keys -t "${SESSION}:camera.1" \
     "$(robot_side "ros2 run tf2_ros static_transform_publisher --x ${CAM_X} --y ${CAM_Y} --z ${CAM_Z} --roll ${CAM_ROLL} --pitch ${CAM_PITCH} --yaw ${CAM_YAW} --frame-id base_link --child-frame-id webcam_optical_frame")"
