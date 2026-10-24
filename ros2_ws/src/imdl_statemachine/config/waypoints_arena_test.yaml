@@ -1,0 +1,26 @@
+# Marker route test on the arena_task1_a map (walls at about +-0.78 m).
+# Use with fake_robot, state_machine and aruco_detector; see the README steps in chat.
+initial_pose: [0.0, 0.0, 0.0]
+action_point: [0.0, 0.0, 0.0]
+route_start: [0.0, 0.0, 0.0]
+slow_route:
+  - [0.0, 0.0, 0.0]
+slow_speed_mps: 0.08
+turn_angle_rad: 1.0
+step_timeout_sec: 90.0
+mix_check_enabled: false
+marker_route:
+  enabled: true
+  ids: [0, 1, 2, 3]
+  standoff_m: 0.5
+  search_step_rad: 0.6
+  # Loop until stopped: refill marker -> feeding stops -> back to the refill marker.
+  # Stop with: ros2 topic pub --once /state_machine/stop std_msgs/msg/Empty "{}"
+  loop: true
+  refill_marker: 0
+  refill_wait_sec: 3
+  sim_markers:
+    0: [0.0, -0.78, 1.5708]
+    1: [0.78, 0.0, 3.14159]
+    2: [0.0, 0.78, -1.5708]
+    3: [-0.78, 0.0, 0.0]

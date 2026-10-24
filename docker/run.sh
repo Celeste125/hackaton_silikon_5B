@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Start the ROS 2 Humble container, or open another shell in it if it is
 # already running.
-#   ./run.sh           start / attach
+#   ./run.sh           start / open a shell (exit leaves the container running)
 #   ./run.sh --build   rebuild the image first
+#   docker stop imdl   stop the container
 set -euo pipefail
 
 IMAGE=imdl-humble
@@ -33,7 +34,10 @@ GPU_ARGS=()
 
 # --net=host: DDS discovery of Jetson and Create3.
 # --ipc=host: FastDDS shared-memory transport works between processes.
-exec docker run -it --rm --name "${CONTAINER}" \
+# The container runs detached (sleep infinity) and every terminal is a
+# `docker exec` shell, so `exit` in any of them leaves it running.
+# Stop it with: docker stop imdl
+docker run -d --rm --name "${CONTAINER}" \
     --net=host --ipc=host --pid=host \
     -e DISPLAY="${DISPLAY:-:0}" \
     -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-2}" \
@@ -42,4 +46,5 @@ exec docker run -it --rm --name "${CONTAINER}" \
     -v "${WS_DIR}":/ws \
     -v "${MAPS_DIR}":/root/maps \
     -v "${SCRIPT_DIR}/bashrc_ros.sh":/etc/imdl_bashrc.sh:ro \
-    "${IMAGE}" bash
+    "${IMAGE}" sleep infinity >/dev/null
+exec docker exec -it "${CONTAINER}" bash

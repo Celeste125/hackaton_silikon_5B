@@ -1,0 +1,32 @@
+# Marker route test on /ws/my_map.yaml (saved 2026-10-23): a room rotated about
+# 50 degrees, about 3.1 m x 5.6 m. Marker spots were picked on the map and then
+# snapped to the nearest wall face, facing into the room.
+#   ros2 launch imdl_statemachine marker_sim.launch.py \
+#     map:=/ws/my_map.yaml initial_x:=0.0 initial_y:=1.2 initial_yaw:=0.0 \
+#     waypoints_file:=$(ros2 pkg prefix imdl_statemachine)/share/imdl_statemachine/config/waypoints_my_map.yaml
+initial_pose: [0.0, 1.2, 0.0]
+action_point: [0.0, 1.2, 0.0]
+route_start: [0.0, 1.2, 0.0]
+slow_route:
+  - [0.0, 1.2, 0.0]
+slow_speed_mps: 0.08
+turn_angle_rad: 1.0
+step_timeout_sec: 90.0
+mix_check_enabled: false
+marker_route:
+  enabled: true
+  ids: [0, 1, 2]
+  standoff_m: 0.8
+  search_step_rad: 0.6
+  # Loop until stopped: refill marker -> feeding stops -> back to the refill marker.
+  # Stop with: ros2 topic pub --once /state_machine/stop std_msgs/msg/Empty "{}"
+  loop: true
+  refill_marker: 0
+  refill_wait_sec: 3
+  # [x, y, yaw of the outward normal] on the inner wall faces, visited in order.
+  # Each marker must be visible from the previous marker's stop: 1 is on the long
+  # north-west wall (the notch wall near the marked spot faces away from marker 0).
+  sim_markers:
+    0: [-0.98, -0.57, 0.6458]
+    1: [-0.54, 2.46, -0.6283]
+    2: [2.8, 2.07, 2.6704]

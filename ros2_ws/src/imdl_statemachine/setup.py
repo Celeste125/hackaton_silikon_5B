@@ -15,6 +15,7 @@ setup(
          ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -25,6 +26,9 @@ setup(
     entry_points={
         'console_scripts': [
             'state_machine = imdl_statemachine.state_machine:main',
+            'aruco_detector = imdl_statemachine.aruco_detector:main',
+            'fake_markers = imdl_statemachine.fake_markers:main',
+            'fake_robot = imdl_statemachine.fake_robot:main',
         ],
     },
 )

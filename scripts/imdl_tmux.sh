@@ -201,6 +201,9 @@ cat <<GUIDE_TEXT
   switch window   ctrl-b <number>         detach  ctrl-b d
   stop a window   ctrl-b <number> ctrl-c  kill    tmux kill-session -t ${SESSION}
 
+  dashboard   Web panel on port 8080 (every window above, in a browser).
+              Enter it any time after window 4; it needs no other window.
+
   Emergency stop: ctrl-c in the nav window, then in the tools window
     ros2 topic pub --rate 10 ${NAMESPACE}/cmd_vel geometry_msgs/msg/Twist "{}"
 GUIDE_TEXT
@@ -250,6 +253,12 @@ tmux send-keys -t "${SESSION}:tools.1" \
 tmux new-window -t "${SESSION}" -n explore
 tmux send-keys -t "${SESSION}:explore" \
     "$(nav_side 'ros2 launch imdl_autonomy frontier_explore.launch.py')"
+
+# Web control panel: cameras, map, driving, speed, dock, saved places.
+# Open http://<laptop or Jetson address>:8080 in any browser on the network.
+tmux new-window -t "${SESSION}" -n dashboard
+tmux send-keys -t "${SESSION}:dashboard" \
+    "$(nav_side 'ros2 launch imdl_dashboard dashboard.launch.py')"
 
 tmux select-window -t "${SESSION}:guide"
 exec tmux attach -t "${SESSION}"

@@ -26,3 +26,37 @@ turn_angle_rad: 3.14159
 
 # Abort a single navigation step after this many seconds.
 step_timeout_sec: 120.0
+
+# 5) After the slow route, check the Float32 topic `mix_quality` (0..1).
+#    Below the threshold the robot repeats the slow route, up to max_extra_laps.
+#    With no recent message the check is skipped, so it never blocks the mission.
+mix_check_enabled: true
+mix_quality_threshold: 0.8
+max_extra_laps: 2
+mix_max_age_sec: 2.0
+
+# Backup route without a saved-map position: visit ArUco markers in order.
+# Needs the aruco_detector node. The marker corners are in lap order:
+# 0 = start corner (by the cows), then 1, 2, 3. The robot stops `standoff_m`
+# in front of each marker, spinning in place to find one it has not seen.
+# After the laps it goes through CHECK_MIX and TURN like the normal route.
+marker_route:
+  enabled: false
+  ids: [0, 1, 2, 3]
+  standoff_m: 0.8
+  search_step_rad: 0.6
+  # Loop until stopped: refill marker -> feeding stops (the other ids, in order)
+  # -> back to the refill marker, wait for loading, repeat. Stop with
+  #   ros2 topic pub --once /state_machine/stop std_msgs/msg/Empty "{}"
+  loop: true
+  refill_marker: 0
+  refill_wait_sec: 10.0
+  # Used only by fake_markers (RViz test without a camera): [x, y, yaw of the
+  # marker's outward normal] in the map frame. EXAMPLE values: read real corner
+  # positions off your map in RViz (Publish Point -> `ros2 topic echo /clicked_point`)
+  # and point each normal toward the inside of the square.
+  sim_markers:
+    0: [-1.0, -0.3, 1.5708]
+    1: [-2.4, -0.3, 1.5708]
+    2: [-2.4, 0.9, -1.5708]
+    3: [-1.0, 0.9, -1.5708]
