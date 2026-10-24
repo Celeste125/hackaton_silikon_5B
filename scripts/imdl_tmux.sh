@@ -42,6 +42,16 @@ CAM_Z="${IMDL_CAM_Z:-0.10}"
 CAM_ROLL="${IMDL_CAM_ROLL:--1.5707963}"
 CAM_PITCH="${IMDL_CAM_PITCH:-0.0}"
 CAM_YAW="${IMDL_CAM_YAW:--1.5707963}"
+# Frame size for the camera window. Deliberately not VGA: a raw 640x480 rgb8
+# frame is ~900 KB, which DDS splits into ~650 UDP packets, and a frame is
+# discarded whole if any one of them is lost. Across the arena WiFi that shows
+# up as a single frozen picture in the laptop's RViz while the Jetson's own
+# RViz stays live, because a local subscriber reads shared memory instead.
+# 320x240 is a quarter of the bytes; drop to IMDL_CAM_WIDTH=160
+# IMDL_CAM_HEIGHT=120 if it still stutters.
+CAM_WIDTH="${IMDL_CAM_WIDTH:-320}"
+CAM_HEIGHT="${IMDL_CAM_HEIGHT:-240}"
+CAM_FPS="${IMDL_CAM_FPS:-5}"
 MAP_DIR="${IMDL_MAP_DIR:-/root/maps}"
 REPO_DIR="${IMDL_REPO_DIR:-~/imdl-main}"
 # Default to whatever branch this checkout is on, so the laptop gets the code
@@ -76,6 +86,17 @@ command -v tmux >/dev/null || { echo "error: tmux is not installed" >&2; exit 1;
 # Single-quote for the shell, keeping the result readable: these commands are
 # typed into the panes for a human to check before pressing Enter.
 sq() { printf "'%s'" "${1//\'/\'\\''}"; }
+
+# Put the branch on a machine, first time or tenth: clone if the directory is
+# not there, then move the branch to whatever the remote has. The Jetson gets
+# it the same way as the laptop, so the camera launch file is pulled rather
+# than copied, and nothing on either machine has to be built to run it.
+# Straight from the URL: no remote to configure and no GitHub key needed.
+repo_sync() {
+    printf '[ -d %s ] || git clone %s %s; cd %s && git fetch %s %s && git checkout -B %s FETCH_HEAD' \
+        "${REPO_DIR}" "${REPO_URL}" "${REPO_DIR}" \
+        "${REPO_DIR}" "${REPO_URL}" "${BRANCH}" "${BRANCH}"
+}
 
 # Hand a whole command line to a remote shell as ONE argument. ssh joins its
 # arguments with spaces and drops the local quoting, so the remote shell
@@ -140,6 +161,42 @@ SPLIT=false
 [[ -n "${LAPTOP_HOST}" && -n "${JETSON_HOST}" ]] && SPLIT=true
 
 GUIDE="$(mktemp -t imdl_guide)"
+
+# Every one-off job is a pane of the 'setup' window, so a normal run never
+# opens one. Built before the guide, which lists the same panes from
+# setup_help, and so cannot drift from what is actually in the window.
+setup_cmds=()
+setup_help=""
+add_setup() {
+    setup_cmds+=("$1")
+    setup_help="${setup_help}
+              - $2"
+}
+if [[ "${SPLIT}" == true ]]; then
+    # DISPLAY/XAUTHORITY let run.sh's xhost reach the laptop's own X session
+    # from this SSH shell, so RViz can open on its screen.
+    add_setup "$(ssh_cmd "-t" "${LAPTOP_HOST}" \
+        "$(repo_sync) && cd docker && DISPLAY=:0 XAUTHORITY=\$HOME/.Xauthority ./run.sh --build")" \
+        "pull the code + start the container (LEAVE IT RUNNING)"
+    add_setup "$(in_container 'ws_build')" \
+        "ws_build, after a new or changed launch file"
+elif [[ "${USE_LOCAL_DOCKER}" == true ]]; then
+    add_setup "$(in_container 'ws_build')" \
+        "ws_build, after a new or changed launch file"
+fi
+if [[ -n "${JETSON_HOST}" ]]; then
+    add_setup "$(robot_side 'v4l2-ctl --list-devices; sudo apt install -y ros-humble-v4l2-camera v4l-utils')" \
+        "the Jetson's camera list, then its driver (wants sudo)"
+    add_setup "$(ssh_cmd "-t" "${JETSON_HOST}" "$(repo_sync)")" \
+        "pull the code on the Jetson (it runs the camera from there)"
+fi
+
+if [[ "${SPLIT}" == true ]]; then
+    RVIZ_WHERE="the LAPTOP's"
+else
+    RVIZ_WHERE="its own machine's"
+fi
+
 {
 cat <<GUIDE_TEXT
   Live SLAM + navigation -- press Enter in each window, in this order
@@ -150,59 +207,61 @@ cat <<GUIDE_TEXT
 GUIDE_TEXT
 if [[ "${SPLIT}" == true ]]; then
 cat <<GUIDE_TEXT
-  lidar + SLAM   ${JETSON_HOST}
+  lidar + camera ${JETSON_HOST}
   Nav2 + RViz    ${LAPTOP_HOST}, inside the '${CONTAINER}' container
+GUIDE_TEXT
+else
+cat <<GUIDE_TEXT
+  everything     ${JETSON_HOST:-this machine, in the '${CONTAINER}' container}
+GUIDE_TEXT
+fi
+cat <<GUIDE_TEXT
 
-  Once per laptop, then skip these two:
+  1  setup    Once per machine -- afterwards only the pull panes, and
+              only when there is new code. One job per pane, and
+              ctrl-b o cycles them.${setup_help}
 
-  1  setup    Fetch ${BRANCH}, build the image, start the container.
-              This window OWNS the container: leave it running, and
-              everything else dies if you Ctrl-C it.
-  2  build    ws_build inside it. Needed after any new launch file.
+  Then, every run:
 
-  Every run:
-
-  3  lidar    Jetson: the lidar only. Put the robot on its start mark
-              first; that pose becomes map (0, 0, yaw 0).
+  2  lidar    The lidar only. Put the robot on its start mark first;
+              that pose becomes map (0, 0, yaw 0).
+  3  tools    Three panes, all on demand: the odom rate (use it before
+              window 4 -- see the gate below), the map saver, and a
+              camera check.
   4  nav      SLAM and Nav2 together, plus twist_mux for teleop. The
               whole TF chain runs here, on one clock, because TF
               cannot cross the WiFi within its 0.2 s tolerances.
               Wait for "Managed nodes are active" (10-20 s).
-  5  rviz     Opens on the LAPTOP's screen, not here. Set the Map
-              display's Color Scheme to 'raw', then 2D Goal Pose.
-  6  teleop   Only when you need it. Press z about 6 times to slow down.
-              Outranks Nav2 at once; Nav2 drives again 0.5 s after your
-              last key press.
-  7  tools    Left: save the map (while window 4 still runs).
-              Right: check the odom feed.
-  8  explore  Optional: the robot maps the arena by itself. Only after
-              window 4 says active. It drives as soon as you press
-              Enter; teleop (6) still overrides it, ctrl-c cancels.
-  10  jetson-setup  ONCE per Jetson, and BEFORE window 9. Left: does it
-              see the C920 (expect 'C920' and a /dev/videoN)? Right:
-              installs the driver -- asks for the Jetson's sudo
-              password. Skip both once window 9 works.
-
-  9  camera    Jetson, TWO panes: left the C920 driver, right its
-              base_link -> webcam_optical_frame transform. Both are
-              needed; a bearing without the transform is meaningless.
-              Run as plain nodes, so the Jetson's workspace does not
-              have to be up to date. ctrl-b o switches pane.
- 11  cam-check Left: are the camera topics publishing? Right: the live
-              picture (rqt_image_view). Start here if unsure.
- 12  dispenser Asks Claude which pixels are the food dispenser, then
-              uses aligned depth + TF for the position. Take a view,
-              from 2-3 angles:
+  5  rviz     Opens on ${RVIZ_WHERE} screen, not in this terminal. Set
+              the Map display's Color Scheme to 'raw', then 2D Goal
+              Pose. The 'Webcam' panel fills in once window 6 runs.
+  6  camera   The C920 and its mounting transform, one pane, run
+              straight out of the Jetson's checkout -- no colcon there.
+              ${CAM_WIDTH}x${CAM_HEIGHT} at ${CAM_FPS} fps, NOT VGA: a raw frame has to arrive
+              as ~650 intact UDP packets or it is dropped whole, and
+              VGA over this WiFi leaves RViz frozen on a single
+              picture. Smaller still with IMDL_CAM_WIDTH/HEIGHT.
+  7  explore  The robot maps the arena by itself. Only after window 4
+              says active. It drives as soon as you press Enter;
+              teleop (8) still overrides it, ctrl-c cancels.
+  8  teleop   Only when you need it. Press z about 6 times to slow
+              down. Outranks Nav2 at once; Nav2 drives again 0.5 s
+              after your last key press.
+  9  dispenser  Asks Claude which pixels are the food dispenser, then
+              uses the bearing and TF for the position. Trigger a view
+              from 2-3 DIFFERENT spots, in window 3:
                 ros2 topic pub --once /dispenser/locate std_msgs/msg/Empty "{}"
-              The webcam has NO depth, so range comes from geometry:
-              view 2 from a DIFFERENT spot is triangulated against
-              view 1, else the bearing is cast at the SLAM wall map.
-              Two views from one spot cannot fix a distance.
-              Needs ANTHROPIC_API_KEY in the LAPTOP's environment before
-              window 1 starts the container -- put the export in the
-              laptop's ~/.bashrc. Exporting it in a container shell does
-              not reach this window: every window opens its own shell and
-              gets the environment the container was started with.
+              The webcam has NO depth, so view 2 from another spot is
+              triangulated against view 1, else the bearing is cast at
+              the SLAM wall map. Two views from one spot fix nothing.
+              Needs ANTHROPIC_API_KEY in the environment that started
+              the container, so put the export in the laptop's
+              ~/.bashrc before window 1. Exporting it in a container
+              shell does not reach this window: each window opens its
+              own shell with the environment the container started with.
+
+  2, 4, 5, 6, 7 and 9 keep running on their own once started. After
+  window 7 there is nothing left to type -- just watch RViz.
 
   BEFORE window 4, two gates. Nav2 activates its local costmap during
   bringup and that needs the odom -> base_link TF; if odom is not
@@ -210,37 +269,19 @@ cat <<GUIDE_TEXT
   fixes it. The Create3 can take ~30 s to start publishing odom, and
   publishes none while asleep or docked.
 
-  1) wake it: press the Create3's centre button. Docked? In window 2:
+  1) wake it: press the Create3's centre button. Docked? In window 3:
        ros2 action send_goal ${NAMESPACE}/undock irobot_create_msgs/action/Undock "{}"
-  2) in window 7 (right pane), confirm odom actually streams:
+  2) in window 3 (odom pane), confirm odom actually streams:
        ros2 topic hz ${NAMESPACE}/odom
      Wait for a steady rate. Only then press Enter in window 4.
 
   A docked or sleeping robot also refuses to drive forward while still
   turning, so if teleop only turns, start here too.
-GUIDE_TEXT
-else
-cat <<GUIDE_TEXT
-
-  1  lidar    The lidar only. Put the robot on its start mark first;
-              that pose becomes map (0, 0, yaw 0).
-  2  nav      Nav2 on the live SLAM map, plus twist_mux for teleop.
-              Wait for "Managed nodes are active" (10-20 s).
-  3  rviz     Set the Map display's Color Scheme to 'raw', then use
-              2D Goal Pose to send the robot somewhere.
-  4  teleop   Only when you need it. Press z about 6 times to slow down.
-  5  tools    Save the map, and check the odom feed.
-  6  explore  Optional: the robot maps the arena by itself. Only after
-              window 2 says active. It drives as soon as you press
-              Enter; teleop still overrides it, ctrl-c cancels.
-GUIDE_TEXT
-fi
-cat <<GUIDE_TEXT
 
   switch window   ctrl-b <number>         detach  ctrl-b d
   stop a window   ctrl-b <number> ctrl-c  kill    tmux kill-session -t ${SESSION}
 
-  Emergency stop: ctrl-c in the nav window, then in the tools window
+  Emergency stop: ctrl-c in the nav window, then in window 3
     ros2 topic pub --rate 10 ${NAMESPACE}/cmd_vel geometry_msgs/msg/Twist "{}"
 GUIDE_TEXT
 } > "${GUIDE}"
@@ -248,21 +289,32 @@ GUIDE_TEXT
 tmux new-session -d -s "${SESSION}" -n guide
 tmux send-keys -t "${SESSION}:guide" "clear && cat ${GUIDE}" C-m
 
-if [[ "${SPLIT}" == true ]]; then
-    # Fetch straight from the URL: no remote to reconfigure, no GitHub key
-    # needed on the laptop. DISPLAY/XAUTHORITY let run.sh's xhost reach the
-    # laptop's own X session from this SSH shell, so RViz can open there.
-    tmux new-window -t "${SESSION}" -n setup
-    tmux send-keys -t "${SESSION}:setup" "$(ssh_cmd "-t" "${LAPTOP_HOST}" \
-        "cd ${REPO_DIR} && git fetch ${REPO_URL} ${BRANCH} && git checkout -B ${BRANCH} FETCH_HEAD && cd docker && DISPLAY=:0 XAUTHORITY=\$HOME/.Xauthority ./run.sh --build")"
-
-    tmux new-window -t "${SESSION}" -n build
-    tmux send-keys -t "${SESSION}:build" "$(in_container 'ws_build')"
+# 1  setup. send-keys targets the window, which means its active pane, and a
+# fresh split is always active -- so this needs no pane indices.
+tmux new-window -t "${SESSION}" -n setup
+if [[ ${#setup_cmds[@]} -gt 0 ]]; then
+    tmux send-keys -t "${SESSION}:setup" "${setup_cmds[0]}"
+    for ((i = 1; i < ${#setup_cmds[@]}; i++)); do
+        tmux split-window -t "${SESSION}:setup"
+        tmux send-keys -t "${SESSION}:setup" "${setup_cmds[i]}"
+    done
+    tmux select-layout -t "${SESSION}:setup" tiled
 fi
 
 tmux new-window -t "${SESSION}" -n lidar
 tmux send-keys -t "${SESSION}:lidar" \
     "$(robot_side 'ros2 launch slam lidar.launch.py fix_timestamps:=false')"
+
+# 3  tools: the odom gate first, because it is needed before window 4.
+tmux new-window -t "${SESSION}" -n tools
+tmux send-keys -t "${SESSION}:tools" \
+    "$(nav_side "ros2 topic hz ${NAMESPACE}/odom")"
+tmux split-window -h -t "${SESSION}:tools"
+tmux send-keys -t "${SESSION}:tools" \
+    "$(nav_side "ros2 run nav2_map_server map_saver_cli -f ${MAP_DIR}/${MAP_NAME}")"
+tmux split-window -v -t "${SESSION}:tools"
+tmux send-keys -t "${SESSION}:tools" \
+    "$(nav_side 'bash $(ros2 pkg prefix imdl_autonomy)/share/imdl_autonomy/scripts/check_camera.sh')"
 
 tmux new-window -t "${SESSION}" -n nav
 tmux send-keys -t "${SESSION}:nav" \
@@ -272,53 +324,34 @@ tmux new-window -t "${SESSION}" -n rviz
 tmux send-keys -t "${SESSION}:rviz" \
     "$(nav_side "ros2 launch imdl_simulation real_rviz.launch.py model_visual_yaw:=0.0 lidar_yaw:=${LIDAR_YAW}" x11)"
 
-tmux new-window -t "${SESSION}" -n teleop
-tmux send-keys -t "${SESSION}:teleop" \
-    "$(robot_side "ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=${NAMESPACE}/cmd_vel_teleop")"
-
-# Two panes: the map saver on the left, a free shell for checks on the right.
-tmux new-window -t "${SESSION}" -n tools
-tmux send-keys -t "${SESSION}:tools" \
-    "$(nav_side "ros2 run nav2_map_server map_saver_cli -f ${MAP_DIR}/${MAP_NAME}")"
-tmux split-window -h -t "${SESSION}:tools"
-tmux send-keys -t "${SESSION}:tools.1" \
-    "$(nav_side "ros2 topic hz ${NAMESPACE}/odom")"
+# 6  camera. One pane: the launch file carries the measured mounting pose, so
+# the driver and its transform start and stop together.
+#
+# By path, and a launch file rather than 'ros2 run': v4l2_camera takes
+# image_size as a list, and a [320,240] literal cannot survive the nested
+# quoting these panes are built from, while plain integers can. The path keeps
+# the Jetson free of colcon: it only has to have pulled the branch.
+if [[ -n "${JETSON_HOST}" ]]; then
+    WEBCAM_LAUNCH_CMD="ros2 launch ${REPO_DIR}/ros2_ws/src/perception/launch/webcam_only.launch.py"
+else
+    WEBCAM_LAUNCH_CMD="ros2 launch /ws/src/perception/launch/webcam_only.launch.py"
+fi
+tmux new-window -t "${SESSION}" -n camera
+tmux send-keys -t "${SESSION}:camera" \
+    "$(robot_side "${WEBCAM_LAUNCH_CMD} width:=${CAM_WIDTH} height:=${CAM_HEIGHT} fps:=${CAM_FPS} x:=${CAM_X} y:=${CAM_Y} z:=${CAM_Z} roll:=${CAM_ROLL} pitch:=${CAM_PITCH} yaw:=${CAM_YAW}")"
 
 # Autonomous exploration. Runs where Nav2 runs, since it drives through the
-# navigate_to_pose action and reads /map. Last, so the numbers above are stable.
+# navigate_to_pose action and reads /map.
 tmux new-window -t "${SESSION}" -n explore
 tmux send-keys -t "${SESSION}:explore" \
     "$(nav_side 'ros2 launch imdl_autonomy frontier_explore.launch.py')"
 
-# Camera, its diagnostics, and dispenser localisation. All on the Nav2 side:
-# the locator needs the map frame and the camera on the same machine.
-# Two panes, because the driver and its transform are both long-running and
-# the bearing is meaningless without the transform. v4l2_camera already
-# defaults to 640x480, so no list-valued parameter has to survive the quoting.
-tmux new-window -t "${SESSION}" -n camera
-tmux send-keys -t "${SESSION}:camera" \
-    "$(robot_side 'ros2 run v4l2_camera v4l2_camera_node --ros-args -r __ns:=/webcam -p video_device:=/dev/video0 -p pixel_format:=YUYV -p output_encoding:=rgb8 -p camera_frame_id:=webcam_optical_frame')"
-tmux split-window -h -t "${SESSION}:camera"
-tmux send-keys -t "${SESSION}:camera.1" \
-    "$(robot_side "ros2 run tf2_ros static_transform_publisher --x ${CAM_X} --y ${CAM_Y} --z ${CAM_Z} --roll ${CAM_ROLL} --pitch ${CAM_PITCH} --yaw ${CAM_YAW} --frame-id base_link --child-frame-id webcam_optical_frame")"
+tmux new-window -t "${SESSION}" -n teleop
+tmux send-keys -t "${SESSION}:teleop" \
+    "$(robot_side "ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=${NAMESPACE}/cmd_vel_teleop")"
 
-# One-off Jetson preparation. Left: is the C920 even enumerated? Right: the
-# driver package, which the Jetson does not ship with.
-tmux new-window -t "${SESSION}" -n jetson-setup
-tmux send-keys -t "${SESSION}:jetson-setup" \
-    "$(robot_side 'v4l2-ctl --list-devices')"
-tmux split-window -h -t "${SESSION}:jetson-setup"
-tmux send-keys -t "${SESSION}:jetson-setup.1" \
-    "$(robot_side 'sudo apt install -y ros-humble-v4l2-camera v4l-utils')"
-
-# Two panes: left answers "is the camera publishing", right shows the picture.
-tmux new-window -t "${SESSION}" -n cam-check
-tmux send-keys -t "${SESSION}:cam-check" \
-    "$(nav_side 'bash $(ros2 pkg prefix imdl_autonomy)/share/imdl_autonomy/scripts/check_camera.sh')"
-tmux split-window -h -t "${SESSION}:cam-check"
-tmux send-keys -t "${SESSION}:cam-check.1" \
-    "$(nav_side 'rqt_image_view /webcam/image_raw' x11)"
-
+# Dispenser localisation runs on the Nav2 side: it needs the map frame and the
+# camera topics on one clock.
 tmux new-window -t "${SESSION}" -n dispenser
 tmux send-keys -t "${SESSION}:dispenser" \
     "$(nav_side 'ros2 launch imdl_autonomy dispenser_locate.launch.py')"
