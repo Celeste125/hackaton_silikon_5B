@@ -60,3 +60,27 @@ def cell_weights(raws, cal):
         sign * (raw - offset) / cal['counts_per_kg']
         for raw, offset, sign in zip(raws, cal['offsets'], cal['signs'])
     ]
+
+
+def load_door_calibration(path=config.SERVO_CALIBRATION_FILE):
+    """Return {'open_us', 'closed_us'}; the config defaults if no file yet."""
+    cal = {
+        'open_us': config.SERVO_DEFAULT_OPEN_US,
+        'closed_us': config.SERVO_DEFAULT_CLOSED_US,
+    }
+    if os.path.exists(path):
+        with open(path) as f:
+            saved = json.load(f)
+        cal['open_us'] = float(saved['open_us'])
+        cal['closed_us'] = float(saved['closed_us'])
+    return cal
+
+
+def save_door_calibration(cal, path=config.SERVO_CALIBRATION_FILE):
+    save_calibration(cal, path)
+
+
+def door_position_to_us(position, cal):
+    """0.0 (open) .. 1.0 (closed) -> servo pulse width in microseconds."""
+    position = max(0.0, min(1.0, position))
+    return cal['open_us'] + position * (cal['closed_us'] - cal['open_us'])

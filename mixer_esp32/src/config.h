@@ -69,6 +69,17 @@ const float RAMP_PER_S = 2.0f;
 // testing by hand in a serial monitor!).
 const uint32_t CMD_TIMEOUT_MS = 500;
 
+// ---- Door servo -------------------------------------------------------------
+// Hobby servo: signal -> SERVO_PIN, VCC -> external 5V supply (NOT the ESP,
+// the servo can brown it out), GND -> ESP GND (common ground required).
+// The host sends the pulse width in microseconds ("S <us>"); which pulse is
+// "open" / "closed" is calibrated on the ROS side, so no reflash is needed.
+const int SERVO_PIN = 17;
+// Hard limits for the pulse width, protects the servo and the door linkage.
+// Most servos use 1000..2000 us; many go 500..2500 us.
+const uint16_t SERVO_MIN_US = 500;
+const uint16_t SERVO_MAX_US = 2500;
+
 const uint32_t SERIAL_BAUD = 115200;
 // ============================================================================
 // END OF CONFIGURATION

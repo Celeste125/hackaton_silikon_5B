@@ -34,3 +34,15 @@ MOTOR_SEND_HZ = 10
 # Safety: a motor stops if its topic gets no message for this long (e.g. the
 # commanding node crashed). Keep publishing at a few Hz. 0 = never stop.
 COMMAND_TIMEOUT_S = 1.0
+
+# ---- Door servo ----------------------------------------------------------------
+# Door position topic: 0.0 = fully open, 1.0 = fully closed.
+# The pulse widths for those two ends are stored in this file (same folder
+# rules as CALIBRATION_FILE) and set with the /door/save_open and
+# /door/save_closed services, see esp_driver_node.py.
+SERVO_CALIBRATION_FILE = 'door_calibration.json'
+
+# Used until the file exists. Must stay inside the firmware's
+# SERVO_MIN_US..SERVO_MAX_US (config.h). Jog carefully from the middle first.
+SERVO_DEFAULT_OPEN_US = 1000
+SERVO_DEFAULT_CLOSED_US = 2000
