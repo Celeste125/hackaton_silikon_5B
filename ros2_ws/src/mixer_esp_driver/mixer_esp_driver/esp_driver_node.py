@@ -10,6 +10,17 @@ Motors
   /mixer/motor_0, /mixer/motor_1  std_msgs/Float32, -1.0 .. 1.0 (negative = reverse)
   e.g. ros2 topic pub -r 5 /mixer/motor_0 std_msgs/Float32 "data: 0.5"
 
+Door servo
+  /door/position  std_msgs/Float32  0.0 = fully open, 1.0 = fully closed
+  /door/raw_us    std_msgs/Float32  pulse width in us, for finding the end
+                  positions (jog it, then save). Overrides /door/position
+                  until the next /door/position message.
+  /door/save_open, /door/save_closed  std_srvs/Trigger  store the current
+                  pulse width as the open / closed end (door_calibration.json)
+  Calibrate: ros2 topic pub --once /door/raw_us std_msgs/Float32 "data: 1500"
+             (adjust until the door is fully open) ros2 service call /door/save_open std_srvs/srv/Trigger
+             same for closed. Then: ros2 topic pub --once /door/position std_msgs/Float32 "data: 1.0"
+
 Settings: config.py. Calibrate once (with this node running):
   ros2 run mixer_esp_driver calibrate
 """
@@ -28,7 +39,8 @@ from std_srvs.srv import Trigger
 
 from mixer_esp_driver import config
 from mixer_esp_driver.calibration import (
-    calibration_path, cell_weights, load_calibration, save_calibration,
+    calibration_path, cell_weights, door_position_to_us, load_calibration,
+    load_door_calibration, save_calibration, save_door_calibration,
 )
 
 
@@ -52,6 +64,22 @@ class EspDriverNode(Node):
                 lambda msg, i=i: self.on_motor_cmd(i, msg), 10,
             )
         self.create_timer(1.0 / config.MOTOR_SEND_HZ, self.send_motors)
+
+        # Door servo. _servo_us is None until the first command, so the servo
+        # is not driven (and doesn't jump) before someone asks for a position.
+        try:
+            self.door_cal = load_door_calibration()
+        except (ValueError, KeyError) as e:
+            self.get_logger().error(f'Bad door calibration file: {e}, using defaults')
+            self.door_cal = {
+                'open_us': config.SERVO_DEFAULT_OPEN_US,
+                'closed_us': config.SERVO_DEFAULT_CLOSED_US,
+            }
+        self._servo_us = None
+        self.create_subscription(Float32, 'door/position', self.on_door_position, 10)
+        self.create_subscription(Float32, 'door/raw_us', self.on_door_raw, 10)
+        self.create_service(Trigger, 'door/save_open', self.on_save_open)
+        self.create_service(Trigger, 'door/save_closed', self.on_save_closed)
 
         self.windows = [deque(maxlen=config.FILTER_WINDOW) for _ in range(config.NUM_CELLS)]
         # Tare: the reader thread collects samples into _tare_samples until
@@ -228,6 +256,36 @@ class EspDriverNode(Node):
                     f'motor {i}: no command for {config.COMMAND_TIMEOUT_S}s, stopped'
                 )
         self._write('M ' + ' '.join(f'{s:.3f}' for s in self.speeds) + '\n')
+        # Resent too, so the servo recovers if the ESP resets.
+        if self._servo_us is not None:
+            self._write(f'S {self._servo_us:.0f}\n')
+
+    # ---- door servo ----------------------------------------------------------
+
+    def on_door_position(self, msg):
+        self._servo_us = door_position_to_us(msg.data, self.door_cal)
+        self._write(f'S {self._servo_us:.0f}\n')
+
+    def on_door_raw(self, msg):
+        self._servo_us = float(msg.data)
+        self._write(f'S {self._servo_us:.0f}\n')
+
+    def _save_door_end(self, key, response):
+        if self._servo_us is None:
+            response.success = False
+            response.message = 'no servo position yet, publish /door/raw_us first'
+            return response
+        self.door_cal[key] = self._servo_us
+        save_door_calibration(self.door_cal)
+        self.get_logger().info(f'door {key} = {self._servo_us:.0f}')
+        response.success, response.message = True, f'{key} = {self._servo_us:.0f}'
+        return response
+
+    def on_save_open(self, request, response):
+        return self._save_door_end('open_us', response)
+
+    def on_save_closed(self, request, response):
+        return self._save_door_end('closed_us', response)
 
     def close(self):
         self._write('M ' + ' '.join(['0'] * config.NUM_MOTORS) + '\n')

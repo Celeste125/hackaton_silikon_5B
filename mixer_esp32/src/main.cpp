@@ -16,10 +16,15 @@
  *                           Must be resent at least every CMD_TIMEOUT_MS,
  *                           otherwise the motors ramp down to 0 (safety if
  *                           the ROS node or the USB cable dies).
+ *     S <us>                Door servo pulse width in microseconds,
+ *                           e.g. "S 1500". Clamped to SERVO_MIN_US..
+ *                           SERVO_MAX_US. The servo only starts getting
+ *                           pulses after the first S, and then holds its
+ *                           position (no timeout, a door must stay put).
  *     ?                     Prints the info line again.
  *
  *   ESP -> Host
- *     I mixer_esp32 cells=4 motors=2     Info, sent at boot and on "?".
+ *     I mixer_esp32 cells=4 motors=2 servo=1  Info, sent at boot and on "?".
  *     L <raw0> <raw1> <raw2> <raw3>      Raw HX711 counts of every cell,
  *                                        sent when all cells have a new
  *                                        sample (~10 Hz).
@@ -107,11 +112,12 @@ uint32_t lastCmdMs = 0;
 uint32_t lastRampUs = 0;
 
 // The LEDC (PWM) API changed between Arduino-ESP32 core 2.x and 3.x.
-void pwmAttach(int pin, int channel) {
+void pwmAttach(int pin, int channel, uint32_t freq = PWM_FREQ_HZ,
+               uint8_t bits = PWM_BITS) {
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-  ledcAttach(pin, PWM_FREQ_HZ, PWM_BITS);
+  ledcAttach(pin, freq, bits);
 #else
-  ledcSetup(channel, PWM_FREQ_HZ, PWM_BITS);
+  ledcSetup(channel, freq, bits);
   ledcAttachPin(pin, channel);
 #endif
 }
@@ -162,13 +168,35 @@ void updateMotors() {
   }
 }
 
+// ---- Servo --------------------------------------------------------------------
+
+// Channel 4 is the first one after the motors (0..3). On core 2.x channels
+// are paired per timer, so this one doesn't share a timer with the 20 kHz
+// motor PWM.
+const int SERVO_CHANNEL = 4;
+const uint32_t SERVO_FREQ_HZ = 50;
+const uint8_t SERVO_BITS = 16;
+bool servoAttached = false;
+
+void setServoUs(float us) {
+  us = constrain(us, (float)SERVO_MIN_US, (float)SERVO_MAX_US);
+  if (!servoAttached) {
+    pwmAttach(SERVO_PIN, SERVO_CHANNEL, SERVO_FREQ_HZ, SERVO_BITS);
+    servoAttached = true;
+  }
+  // 50 Hz -> 20000 us period.
+  uint32_t duty = (uint32_t)(us / 20000.0f * ((1u << SERVO_BITS) - 1) + 0.5f);
+  pwmWrite(SERVO_PIN, SERVO_CHANNEL, duty);
+}
+
 // ---- Serial commands ----------------------------------------------------------
 
 char lineBuf[64];
 size_t lineLen = 0;
 
 void printInfo() {
-  Serial.printf("I mixer_esp32 cells=%d motors=%d\n", NUM_CELLS, NUM_MOTORS);
+  Serial.printf("I mixer_esp32 cells=%d motors=%d servo=1\n", NUM_CELLS,
+                NUM_MOTORS);
 }
 
 void handleLine(char *line) {
@@ -186,6 +214,14 @@ void handleLine(char *line) {
       p = end;
     }
     lastCmdMs = millis();
+  } else if (line[0] == 'S') {
+    char *end;
+    float us = strtof(line + 1, &end);
+    if (end == line + 1) {
+      Serial.println("E bad S command, expected: S <microseconds>");
+      return;
+    }
+    setServoUs(us);
   } else if (line[0] == '?') {
     printInfo();
   } else if (line[0] != '\0') {
