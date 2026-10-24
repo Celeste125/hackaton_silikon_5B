@@ -223,8 +223,10 @@ cat <<GUIDE_TEXT
 
   Then, every run:
 
-  2  lidar    The lidar only. Put the robot on its start mark first;
-              that pose becomes map (0, 0, yaw 0).
+  2  lidar    The lidar only, out of the checkout -- the Jetson's own
+              workspace has an older copy whose scans slam_toolbox
+              drops. Put the robot on its start mark first; that pose
+              becomes map (0, 0, yaw 0).
   3  tools    Three panes, all on demand: the odom rate (use it before
               window 4 -- see the gate below), the map saver, and a
               camera check.
@@ -301,9 +303,21 @@ if [[ ${#setup_cmds[@]} -gt 0 ]]; then
     tmux select-layout -t "${SESSION}:setup" tiled
 fi
 
+# 2  lidar, by path out of the checkout rather than 'ros2 launch slam ...'.
+# The Jetson's own workspace holds an older copy that stamps lidar_link and
+# publishes straight to /scan, ignoring fix_timestamps, so its frames reached
+# slam_toolbox ~0.28 s in the future on the Jetson's clock and every scan was
+# dropped. This copy remaps to /scan_raw for the nav side to restamp, and with
+# fix_timestamps:=false the only package it needs is sllidar_ros2 -- so still
+# no colcon on the Jetson.
+if [[ -n "${JETSON_HOST}" ]]; then
+    LIDAR_LAUNCH_CMD="ros2 launch ${REPO_DIR}/ros2_ws/src/slam/launch/lidar.launch.py"
+else
+    LIDAR_LAUNCH_CMD="ros2 launch /ws/src/slam/launch/lidar.launch.py"
+fi
 tmux new-window -t "${SESSION}" -n lidar
 tmux send-keys -t "${SESSION}:lidar" \
-    "$(robot_side 'ros2 launch slam lidar.launch.py fix_timestamps:=false')"
+    "$(robot_side "${LIDAR_LAUNCH_CMD} fix_timestamps:=false")"
 
 # 3  tools: the odom gate first, because it is needed before window 4.
 tmux new-window -t "${SESSION}" -n tools
