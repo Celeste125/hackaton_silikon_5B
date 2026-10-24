@@ -1,0 +1,24 @@
+# Velocity command priorities for slam_navigation.launch.py.
+#
+# Nav2's collision monitor publishes <ns>/cmd_vel_nav and teleop publishes
+# <ns>/cmd_vel_teleop; twist_mux forwards the winner to <ns>/cmd_vel, the
+# topic the Create3 actually listens on. Teleop outranks Nav2, so a key press
+# takes the robot over at once. 0.5 s after the last teleop message Nav2 drives
+# again, and 0.5 s after the last Nav2 message the robot stops.
+#
+# Node-name agnostic (/**) so the node can run inside the robot namespace.
+/**:
+  ros__parameters:
+    use_sim_time: false
+    # teleop_twist_keyboard publishes unstamped geometry_msgs/Twist, and so
+    # does the collision monitor on Humble.
+    use_stamped: false
+    topics:
+      navigation:
+        topic: cmd_vel_nav
+        timeout: 0.5
+        priority: 10
+      teleop:
+        topic: cmd_vel_teleop
+        timeout: 0.5
+        priority: 100

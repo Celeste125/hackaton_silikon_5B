@@ -6,6 +6,9 @@ slam_toolbox:
     map_frame: map
     base_frame: base_link
     resolution: 0.05
+    # The C1 cannot see closer than 0.1 m; leaving this at the 0.0 default
+    # makes slam_toolbox warn on every scan.
+    min_laser_range: 0.1
     max_laser_range: 12.0
     minimum_travel_distance: 0.10
     minimum_travel_heading: 0.10

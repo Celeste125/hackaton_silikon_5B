@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-nav2-simple-commander \
     ros-humble-slam-toolbox \
     ros-humble-teleop-twist-keyboard \
+    ros-humble-twist-mux \
     ros-humble-robot-state-publisher \
     ros-humble-joint-state-publisher \
     ros-humble-xacro \
@@ -20,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-tf2-tools \
     python3-colcon-common-extensions \
     python3-numpy \
+    python3-scipy \
     python3-yaml \
     python3-pil \
  && rm -rf /var/lib/apt/lists/*
