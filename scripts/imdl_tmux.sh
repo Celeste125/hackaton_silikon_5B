@@ -6,6 +6,12 @@
 #
 #   ./scripts/imdl_tmux.sh --jetson jetson@10.23.60.90 --laptop frl@10.23.60.77
 #
+# Add the feeding station's Pi, which carries the mixer load cell, to get its
+# window too:
+#
+#   ./scripts/imdl_tmux.sh --jetson jetson@10.23.60.90 \
+#       --laptop frl@10.23.60.77 --feeder pi@10.23.60.114
+#
 # One machine, no container (everything on the Jetson):
 #
 #   ./scripts/imdl_tmux.sh --host jetson@10.23.60.90
@@ -26,6 +32,7 @@ SESSION=imdl
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JETSON_HOST=""
 LAPTOP_HOST=""
+FEEDER_HOST=""
 SINGLE_HOST=""
 USE_LOCAL_DOCKER=false
 DOMAIN="${ROS_DOMAIN_ID:-2}"
@@ -49,6 +56,14 @@ CAM_YAW="${IMDL_CAM_YAW:--1.5707963}"
 # RViz stays live, because a local subscriber reads shared memory instead.
 # 320x240 is a quarter of the bytes; drop to IMDL_CAM_WIDTH=160
 # IMDL_CAM_HEIGHT=120 if it still stutters.
+# Which landmark the stub detector reports, and how much of the frame its box
+# covers. The stub needs no trained model: aim the camera at the real object
+# and it lands in the middle of the frame, which is what a centred box means.
+# Set IMDL_LANDMARK_BACKEND=ultralytics IMDL_LANDMARK_MODEL=~/models/x.pt once
+# the weights exist.
+STUB_LANDMARK="${IMDL_STUB_LANDMARK:-food_dispenser}"
+LANDMARK_BACKEND="${IMDL_LANDMARK_BACKEND:-stub}"
+LANDMARK_MODEL="${IMDL_LANDMARK_MODEL:-}"
 CAM_WIDTH="${IMDL_CAM_WIDTH:-320}"
 CAM_HEIGHT="${IMDL_CAM_HEIGHT:-240}"
 CAM_FPS="${IMDL_CAM_FPS:-5}"
@@ -66,6 +81,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --jetson) JETSON_HOST="$2"; shift 2 ;;
         --laptop) LAPTOP_HOST="$2"; shift 2 ;;
+        --feeder) FEEDER_HOST="$2"; shift 2 ;;
         --host) SINGLE_HOST="$2"; shift 2 ;;
         --docker) USE_LOCAL_DOCKER=true; shift ;;
         --session) SESSION="$2"; shift 2 ;;
@@ -140,6 +156,12 @@ robot_side() {
     else
         in_container "${cmd}"
     fi
+}
+
+# The feeding station's Pi: the mixer load cell hangs off its GPIO, so the
+# driver has to run there and nowhere else.
+feeder_side() {
+    on_host "${FEEDER_HOST}" plain "$1"
 }
 
 # Where Nav2, RViz and the map saver run.
@@ -246,23 +268,51 @@ cat <<GUIDE_TEXT
   7  explore  The robot maps the arena by itself. Only after window 4
               says active. It drives as soon as you press Enter;
               teleop (8) still overrides it, ctrl-c cancels.
-  8  teleop   Only when you need it. Press z about 6 times to slow
+  8  coverage The lidar sweep in window 7 finishes when the LIDAR has
+              seen everything; the lidar sees 360 degrees and the camera
+              about 70 out of the front, so the dispenser may never have
+              been in frame. Start this at the same time as 7. It banks
+              coverage from the start whoever is driving, then takes
+              over when 7 is done and drives until the camera has swept
+              the floor. Watch it in window 3:
+                ros2 topic echo /camera_coverage/status
+              In RViz enable the 'Camera Coverage' map: floor the camera
+              has NOT looked at shows as occupied, and should drain.
+  9  teleop   Only when you need it. Press z about 6 times to slow
               down. Outranks Nav2 at once; Nav2 drives again 0.5 s
               after your last key press.
-  9  dispenser  Asks Claude which pixels are the food dispenser, then
-              uses the bearing and TF for the position. Trigger a view
-              from 2-3 DIFFERENT spots, in window 3:
-                ros2 topic pub --once /dispenser/locate std_msgs/msg/Empty "{}"
-              The webcam has NO depth, so view 2 from another spot is
-              triangulated against view 1, else the bearing is cast at
-              the SLAM wall map. Two views from one spot fix nothing.
-              Needs ANTHROPIC_API_KEY in the environment that started
-              the container, so put the export in the laptop's
-              ~/.bashrc before window 1. Exporting it in a container
-              shell does not reach this window: each window opens its
-              own shell with the environment the container started with.
+ 10  detect   The landmark model, on the Jetson with the camera, so no
+              frames cross the WiFi -- it publishes boxes as JSON, well
+              under a kilobyte a frame. Backend '${LANDMARK_BACKEND}'.
+              With the stub it needs NO trained model: it reports
+              '${STUB_LANDMARK}' in a box at the centre of every frame,
+              so aim the camera at the real object and the rest of the
+              chain -- bearings, TF, the fusion -- is exercised for
+              real. That is the point: it proves the camera mounting,
+              which is the one error no averaging ever removes.
+              Once the weights exist:
+                IMDL_LANDMARK_BACKEND=ultralytics \\
+                IMDL_LANDMARK_MODEL=~/models/imdl_landmarks.pt
+11  landmark  Turns those boxes into map positions and keeps improving
+              them. Runs on the nav side, where the TF chain is. Add a
+              MarkerArray on /landmarks/markers in RViz: a sphere, a
+              2-sigma ellipse and a label per landmark. Watch it in
+              window 3 with:
+                ros2 topic echo /landmarks/state
+              A bearing alone is a LINE, not a position, so one view
+              fixes nothing. Drive a metre sideways (window 7 or 8) and
+              the ellipse should round off and shrink. An ellipse that
+              stays a long streak means every view came from one side;
+              /landmarks/<name>/next_view holds a pose that would fix
+              it. The prior is off by default; see
+              landmark_prior/README.md.
+12  feeder   Only with --feeder. Two panes: the mixer load cell on
+              the Pi (its GPIO, so nowhere else will do) and the silo
+              bookkeeping on the nav side. Check it with:
+                ros2 topic echo /silo/status
+              Assumes the Pi's own workspace is built.
 
-  2, 4, 5, 6, 7 and 9 keep running on their own once started. After
+  2, 4, 5, 6, 7, 8, 10 and 11 keep running on their own once started.
   window 7 there is nothing left to type -- just watch RViz.
 
   BEFORE window 4, two gates. Nav2 activates its local costmap during
@@ -360,15 +410,54 @@ tmux new-window -t "${SESSION}" -n explore
 tmux send-keys -t "${SESSION}:explore" \
     "$(nav_side 'ros2 launch imdl_autonomy frontier_explore.launch.py')"
 
+# The camera-coverage pass. Started alongside window 7, not after it: it
+# accumulates which floor the camera has looked at from the moment it runs,
+# whoever is driving, and only sends its own goals once window 7 reports done.
+tmux new-window -t "${SESSION}" -n coverage
+tmux send-keys -t "${SESSION}:coverage" \
+    "$(nav_side 'ros2 launch imdl_autonomy camera_coverage.launch.py')"
+
 tmux new-window -t "${SESSION}" -n teleop
 tmux send-keys -t "${SESSION}:teleop" \
     "$(robot_side "ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=${NAMESPACE}/cmd_vel_teleop")"
 
-# Dispenser localisation runs on the Nav2 side: it needs the map frame and the
-# camera topics on one clock.
-tmux new-window -t "${SESSION}" -n dispenser
-tmux send-keys -t "${SESSION}:dispenser" \
-    "$(nav_side 'ros2 launch imdl_autonomy dispenser_locate.launch.py')"
+# 9  detect. The landmark model, on the machine the camera is plugged into, so
+# the frames never cross the WiFi -- it publishes boxes as JSON instead.
+#
+# Run by path with python3, not 'ros2 launch perception ...', for the same
+# reason as the lidar and camera windows: the Jetson has no colcon workspace,
+# and a launch file would need the package installed to find the executable.
+# landmark_config is passed explicitly so the node never has to look the
+# package up either.
+PERCEPTION_DIR="${REPO_DIR}/ros2_ws/src/perception"
+if [[ "${LANDMARK_BACKEND}" == "stub" ]]; then
+    LANDMARK_ARGS="-p backend:=stub -p stub_landmark:=${STUB_LANDMARK}"
+else
+    LANDMARK_ARGS="-p backend:=${LANDMARK_BACKEND} -p model_path:=${LANDMARK_MODEL}"
+fi
+tmux new-window -t "${SESSION}" -n detect
+tmux send-keys -t "${SESSION}:detect" \
+    "$(robot_side "PYTHONPATH=${PERCEPTION_DIR} python3 ${PERCEPTION_DIR}/perception/landmark_detector_node.py --ros-args ${LANDMARK_ARGS} -p landmark_config:=${PERCEPTION_DIR}/config/landmarks.yaml -p image_topic:=/webcam/image_raw -p camera_info_topic:=/webcam/camera_info -p max_inference_rate_hz:=5.0")"
+
+# 10  landmark. The fusion, on the Nav2 side, because it does TF lookups at
+# each image's own timestamp and the TF chain lives there. publish_camera_tf
+# is false: window 6 already publishes base_link -> webcam_optical_frame, and
+# two publishers of one static transform is asking for trouble.
+tmux new-window -t "${SESSION}" -n landmark
+tmux send-keys -t "${SESSION}:landmark" \
+    "$(nav_side 'ros2 launch imdl_autonomy landmark_mapping.launch.py publish_camera_tf:=false')"
+
+# 11  feeder. Only with --feeder. The load cell is on the Pi's GPIO, so its
+# driver cannot run anywhere else.
+if [[ -n "${FEEDER_HOST}" ]]; then
+    tmux new-window -t "${SESSION}" -n feeder
+    tmux send-keys -t "${SESSION}:feeder" \
+        "$(feeder_side 'ros2 run loadcell_wrapper loadcell_node')"
+    tmux split-window -t "${SESSION}:feeder"
+    tmux send-keys -t "${SESSION}:feeder" \
+        "$(nav_side 'ros2 launch imdl_autonomy silo_status.launch.py')"
+    tmux select-layout -t "${SESSION}:feeder" tiled
+fi
 
 tmux select-window -t "${SESSION}:guide"
 exec tmux attach -t "${SESSION}"

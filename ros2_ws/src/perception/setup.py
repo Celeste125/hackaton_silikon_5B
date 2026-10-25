@@ -32,6 +32,7 @@ setup(
         'console_scripts': [
             'depth_align = perception.depth_align:main',
             'hsv_segmentation = perception.hsv_segmentation_node:main',
+            'landmark_detector = perception.landmark_detector_node:main',
             'yolo_segmentation = perception.yolo_segmentation_node:main',
             'target_pose_estimator = perception.target_pose_estimator:main',
             'target_selector = perception.target_selector:main',
