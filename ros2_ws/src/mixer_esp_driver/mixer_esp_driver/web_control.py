@@ -63,7 +63,7 @@ class WebControlNode(Node):
         self.dose = None  # {'valve', 'target', 'start', 'percent', 'deadline', 'status'}
         self.create_subscription(Float32, 'loadcell/weight', self._on_weight, 10)
         self.create_subscription(Float32MultiArray, 'loadcell/cells', self._on_cells, 10)
-        self.clients = {
+        self.trigger_clients = {
             name: self.create_client(Trigger, name)
             for name in ('loadcell/tare', 'door/save_open', 'door/save_closed')
         }
@@ -177,7 +177,7 @@ class WebControlNode(Node):
             self.door = {'mode': 'raw_us', 'value': float(us)}
 
     def call(self, name):
-        client = self.clients[name]
+        client = self.trigger_clients[name]
         if not client.wait_for_service(timeout_sec=1.0):
             return False, f'service /{name} not available, is esp_driver_node running?'
         done = threading.Event()
