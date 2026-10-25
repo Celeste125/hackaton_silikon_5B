@@ -49,6 +49,9 @@
     font: inherit; color: var(--text); background: #111318; border: 1px solid var(--line);
     border-radius: 8px; padding: 10px; width: 100%; min-width: 0;
   }
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 320px; margin: 0 auto; }
+  .pad button { padding: 18px 0; font-size: 22px; user-select: none; -webkit-user-select: none; touch-action: none; }
+  .pad button.held { background: var(--accent); border-color: var(--accent); }
   #toast {
     position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
     background: #000c; padding: 10px 16px; border-radius: 8px; font-size: 14px;
@@ -90,6 +93,24 @@
     <button class="danger" id="stop">STOP ALL (space)</button>
   </div>
   <p class="hint">Stops automatically if this page closes or loses connection.</p>
+</section>
+
+<section>
+  <h2>Drive base</h2>
+  <div class="pad" id="pad">
+    <button data-l="1" data-a="1">↖</button><button data-l="1" data-a="0">▲</button><button data-l="1" data-a="-1">↗</button>
+    <button data-l="0" data-a="1">◀</button><button class="danger" data-l="0" data-a="0">■</button><button data-l="0" data-a="-1">▶</button>
+    <button data-l="-1" data-a="-1">↙</button><button data-l="-1" data-a="0">▼</button><button data-l="-1" data-a="1">↘</button>
+  </div>
+  <div class="row" style="margin-top: 12px">
+    <span style="flex:none; width: 110px" id="linVal">0.15 m/s</span>
+    <input type="range" id="lin" min="0.05" max="0.3" step="0.05" value="0.15">
+  </div>
+  <div class="row">
+    <span style="flex:none; width: 110px" id="angVal">0.8 rad/s</span>
+    <input type="range" id="ang" min="0.2" max="1.5" step="0.1" value="0.8">
+  </div>
+  <p class="hint">Hold a button or W A S D / arrow keys to drive; release to stop. Reversing is limited by the Create 3 backup limit.</p>
 </section>
 
 <section>
@@ -182,6 +203,7 @@ function setSpeed(i, v) {
 
 function stopAll() {
   for (let i = 0; i < numMotors; i++) setSpeed(i, 0);
+  setDrive(0, 0);
 }
 
 function sendMotors() {
@@ -194,6 +216,51 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); stopAll(); }
 });
 setInterval(sendMotors, 300);  // heartbeat: the server stops the motors without it
+
+// ---- drive base ----
+let drive = {l: 0, a: 0};
+const speedLin = () => parseFloat($('lin').value);
+const speedAng = () => parseFloat($('ang').value);
+
+function sendDrive() {
+  post('/api/drive', {linear: drive.l * speedLin(), angular: drive.a * speedAng()}).catch(() => {});
+}
+function setDrive(l, a) {
+  drive = {l, a};
+  $('pad').querySelectorAll('button').forEach((b) =>
+    b.classList.toggle('held', (l !== 0 || a !== 0) && +b.dataset.l === l && +b.dataset.a === a));
+  sendDrive();
+}
+$('lin').addEventListener('input', () => { $('linVal').textContent = `${speedLin().toFixed(2)} m/s`; sendDrive(); });
+$('ang').addEventListener('input', () => { $('angVal').textContent = `${speedAng().toFixed(1)} rad/s`; sendDrive(); });
+$('linVal').textContent = `${speedLin().toFixed(2)} m/s`;
+$('angVal').textContent = `${speedAng().toFixed(1)} rad/s`;
+$('pad').querySelectorAll('button').forEach((b) => {
+  b.addEventListener('pointerdown', (e) => { e.preventDefault(); b.setPointerCapture(e.pointerId); setDrive(+b.dataset.l, +b.dataset.a); });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    b.addEventListener(ev, () => { if (drive.l || drive.a) setDrive(0, 0); });
+  }
+});
+const KEYS = {
+  KeyW: [1, 0], ArrowUp: [1, 0], KeyS: [-1, 0], ArrowDown: [-1, 0],
+  KeyA: [0, 1], ArrowLeft: [0, 1], KeyD: [0, -1], ArrowRight: [0, -1],
+};
+const heldKeys = new Set();
+function keyDrive() {
+  let l = 0, a = 0;
+  for (const k of heldKeys) { l += KEYS[k][0]; a += KEYS[k][1]; }
+  setDrive(Math.sign(l), Math.sign(a));
+}
+document.addEventListener('keydown', (e) => {
+  if (!(e.code in KEYS) || e.target.tagName === 'INPUT' && e.target.type === 'number') return;
+  e.preventDefault();
+  if (!heldKeys.has(e.code)) { heldKeys.add(e.code); keyDrive(); }
+});
+document.addEventListener('keyup', (e) => {
+  if (heldKeys.delete(e.code)) keyDrive();
+});
+window.addEventListener('blur', () => { heldKeys.clear(); setDrive(0, 0); });
+setInterval(sendDrive, 200);  // heartbeat: the server stops the base without it
 
 // ---- door ----
 function setDoor(p) {
