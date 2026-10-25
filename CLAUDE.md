@@ -134,10 +134,17 @@ so `camera_coverage_explorer` waits for `/frontier_explorer/done`. Only pass
 Most of these are also in the user's memory file; they are repeated here
 because they are easy to rediscover the hard way.
 
-**Addresses change (DHCP).** As of 2026-10-25: Jetson `jetson@10.23.60.116`
-(was `.90`), laptop `frl@10.23.60.146` (was `.77`), feeding-station Pi
-`pi@10.23.60.114` (was not answering). Create3 namespace `/Team2`,
-`ROS_DOMAIN_ID=2`. Never trust an address in a comment.
+**Addresses change (DHCP), and they changed again mid-session.** As of
+2026-10-25, second check: Jetson `jetson@10.23.60.116` (ARP-confirmed, was
+`.90`), feeding-station Pi `pi@10.23.60.130` (was `.114`, and `.114` is now
+**this Mac** — so an address can be reassigned to a different machine, not
+just go quiet). The laptop was `.146`, then `.77`; `arp -n <ip>` returning
+`(incomplete)` means nothing is there any more. Create3 namespace `/Team2`,
+`ROS_DOMAIN_ID=2`. Never trust an address in a comment, this one included.
+
+`arp -a -n | grep 10.23.60` lists what is actually on the subnet, and works
+even from an app that cannot open a socket to it — see the macOS note below.
+A Raspberry Pi answers with a `2c:cf:67:…` / `b8:27:eb:…` / `dc:a6:32:…` MAC.
 
 **The TF chain must live on one machine.** Splitting slam_toolbox from Nav2
 made slam_toolbox drop every scan with `queue is full` while Nav2 missed
@@ -180,6 +187,16 @@ middle and bottom of the frame. Aim left-right only.
 robot while Terminal.app could, with a valid kernel route and a resolved ARP
 entry. That is System Settings → Privacy & Security → **Local Network**. It
 makes `ping`, `nc` and `ssh` all fail with `No route to host`.
+
+Diagnosing it: `arp -n <ip>` resolving to a MAC while `ping` gets nothing is
+the signature — the kernel's ARP is unaffected, only the socket is blocked.
+An address with nothing on it reads `(incomplete)` instead.
+
+**So start the tmux session from Terminal.app, not from Claude.** The launcher
+itself only *types* commands into panes and needs no network, but every pane
+is a child of whichever process started the tmux server and inherits its
+Local Network permission. Started from a blocked app, all the SSH panes fail
+at once and it reads as a dead network.
 
 ## Known broken, as of 2026-10-25
 
@@ -224,10 +241,13 @@ it to `backup_only`.
 each command **typed but not executed**. Window 0 is a generated guide; read it
 rather than this file for the per-window detail.
 
+The measured camera mounting and the trained model are now the launcher's
+own defaults, so a normal run needs no environment variables — only the three
+addresses, which is the one thing that does change:
+
 ```bash
-IMDL_CAM_X=0.08 IMDL_CAM_Y=0.0 IMDL_CAM_Z=0.35 IMDL_CAM_ROLL=-1.5707963 \
-  ./scripts/imdl_tmux.sh --jetson jetson@10.23.60.116 \
-    --laptop frl@10.23.60.146 --feeder pi@10.23.60.114
+./scripts/imdl_tmux.sh --jetson jetson@10.23.60.116 \
+  --laptop frl@<current-ip> --feeder pi@10.23.60.130
 ```
 
 Windows: `guide setup jetson tools laptop status teleop objects feeder`.
