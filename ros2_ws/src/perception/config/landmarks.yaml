@@ -25,8 +25,9 @@
 
 landmarks:
 
-  # The only landmark on this branch. The model has two classes, cow_head and
-  # cow_body, and both are claimed here: a head poking out of a box and a
+  # The only landmark on this branch. The model (models/cows_pipes_yolov8.pt)
+  # has three classes; cow_head and cow_body are claimed here, and pipe is
+  # left unclaimed, so it is ignored with one log line. Both cow classes: a head poking out of a box and a
   # body half hidden behind one are equally a sighting of the cows, and the
   # mapper fuses every such view into one position. They are not split into
   # two landmarks because the mapper estimates one point per landmark; a

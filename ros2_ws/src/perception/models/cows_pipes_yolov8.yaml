@@ -1,0 +1,26 @@
+model_version: imdl_cows_pipes_yolov8_v1
+artifact: cows_pipes_yolov8.pt
+architecture: YOLOv8s
+task: detection  # bounding boxes only
+input_size: 640
+classes:
+  0: cow_head
+  1: cow_body
+  2: pipe
+landmarks:
+  cow_enclosure: [cow_head, cow_body]  # see config/landmarks.yaml
+  # pipe: not mapped yet, ignored by the landmark pipeline
+default_inference:
+  confidence_threshold: 0.35
+dataset:
+  cows: 170 frames from 6 indoor videos, reviewed in CVAT
+  pipes: 134 images, Roboflow pipe-detection-rdfwn v1 (polygons converted to boxes)
+  split: {train: 230, val: 61, test: 13}
+evaluation:  # from the training notebook, cell 4
+  val_map50: TODO
+  val_map50_95: TODO
+  test_map50_pipe: TODO
+notes:
+  - Val frames come from the same recordings as training frames, so the val score is optimistic.
+  - Jetson latency not yet measured.
+training_code: cow_pipe_detector/

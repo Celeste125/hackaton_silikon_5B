@@ -1,0 +1,4 @@
+snapshots/
+runs/
+combined_dataset/
+*.zip
