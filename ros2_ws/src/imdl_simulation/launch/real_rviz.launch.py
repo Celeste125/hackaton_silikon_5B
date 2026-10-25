@@ -1,3 +1,21 @@
+"""RViz for a real run, on the machine that owns the TF tree.
+
+No Image display here may point at a raw camera topic. RViz is the only thing
+on the laptop that ever subscribes to one, and a subscriber is the whole cost:
+DDS sends nothing until a reader matches, so the Jetson's /webcam/image_raw
+stays on the Jetson -- where the detector reads it through shared memory --
+purely because nothing here asks for it. Ticking such a display on pulls
+320x240 rgb8 at 5 fps across the arena WiFi: 1.15 MB/s fragmented into ~825
+UDP datagrams a second, which is most of this robot's share of the air, and
+it starves the one stream that genuinely has to cross (/scan_raw).
+
+The Image display is therefore disabled and aimed at the detector's annotated
+JPEG, /landmarks/debug_image/compressed (~10 KB a frame, one datagram, and it
+has the boxes drawn on it). Turn it on with publish_debug_image:=true on the
+detector when you want to see what the model saw, and turn it off again. RViz
+rewrites real_create3.rviz when you save a layout, so this note lives here.
+"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition

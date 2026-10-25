@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 
 # Subscribes to the raw LIDAR scan topic /scan_raw, replaces its timestamp
@@ -12,8 +13,17 @@ from sensor_msgs.msg import LaserScan
 class ScanTimestampFixer(Node):
     def __init__(self):
         super().__init__('scan_timestamp_fixer')
+        # /scan is laptop-local, so reliable costs nothing here.
         self.pub = self.create_publisher(LaserScan, '/scan', 10)
-        self.create_subscription(LaserScan, '/scan_raw', self.scan_callback, 10)
+        # /scan_raw is the one sensor stream that must cross the WiFi, and a
+        # bare depth would make this reader RELIABLE: every lost fragment of a
+        # ~5 KB scan then triggers a NACK and a retransmit, which on a
+        # congested link feeds back into more loss. Best effort still matches
+        # sllidar's reliable writer (a reader may request less), and a dropped
+        # scan is cheaper than a retransmit storm -- the next one is 100 ms
+        # away, and SLAM is already built to skip scans it cannot place.
+        self.create_subscription(
+            LaserScan, '/scan_raw', self.scan_callback, qos_profile_sensor_data)
 
     def scan_callback(self, msg: LaserScan):
         now = self.get_clock().now()

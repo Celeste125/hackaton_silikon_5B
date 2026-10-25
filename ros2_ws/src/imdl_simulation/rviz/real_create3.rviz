@@ -224,20 +224,20 @@ Visualization Manager:
       Queue Size: 100
       Value: true
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
       Max Value: 1
       Median window: 5
       Min Value: 0
-      Name: Webcam
+      Name: Detector Debug Image (off by default)
       Normalize Range: true
       Topic:
         Depth: 2
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /webcam/image_raw
-      Transport Hint: raw
-      Value: true
+        Value: /landmarks/debug_image
+      Transport Hint: compressed
+      Value: false
     - Class: rviz_default_plugins/Image
       Enabled: true
       Max Value: 1
