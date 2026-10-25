@@ -36,6 +36,9 @@ setup(
             'imdl_autonomy.depth_obstacle_projector:main',
             'dispenser_locator = imdl_autonomy.dispenser_locator:main',
             'frontier_explorer = imdl_autonomy.frontier_explorer:main',
+            'camera_coverage_explorer = '
+            'imdl_autonomy.camera_coverage_explorer:main',
+            'landmark_mapper = imdl_autonomy.landmark_mapper:main',
             'generate_maps = imdl_autonomy.map_from_world:main',
             'mission_manager = imdl_autonomy.mission_manager:main',
             'object_registry = imdl_autonomy.object_registry:main',

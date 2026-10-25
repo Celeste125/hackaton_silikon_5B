@@ -49,5 +49,9 @@ htmlcov/
 /yolo_seg/model/*
 !/yolo_seg/README.md
 !/yolo_seg/model/README.md
+
+/landmark_prior/model/*
+!/landmark_prior/model/README.md
+!/landmark_prior/model/*.json
 !/yolo_seg/registry/
 !/yolo_seg/registry/**

@@ -1,0 +1,55 @@
+# What the landmark model is allowed to put on the map.
+#
+# This file is the contract with whoever trains the model. The keys are the
+# landmark names the rest of the system uses; model_classes are the class
+# names the weights were trained with, and they are matched case- and
+# separator-insensitively, so 'Food Dispenser', 'food-dispenser' and
+# 'food_dispenser' all match. A class the model emits that no landmark claims
+# is ignored, with one log line.
+#
+# Both landmark_detector (perception) and landmark_mapper (imdl_autonomy) read
+# this file. Keep them pointed at the same copy, or they will disagree about
+# which detections exist.
+#
+# bearing_sigma_deg is the one number worth thinking about. It is how far the
+# box centre is expected to be from the object's true centre, as an angle, and
+# it sets how much each view is trusted in the fusion. Guidance:
+#
+#   2-3 deg   a compact object the model boxes tightly and completely
+#   5-8 deg   something large, or usually only partly in frame: the centroid
+#             of the visible part is not the centroid of the object, and it
+#             moves between views
+#
+# Too small a value makes the fusion overconfident and the published
+# covariance a lie; too large only makes it converge more slowly.
+
+landmarks:
+
+  food_dispenser:
+    model_classes: [food_dispenser, dispenser, feeder]
+    min_confidence: 0.45
+    # Compact and boxed whole, so the centroid is stable between views.
+    bearing_sigma_deg: 3.0
+    # Depth lands on the front face, not the middle of the body.
+    range_sigma_m: 0.08
+    color: [0.1, 0.9, 0.2]
+    marker_scale_m: 0.20
+    note: >-
+      A container or machine that dispenses food: a hopper, bin or bottle,
+      often on a stand.
+
+  cow_enclosure:
+    model_classes: [cow_enclosure, enclosure, pen, cow_pen]
+    min_confidence: 0.50
+    # An enclosure is wide, rarely fits in one frame, and the box centroid
+    # therefore wanders by a good fraction of its width from view to view.
+    # Trusting it like a dispenser would pull the fused point around.
+    bearing_sigma_deg: 7.0
+    # Depth inside the box catches the near fence, the far fence, or whatever
+    # is inside it, so a range from an enclosure box is worth little.
+    range_sigma_m: 0.40
+    color: [0.95, 0.6, 0.1]
+    marker_scale_m: 0.35
+    note: >-
+      The fenced or walled area the cows are kept in: a railed pen, a barrier
+      or a gated enclosure, larger than the robot.

@@ -37,6 +37,7 @@ from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from scipy.ndimage import distance_transform_edt
 from std_msgs.msg import Empty
 from tf2_ros import TransformException
@@ -131,6 +132,15 @@ class FrontierExplorer(Node):
 
         self._nav_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
         self._cmd_vel_pub = self.create_publisher(Twist, "cmd_vel", 10)
+        # Additive to the upstream logic: report that the lidar sweep is over,
+        # so camera_coverage_explorer can take over without the two of them
+        # sending Nav2 goals at the same time. Latched, so a subscriber that
+        # starts late still hears it.
+        self._done_pub = self.create_publisher(
+            Empty,
+            "/frontier_explorer/done",
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+        )
 
         self.create_subscription(OccupancyGrid, "/map", self._map_cb, 10)
         self.create_subscription(
@@ -616,6 +626,11 @@ class FrontierExplorer(Node):
     # ------------------------------------------------------------------
 
     def _return_to_start(self):
+        # Published here rather than beside each _exploration_done assignment:
+        # all three of them call this, and it fires before the early return
+        # below so the signal is sent even when there is no start pose to
+        # drive back to.
+        self._done_pub.publish(Empty())
         if self._wiggle_start_pose is None:
             self.get_logger().warn("Start pose unknown — cannot return to start.")
             return
