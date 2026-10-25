@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 # Open one tmux session with every terminal a live SLAM + navigation run needs.
 #
-# Two machines (the usual case): the Jetson carries the lidar, a Linux laptop
-# runs Nav2 and RViz inside the imdl container.
+# Two machines, split: the Jetson carries the sensors and the detector, a
+# Linux laptop runs Nav2 and RViz inside the imdl container. The lidar scans
+# and the detection JSON cross the WiFi.
 #
 #   ./scripts/imdl_tmux.sh --jetson jetson@10.23.60.90 --laptop frl@10.23.60.77
+#
+# Two machines, onboard: the autonomy container runs ON THE JETSON too, so the
+# scans and the JSON stay on one machine over shared memory and only RViz
+# crosses the WiFi. Needs a built workspace on the Jetson; the detector still
+# runs natively there, because the container's ROS image has no CUDA.
+#
+#   ./scripts/imdl_tmux.sh --onboard \
+#       --jetson jetson@10.23.60.116 --laptop frl@10.23.60.146
 #
 # Add the feeding station's Pi, which carries the mixer load cell, to get its
 # window too:
@@ -35,6 +44,12 @@ LAPTOP_HOST=""
 FEEDER_HOST=""
 SINGLE_HOST=""
 USE_LOCAL_DOCKER=false
+# --onboard: run the autonomy container ON THE JETSON, beside the sensors, so
+# the lidar scans and the detection JSON stay on one machine and only RViz
+# crosses the WiFi. Needs a built workspace there; the Jetson's native ROS is
+# untouched, and the detector keeps running natively because the container's
+# plain ROS image has no CUDA.
+ONBOARD=false
 DOMAIN="${ROS_DOMAIN_ID:-2}"
 NAMESPACE="${IMDL_NAMESPACE:-/Team2}"
 LIDAR_YAW="${IMDL_LIDAR_YAW:-3.14159265359}"
@@ -87,6 +102,7 @@ while [[ $# -gt 0 ]]; do
         --feeder) FEEDER_HOST="$2"; shift 2 ;;
         --host) SINGLE_HOST="$2"; shift 2 ;;
         --docker) USE_LOCAL_DOCKER=true; shift ;;
+        --onboard) ONBOARD=true; shift ;;
         --session) SESSION="$2"; shift 2 ;;
         -h|--help) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 1 ;;
@@ -98,6 +114,15 @@ if [[ -n "${SINGLE_HOST}" ]]; then
 elif [[ -z "${JETSON_HOST}" && "${USE_LOCAL_DOCKER}" == false ]]; then
     echo "error: pass --jetson/--laptop, or --host, or --docker (see --help)" >&2
     exit 1
+fi
+
+# Which machine's container the autonomy runs in. The container name is the
+# same on both because they are different hosts; only the host differs.
+if [[ "${ONBOARD}" == true ]]; then
+    [[ -n "${JETSON_HOST}" ]] || { echo "error: --onboard needs --jetson" >&2; exit 1; }
+    CONTAINER_HOST="${JETSON_HOST}"
+else
+    CONTAINER_HOST="${LAPTOP_HOST}"
 fi
 
 command -v tmux >/dev/null || { echo "error: tmux is not installed" >&2; exit 1; }
@@ -138,16 +163,20 @@ on_host() {
 
 # A ROS command inside the imdl container, which already holds the workspace
 # and the ROS environment. Locally when --docker, otherwise over SSH.
-in_container() {
-    local cmd="$1"
+container_on() {
+    local host="$1" cmd="$2"
     local inner
     inner="$(printf 'docker exec -it %s bash -ic %s' "${CONTAINER}" \
         "$(sq "export ROS_DOMAIN_ID=${DOMAIN}; ${cmd}")")"
     if [[ "${USE_LOCAL_DOCKER}" == true ]]; then
         printf '%s' "${inner}"
     else
-        ssh_cmd "-t" "${LAPTOP_HOST}" "${inner}"
+        ssh_cmd "-t" "${host}" "${inner}"
     fi
+}
+
+in_container() {
+    container_on "${CONTAINER_HOST}" "$1"
 }
 
 # Where the lidar, SLAM and teleop run: the Jetson when there is one,
@@ -170,7 +199,7 @@ feeder_side() {
 # Where Nav2, RViz and the map saver run.
 nav_side() {
     local cmd="$1" want_x11="${2:-plain}"
-    if [[ -n "${LAPTOP_HOST}" || "${USE_LOCAL_DOCKER}" == true ]]; then
+    if [[ -n "${CONTAINER_HOST}" || "${USE_LOCAL_DOCKER}" == true ]]; then
         in_container "${cmd}"
     else
         on_host "${JETSON_HOST}" "${want_x11}" "${cmd}"
@@ -204,11 +233,18 @@ if [[ "${SPLIT}" == true ]]; then
     # run.sh's own attach check must agree on the name. Left to differ, every
     # later window would exec into a container that has a different checkout
     # mounted at /ws, which reads as "the launch file I just pulled is gone".
-    add_setup "$(ssh_cmd "-t" "${LAPTOP_HOST}" \
+    add_setup "$(ssh_cmd "-t" "${CONTAINER_HOST}" \
         "$(repo_sync) && cd docker && DISPLAY=:0 XAUTHORITY=\$HOME/.Xauthority IMDL_CONTAINER=${CONTAINER} ./run.sh --build")" \
-        "pull the code + start the container (LEAVE IT RUNNING)"
+        "pull the code + start the autonomy container on ${CONTAINER_HOST} (LEAVE IT RUNNING)"
     add_setup "$(in_container 'ws_build')" \
         "ws_build, after a new or changed launch file"
+    if [[ "${ONBOARD}" == true ]]; then
+        # Onboard keeps the autonomy on the Jetson, so the laptop's container
+        # exists only to draw RViz. Same container name, different host.
+        add_setup "$(ssh_cmd "-t" "${LAPTOP_HOST}" \
+            "$(repo_sync) && cd docker && DISPLAY=:0 XAUTHORITY=\$HOME/.Xauthority IMDL_CONTAINER=${CONTAINER} ./run.sh --build")" \
+            "pull + start the RViz-only container on ${LAPTOP_HOST} (only if you want RViz)"
+    fi
 elif [[ "${USE_LOCAL_DOCKER}" == true ]]; then
     add_setup "$(in_container 'ws_build')" \
         "ws_build, after a new or changed launch file"
@@ -229,10 +265,19 @@ if [[ -n "${JETSON_HOST}" ]]; then
         "pull the code on the Jetson (it runs the camera from there)"
 fi
 
+
 if [[ "${SPLIT}" == true ]]; then
     RVIZ_WHERE="the LAPTOP's"
 else
     RVIZ_WHERE="its own machine's"
+fi
+
+if [[ "${ONBOARD}" == true ]]; then
+    RVIZ_NOTE="its own window, last in the list, drawn by the laptop's container."
+    TOPOLOGY="onboard -- autonomy on the Jetson, only RViz over the WiFi"
+else
+    RVIZ_NOTE="in this same window, on ${RVIZ_WHERE} screen."
+    TOPOLOGY="split -- autonomy on the laptop, scans and detections over the WiFi"
 fi
 
 {
@@ -245,8 +290,9 @@ cat <<GUIDE_TEXT
 GUIDE_TEXT
 if [[ "${SPLIT}" == true ]]; then
 cat <<GUIDE_TEXT
-  sensors+model  ${JETSON_HOST}
-  SLAM+Nav2+RViz ${LAPTOP_HOST}, inside the '${CONTAINER}' container
+  topology       ${TOPOLOGY}
+  sensors+model  ${JETSON_HOST}, natively (CUDA)
+  autonomy       ${CONTAINER_HOST}, inside the '${CONTAINER}' container
 GUIDE_TEXT
 else
 cat <<GUIDE_TEXT
@@ -282,12 +328,13 @@ cat <<GUIDE_TEXT
   3  tools    Three panes, all on demand: the odom rate (use it before
               window 4 -- see the gate below), the map saver, and a
               camera check.
-  4  laptop   ONE launch file on the nav machine: scan restamp, odom TF,
-              SLAM, Nav2, twist_mux, the frontier explorer, the approach
-              controller, and RViz on ${RVIZ_WHERE} screen. All of it
-              together because the whole TF chain has to run on one
-              clock -- TF cannot cross the WiFi within its 0.2 s
-              tolerances. Wait for "Managed nodes are active" (10-20 s).
+  4  autonomy ONE launch file, in the container on ${CONTAINER_HOST}:
+              scan restamp, odom TF, SLAM, Nav2, twist_mux, the frontier
+              explorer and the approach controller. All of it together
+              because the whole TF chain has to run on one clock -- TF
+              cannot cross the WiFi within its 0.2 s tolerances.
+              Wait for "Managed nodes are active" (10-20 s).
+              RViz: ${RVIZ_NOTE}
               In RViz set the Map display's Color Scheme to 'raw'.
               Then it drives itself: a real detection stops exploration,
               aligns, takes a short straight measurement, saves map
@@ -398,14 +445,22 @@ tmux split-window -v -t "${SESSION}:tools"
 tmux send-keys -t "${SESSION}:tools" \
     "$(nav_side 'bash $(ros2 pkg prefix imdl_autonomy)/share/imdl_autonomy/scripts/check_camera.sh')"
 
-# 4  laptop: scan restamp, odom TF, SLAM, Nav2, twist_mux, the frontier
-# explorer, the approach controller and RViz. One launch file because they
-# belong on one machine: splitting the TF chain across the WiFi made
-# slam_toolbox drop every scan with 'queue is full' while Nav2 missed
-# transforms by 0.6-2.2 s. Pass rviz:=false to run RViz somewhere else.
-tmux new-window -t "${SESSION}" -n laptop
-tmux send-keys -t "${SESSION}:laptop" \
-    "$(nav_side "ros2 launch imdl_autonomy laptop_bringup.launch.py namespace:=${NAMESPACE} map_id:=${MAP_NAME} lidar_yaw:=${LIDAR_YAW}" x11)"
+# 4  autonomy: scan restamp, odom TF, SLAM, Nav2, twist_mux, the frontier
+# explorer and the approach controller. One launch file because they belong on
+# one machine: splitting the TF chain across the WiFi made slam_toolbox drop
+# every scan with 'queue is full' while Nav2 missed transforms by 0.6-2.2 s.
+#
+# Onboard runs it in the Jetson's container, so RViz moves to its own window on
+# the laptop -- X forwarded from the Jetson is not worth the trouble.
+if [[ "${ONBOARD}" == true ]]; then
+    AUTONOMY_RVIZ="rviz:=false"
+else
+    AUTONOMY_RVIZ="rviz:=true"
+fi
+tmux new-window -t "${SESSION}" -n autonomy
+tmux send-keys -t "${SESSION}:autonomy" \
+    "$(nav_side "ros2 launch imdl_autonomy autonomy_bringup.launch.py namespace:=${NAMESPACE} map_id:=${MAP_NAME} lidar_yaw:=${LIDAR_YAW} ${AUTONOMY_RVIZ}" x11)"
+
 
 # 5  status. Read-only. The legacy camera_coverage.launch.py sends its own
 # Nav2 goals and must not run alongside this workflow.
@@ -432,6 +487,13 @@ if [[ -n "${FEEDER_HOST}" ]]; then
     tmux send-keys -t "${SESSION}:feeder" \
         "$(nav_side 'ros2 launch imdl_autonomy silo_status.launch.py')"
     tmux select-layout -t "${SESSION}:feeder" tiled
+fi
+
+# Last, so the window numbers above are the same in both topologies.
+if [[ "${ONBOARD}" == true ]]; then
+    tmux new-window -t "${SESSION}" -n rviz
+    tmux send-keys -t "${SESSION}:rviz" \
+        "$(container_on "${LAPTOP_HOST}" "ros2 launch imdl_simulation real_rviz.launch.py model_visual_yaw:=0.0 lidar_yaw:=${LIDAR_YAW}")"
 fi
 
 tmux select-window -t "${SESSION}:guide"

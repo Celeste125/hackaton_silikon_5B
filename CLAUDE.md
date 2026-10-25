@@ -87,10 +87,18 @@ The detector contract: [`perception/docs/landmark_model_handoff.md`](ros2_ws/src
 
 ## Decisions not to undo
 
-**Only JSON crosses the WiFi.** The detector publishes boxes plus resolved
-intrinsics plus, with a depth camera, the range it already sampled. The mapper
-therefore needs no camera topics at all. The arena WiFi is congested and
-already carries lidar and Nav2.
+**Only JSON crosses the machine boundary.** The detector publishes boxes plus
+resolved intrinsics plus, with a depth camera, the range it already sampled.
+The mapper therefore needs no camera topics at all.
+
+Which boundary that is depends on the topology, and the same two launch files
+serve both. SPLIT puts the autonomy on the laptop, so the JSON and the lidar
+scans cross the congested arena WiFi -- that is what the decision was for.
+ONBOARD (`--onboard`) puts the autonomy container on the Jetson beside the
+sensors, so the boundary becomes process-to-process on one machine: with
+`--net=host --ipc=host` FastDDS uses shared memory, and only RViz crosses the
+WiFi, which is the one thing that tolerates lag. The decision still holds in
+both; ONBOARD just makes it nearly free.
 
 **The mapper runs where TF lives.** It does TF lookups at each image's *own*
 timestamp, not "now", because the robot is usually turning and 200 ms is
@@ -154,11 +162,30 @@ start and none flows while the robot is docked or asleep. If odom is late, the
 local costmap activation fails *permanently*. Always confirm
 `ros2 topic hz /Team2/odom` before starting Nav2.
 
-**The Jetson has no colcon workspace for this repo.** Everything on it is
-launched by path out of `~/imdl-main`, so a `git pull` there is the whole
-deployment. That is why `landmark_detector_node.py` is run with `python3`
-directly and given `landmark_config` explicitly, and why both new nodes have
-`if __name__ == '__main__'` guards.
+**The Jetson needs no colcon workspace for the SENSOR half.** Everything in
+`jetson_bringup.launch.py` is launched by path out of the checkout, so a
+`git pull` there is the whole deployment. That is why
+`landmark_detector_node.py` is run with `python3` directly and given
+`landmark_config` explicitly, why that launch file resolves its siblings
+relative to itself rather than through the ament index, and why both new nodes
+have `if __name__ == '__main__'` guards. Keep it that way: it is what makes
+the sensor half deployable with one command.
+
+ONBOARD does need a built workspace on the Jetson, but **in the container**,
+not on the host -- `./run.sh --build` then `ws_build`, exactly as on the
+laptop. Do not apt/pip the autonomy dependencies onto the Jetson's host
+system: its PyTorch is a hand-placed NVIDIA wheel, and a `rosdep install -r -y`
+or a `pip install` without `--no-deps` can replace it with a CPU wheel. The
+detector then keeps running and silently stops using the GPU, which is the
+worst kind of failure -- nothing breaks, it just gets slow.
+
+**The detector stays native under ONBOARD.** `docker/Dockerfile` is
+`FROM osrf/ros:humble-desktop`, which has no L4T base and no CUDA userspace,
+so a detector inside that container would run YOLO on the CPU. Native for the
+GPU, container for the ROS packages, both on the Jetson, shared memory between
+them. Two Humbles then exist on that machine, the host's and the container's;
+they are separate processes and do not conflict, but do not source both in one
+shell.
 
 **`camera_pitch` does not tilt the camera down.** With the optical-frame
 convention these launch files use, `pitch` rotates the image about the view

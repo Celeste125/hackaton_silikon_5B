@@ -187,12 +187,33 @@ which lets exploration run. Fixed `stub` boxes remain available for mapping
 diagnostics but are explicitly excluded as approach targets -- they cannot
 produce real size growth, so they never move the rover.
 
-**Laptop, one terminal.** Scan restamp, odometry TF, SLAM, Nav2, twist_mux,
-the frontier explorer, the approach controller and RViz:
+**The autonomy half, one terminal.** Scan restamp, odometry TF, SLAM, Nav2,
+twist_mux, the frontier explorer, the approach controller and RViz:
 
 ```bash
-ros2 launch imdl_autonomy laptop_bringup.launch.py map_id:=my_map
+ros2 launch imdl_autonomy autonomy_bringup.launch.py map_id:=my_map
 ```
+
+Where that runs is a choice, and it is the main lever on how fast the whole
+thing feels:
+
+| | SPLIT | ONBOARD |
+| --- | --- | --- |
+| Runs on | the laptop's container | the Jetson's container, beside the sensors |
+| Over the WiFi | lidar scans, detection JSON, cmd_vel, Create3 topics | RViz only |
+| Between detector and autonomy | arena WiFi | FastDDS shared memory (`--net=host --ipc=host`) |
+| Needs | nothing extra | a built workspace in the Jetson's container |
+| RViz | in the same launch | `rviz:=false` here, `real_rviz.launch.py` on the laptop |
+
+ONBOARD is `./scripts/imdl_tmux.sh --onboard --jetson … --laptop …`, and it
+only pays off because the detector stays **native** on the Jetson: the
+container image has no CUDA, so a detector inside it would run on the CPU.
+Native for the GPU, container for the ROS packages, shared memory between.
+
+Do not install the autonomy dependencies onto the Jetson's host system. Its
+PyTorch is a hand-placed NVIDIA wheel, and `rosdep install -r -y` or a stray
+`pip install` can swap it for a CPU wheel -- after which inference still works
+and silently stops using the GPU.
 
 All of that is one launch file because it has to be one machine: splitting the
 TF chain across the WiFi made slam_toolbox drop every scan with `queue is

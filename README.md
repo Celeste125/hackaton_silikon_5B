@@ -13,7 +13,9 @@ to another viewpoint; compatible measurements refine the saved position.
 
 Start with the [object approach runbook](ros2_ws/src/imdl_autonomy/docs/object_approach.md).
 A run is two commands: `jetson_bringup.launch.py` on the robot and
-`laptop_bringup.launch.py` on the navigation machine. The runbook covers both,
+`autonomy_bringup.launch.py` on whichever machine carries the autonomy --
+the laptop, or the Jetson itself with `--onboard`, which keeps the scans and
+the detections off the WiFi. The runbook covers both,
 plus the model interface, range derivation, configuration and hardware-free
 tests. No trained model is required to build
 or test the controller. Add weights later through `backend` and `model_path`.

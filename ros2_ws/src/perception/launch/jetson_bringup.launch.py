@@ -13,9 +13,11 @@ this file, and the detector runs as a plain python3 process with PYTHONPATH
 set, exactly as it was run by hand before. The ament index is consulted only
 as a fallback, so the same file still works from an installed share tree.
 
-The lidar deliberately publishes /scan_raw (fix_timestamps:=false). The laptop
-owns /scan, odom -> base_link and map -> odom; see laptop_bringup.launch.py.
-Do not start SLAM or an odometry TF publisher here.
+The lidar deliberately publishes /scan_raw (fix_timestamps:=false). The
+autonomy half owns /scan, odom -> base_link and map -> odom; see
+autonomy_bringup.launch.py. Do not start SLAM or an odometry TF publisher in
+*this* file -- under ONBOARD the autonomy runs on this same machine, but in
+the container, and the split of responsibilities is unchanged.
 """
 
 import os
