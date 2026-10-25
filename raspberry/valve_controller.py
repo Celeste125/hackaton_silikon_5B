@@ -28,11 +28,19 @@ Calibration file:
   priority over the open_angle / closed_angle parameters. Mount a folder at
   /data in Docker so the file survives restarts.
 
+Startup:
+  Nothing moves. The PCA9685's outputs are switched off while it is configured
+  and stay off until the first command arrives, so every valve keeps the
+  position it was physically left in. Pass -p close_on_start:=true to have the
+  node drive all valves closed as it starts.
+
 Servo behaviour:
   hold = false (default): after each move the PWM signal is switched off after
     `move_time_s`, so the servo goes quiet. The valve stays put by friction.
   hold = true: the servo keeps actively holding its position.
-  On exit the valves are closed (if close_on_exit) and the PCA9685 is put to sleep.
+  On exit the valves are closed (if close_on_exit) and the PCA9685 is put to
+    sleep -- but only if this node ever moved them, so starting it and stopping
+    it again is a no-op.
 
 Parameters (override with --ros-args -p name:=value):
   i2c_bus        int        I2C bus number               (default 1)
@@ -49,7 +57,7 @@ Parameters (override with --ros-args -p name:=value):
   max_angle      double     highest angle if limited     (default 240  = 2500 us)
   hold           bool       keep holding after a move    (default false)
   move_time_s    double     time to finish a move        (default 1.0)
-  close_on_start bool       close valves at startup      (default true)
+  close_on_start bool       close valves at startup      (default false)
   close_on_exit  bool       close valves on shutdown     (default true)
   timeout_s      double     close all if no command for this long, 0 = off (default 0.0)
   calib_file     string     calibration file, "" = off   (default /data/valve_calibration.json)
@@ -144,7 +152,12 @@ class ValveController(Node):
         self.declare_parameter('max_angle', 240.0)
         self.declare_parameter('hold', False)
         self.declare_parameter('move_time_s', 1.0)
-        self.declare_parameter('close_on_start', True)
+        # Off: a start is not a command. The stored closed angle can also sit
+        # outside the servo's rated pulse range (channel 14's -60 deg is 500 us,
+        # below the FS5106B's 900 us), where a hobby servo drives into its end
+        # stop instead of to a known position -- so "close everything" at
+        # startup could move a valve the wrong way, with nobody asking for it.
+        self.declare_parameter('close_on_start', False)
         self.declare_parameter('close_on_exit', True)
         self.declare_parameter('timeout_s', 0.0)
         self.declare_parameter('calib_file', '/data/valve_calibration.json')
@@ -203,6 +216,10 @@ class ValveController(Node):
         if get('close_on_start'):
             for i in range(n):
                 self.set_valve(i, False)
+        else:
+            self.get_logger().info(
+                'Startup: nothing moved, outputs stay off until the first '
+                'command (-p close_on_start:=true closes every valve instead)')
 
         for i, topic in enumerate(self.topics):
             self.create_subscription(Float32, f'{topic}/percent', lambda msg, i=i: self.on_percent(i, msg), 10)
@@ -381,7 +398,16 @@ class ValveController(Node):
         except ValueError:
             self.get_logger().warn(f'{name}: bad number in "{msg.data}"')
 
+    def ever_moved(self) -> bool:
+        """True once this node has driven any valve, by command or calibration."""
+        return any(a is not None for a in self.angle)
+
     def watchdog(self) -> None:
+        # Idle since startup is not a lost connection: with nothing ever
+        # commanded there is no state to fall back from, and closing here would
+        # be the startup movement that close_on_start deliberately skips.
+        if not self.ever_moved():
+            return
         if not self.timed_out and time.monotonic() - self.last_cmd > self.timeout_s:
             self.timed_out = True
             self.get_logger().warn('No valve commands received, closing all valves')
@@ -390,7 +416,7 @@ class ValveController(Node):
 
     def shutdown(self) -> None:
         try:
-            if self.close_on_exit:
+            if self.close_on_exit and self.ever_moved():
                 for i, ch in enumerate(self.channels):
                     self.pca.set_pulse_us(ch, self.angle_to_us(self.closed_angle[i]))
                 time.sleep(self.move_time_s)  # let the servos reach closed
