@@ -43,9 +43,9 @@ MAP_NAME="${IMDL_MAP_NAME:-my_map}"
 # roll/yaw pair turns base_link (x forward, z up) into the optical convention
 # (z forward, y down). MEASURE x/y/z: with bearing-only geometry an angular
 # error scales with range and averaging will not remove it.
-CAM_X="${IMDL_CAM_X:-0.10}"
+CAM_X="${IMDL_CAM_X:-0.08}"
 CAM_Y="${IMDL_CAM_Y:-0.0}"
-CAM_Z="${IMDL_CAM_Z:-0.10}"
+CAM_Z="${IMDL_CAM_Z:-0.35}"
 CAM_ROLL="${IMDL_CAM_ROLL:--1.5707963}"
 CAM_PITCH="${IMDL_CAM_PITCH:-0.0}"
 CAM_YAW="${IMDL_CAM_YAW:--1.5707963}"
@@ -56,19 +56,22 @@ CAM_YAW="${IMDL_CAM_YAW:--1.5707963}"
 # RViz stays live, because a local subscriber reads shared memory instead.
 # 320x240 is a quarter of the bytes; drop to IMDL_CAM_WIDTH=160
 # IMDL_CAM_HEIGHT=120 if it still stutters.
-# Which landmark the stub detector reports, and how much of the frame its box
-# covers. The stub needs no trained model: aim the camera at the real object
-# and it lands in the middle of the frame, which is what a centred box means.
-# Set IMDL_LANDMARK_BACKEND=ultralytics IMDL_LANDMARK_MODEL=~/models/x.pt once
-# the weights exist.
+# The trained weights ship in the repo, so the default is the real model and
+# a normal run needs no environment variables at all. Fallbacks:
+#   IMDL_LANDMARK_BACKEND=disabled  empty frames; camera heartbeat, no weights
+#   IMDL_LANDMARK_BACKEND=stub      a fixed centred box, for mapping only --
+#                                   it cannot measure expansion, so it is
+#                                   deliberately ignored by the approach
+#   IMDL_LANDMARK_BACKEND=onnx      when a JetPack-matched torch is a fight
 STUB_LANDMARK="${IMDL_STUB_LANDMARK:-cow_enclosure}"
-LANDMARK_BACKEND="${IMDL_LANDMARK_BACKEND:-disabled}"
-LANDMARK_MODEL="${IMDL_LANDMARK_MODEL:-}"
+LANDMARK_BACKEND="${IMDL_LANDMARK_BACKEND:-ultralytics}"
 CAM_WIDTH="${IMDL_CAM_WIDTH:-320}"
 CAM_HEIGHT="${IMDL_CAM_HEIGHT:-240}"
 CAM_FPS="${IMDL_CAM_FPS:-5}"
 MAP_DIR="${IMDL_MAP_DIR:-/root/maps}"
 REPO_DIR="${IMDL_REPO_DIR:-~/imdl-main}"
+# Path on the ROBOT: the detector runs where the camera is plugged in.
+LANDMARK_MODEL="${IMDL_LANDMARK_MODEL:-${REPO_DIR}/ros2_ws/src/perception/models/cows_pipes_yolov8.pt}"
 # Default to whatever branch this checkout is on, so the laptop gets the code
 # you are actually running, not whichever branch was current when this was
 # written. Override with IMDL_BRANCH.
@@ -263,13 +266,15 @@ cat <<GUIDE_TEXT
               to arrive as ~650 intact UDP packets or it is dropped
               whole, and VGA over this WiFi leaves RViz frozen on one
               picture. Smaller still with IMDL_CAM_WIDTH/HEIGHT.
-              Detector backend '${LANDMARK_BACKEND}'. The default 'disabled'
-              publishes empty frames -- a camera heartbeat with no
-              weights. A stub can test mapping, but its fixed boxes
-              cannot measure expansion and never drive the rover.
-              Once the weights exist:
-                IMDL_LANDMARK_BACKEND=ultralytics \\
-                IMDL_LANDMARK_MODEL=~/imdl-main/ros2_ws/src/perception/models/cows_pipes_yolov8.pt
+              Detector backend '${LANDMARK_BACKEND}', weights
+                ${LANDMARK_MODEL}
+              Three classes: cow_head and cow_body map to the
+              cow_enclosure landmark, and pipe to food_dispenser --
+              the dispenser's model class is called 'pipe'.
+              Needs ultralytics ON THE JETSON; it is deliberately not
+              rosdep'd (perception/docs/jetson_yolo_runtime.md). If
+              that is a fight, IMDL_LANDMARK_BACKEND=onnx, or
+              =disabled to explore with no detector at all.
   3  tools    Three panes, all on demand: the odom rate (use it before
               window 4 -- see the gate below), the map saver, and a
               camera check.
