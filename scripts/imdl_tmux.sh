@@ -61,7 +61,7 @@ CAM_YAW="${IMDL_CAM_YAW:--1.5707963}"
 # and it lands in the middle of the frame, which is what a centred box means.
 # Set IMDL_LANDMARK_BACKEND=ultralytics IMDL_LANDMARK_MODEL=~/models/x.pt once
 # the weights exist.
-STUB_LANDMARK="${IMDL_STUB_LANDMARK:-food_dispenser}"
+STUB_LANDMARK="${IMDL_STUB_LANDMARK:-cow_enclosure}"
 LANDMARK_BACKEND="${IMDL_LANDMARK_BACKEND:-stub}"
 LANDMARK_MODEL="${IMDL_LANDMARK_MODEL:-}"
 CAM_WIDTH="${IMDL_CAM_WIDTH:-320}"

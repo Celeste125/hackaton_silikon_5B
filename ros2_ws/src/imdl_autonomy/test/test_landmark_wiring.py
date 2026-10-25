@@ -53,7 +53,17 @@ def test_the_mapper_may_import_the_shared_wire_format():
 def test_the_shipped_landmark_config_loads():
     specs = load_landmark_specs(
         yaml.safe_load(CONFIG.read_text(encoding='utf-8')))
-    assert {'food_dispenser', 'cow_enclosure'} <= set(specs)
+    assert {'cow_enclosure'} <= set(specs)
+
+
+def test_the_cow_model_classes_are_claimed():
+    """The weights emit cow_head and cow_body; both must reach the mapper."""
+    specs = load_landmark_specs(
+        yaml.safe_load(CONFIG.read_text(encoding='utf-8')))
+    claimed = {
+        model_class
+        for spec in specs.values() for model_class in spec.model_classes}
+    assert {'cow_head', 'cow_body'} <= claimed
 
 
 def test_the_shipped_config_is_installed_with_the_package():
@@ -82,11 +92,11 @@ def test_the_config_class_names_are_already_canonical():
 
 
 def test_a_wide_landmark_is_configured_as_less_trustworthy_per_view():
-    """An enclosure's box centroid wanders; a dispenser's does not."""
+    """An enclosure's box centroid wanders, so each view must count for less
+    than a compact object's would (2-3 deg, see landmarks.yaml)."""
     specs = load_landmark_specs(
         yaml.safe_load(CONFIG.read_text(encoding='utf-8')))
-    assert (specs['cow_enclosure'].bearing_sigma_rad
-            > specs['food_dispenser'].bearing_sigma_rad)
+    assert specs['cow_enclosure'].bearing_sigma_rad > 0.087  # > 5 deg
 
 
 def test_the_navigation_rviz_profile_shows_the_landmarks():
