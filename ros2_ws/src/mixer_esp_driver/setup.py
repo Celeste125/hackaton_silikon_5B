@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = 'mixer_esp_driver'
@@ -10,7 +12,9 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
     ],
+    package_data={package_name: ['web/*.html']},
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='fudayl',
@@ -21,6 +25,7 @@ setup(
         'console_scripts': [
             'esp_driver_node = mixer_esp_driver.esp_driver_node:main',
             'calibrate = mixer_esp_driver.calibrate:main',
+            'web_control = mixer_esp_driver.web_control:main',
         ],
     },
 )

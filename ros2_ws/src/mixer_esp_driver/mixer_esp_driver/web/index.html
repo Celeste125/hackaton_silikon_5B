@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mixer control</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1d2026; --line: #2c313a; --text: #e8eaed;
+    --muted: #8b93a1; --accent: #4f9dff; --danger: #e5484d; --ok: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, sans-serif;
+    max-width: 720px; margin-inline: auto;
+  }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
+  .dot.on { background: var(--ok); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row > * { flex: 1; }
+  button {
+    font: inherit; color: var(--text); background: #2a2f38; border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 14px; cursor: pointer; touch-action: manipulation;
+  }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+  input[type=range] { width: 100%; accent-color: var(--accent); height: 32px; }
+  .motor { margin-bottom: 14px; }
+  .motor .label { display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .motor .val { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .weight { font-size: 40px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .weight small { font-size: 18px; color: var(--muted); font-weight: 400; }
+  .cells { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  details[open] summary { margin-bottom: 12px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+  .valve { padding: 12px 0; border-top: 1px solid var(--line); }
+  .valve:first-child { border-top: 0; padding-top: 0; }
+  .valve .head { display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .valve .val { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; }
+  input[type=number] {
+    font: inherit; color: var(--text); background: #111318; border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px; width: 100%; min-width: 0;
+  }
+  #toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    background: #000c; padding: 10px 16px; border-radius: 8px; font-size: 14px;
+    opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mixer control</h1>
+  <div class="status"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
+</header>
+
+<section>
+  <h2>Load cells</h2>
+  <div class="weight"><span id="weight">—</span> <small>kg</small></div>
+  <div class="cells" id="cells"></div>
+  <div class="row" style="margin-top: 12px">
+    <button id="tare">Tare (zero)</button>
+  </div>
+</section>
+
+<section>
+  <h2>Valves (feeder)</h2>
+  <div id="valves"></div>
+  <div id="doseStatus" class="hint" style="margin: 0 0 10px"></div>
+  <div class="row">
+    <button id="closeValves">Close all valves</button>
+    <button id="cancelDose">Cancel dose</button>
+  </div>
+  <p class="hint">Dose: opens the valve and closes it once that much weight has been added (needs live load cell data, aborts after 2 min).</p>
+</section>
+
+<section>
+  <h2>Motors</h2>
+  <div id="motors"></div>
+  <div class="row">
+    <button class="danger" id="stop">STOP ALL (space)</button>
+  </div>
+  <p class="hint">Stops automatically if this page closes or loses connection.</p>
+</section>
+
+<section>
+  <h2>Door</h2>
+  <div class="row">
+    <button class="primary" id="open">Open</button>
+    <button class="primary" id="close">Close</button>
+  </div>
+  <input type="range" id="door" min="0" max="1" step="0.01" value="0" style="margin-top:12px">
+  <div class="row" style="justify-content: space-between; color: var(--muted); font-size: 13px">
+    <span style="flex:none">open 0.0</span><span id="doorVal" style="flex:none">—</span><span style="flex:none; text-align:right">1.0 closed</span>
+  </div>
+  <details style="margin-top: 14px">
+    <summary>Calibrate door ends</summary>
+    <div class="row">
+      <span style="flex:none; width: 90px" id="usVal">1500 µs</span>
+      <input type="range" id="us" min="500" max="2500" step="10" value="1500">
+    </div>
+    <div class="row" style="margin-top: 8px">
+      <button id="usMinus">−10</button><button id="usPlus">+10</button>
+    </div>
+    <div class="row" style="margin-top: 8px">
+      <button id="saveOpen">Save as OPEN</button>
+      <button id="saveClosed">Save as CLOSED</button>
+    </div>
+    <p class="hint">Move the slider (the servo follows) until the door is fully open, save it, then do the same for closed.</p>
+  </details>
+</section>
+
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let numMotors = 0;
+let speeds = [];
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+async function post(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+async function action(path, body) {
+  try {
+    const r = await post(path, body);
+    if (r.message !== undefined) toast(r.message || (r.ok ? 'OK' : 'Failed'));
+    return r;
+  } catch (e) {
+    toast(String(e));
+  }
+}
+
+// ---- motors ----
+function buildMotors(n) {
+  numMotors = n;
+  speeds = new Array(n).fill(0);
+  $('motors').innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const d = document.createElement('div');
+    d.className = 'motor';
+    d.innerHTML = `
+      <div class="label"><span>Motor ${i}</span><span class="val" id="mv${i}">0.00</span></div>
+      <input type="range" id="m${i}" min="-1" max="1" step="0.05" value="0">
+      <div class="row"><button data-m="${i}" data-v="-0.3">◀ 30%</button><button data-m="${i}" data-v="0">0</button><button data-m="${i}" data-v="0.3">30% ▶</button></div>`;
+    $('motors').appendChild(d);
+    $(`m${i}`).addEventListener('input', (e) => setSpeed(i, parseFloat(e.target.value)));
+  }
+  $('motors').querySelectorAll('button').forEach((b) =>
+    b.addEventListener('click', () => setSpeed(+b.dataset.m, parseFloat(b.dataset.v))));
+}
+
+function setSpeed(i, v) {
+  speeds[i] = v;
+  $(`m${i}`).value = v;
+  $(`mv${i}`).textContent = v.toFixed(2);
+  sendMotors();
+}
+
+function stopAll() {
+  for (let i = 0; i < numMotors; i++) setSpeed(i, 0);
+}
+
+function sendMotors() {
+  if (!numMotors) return;
+  post('/api/motors', {speeds}).catch(() => {});
+}
+
+$('stop').addEventListener('click', stopAll);
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); stopAll(); }
+});
+setInterval(sendMotors, 300);  // heartbeat: the server stops the motors without it
+
+// ---- door ----
+function setDoor(p) {
+  $('door').value = p;
+  $('doorVal').textContent = p.toFixed(2);
+  action('/api/door', {position: p});
+}
+$('open').addEventListener('click', () => setDoor(0));
+$('close').addEventListener('click', () => setDoor(1));
+$('door').addEventListener('input', (e) => {
+  $('doorVal').textContent = parseFloat(e.target.value).toFixed(2);
+});
+$('door').addEventListener('change', (e) => setDoor(parseFloat(e.target.value)));
+
+let usTimer;
+function setUs(us) {
+  us = Math.max(500, Math.min(2500, us));
+  $('us').value = us;
+  $('usVal').textContent = `${us} µs`;
+  clearTimeout(usTimer);
+  usTimer = setTimeout(() => action('/api/door/raw_us', {us}), 80);
+}
+$('us').addEventListener('input', (e) => setUs(parseInt(e.target.value)));
+$('usMinus').addEventListener('click', () => setUs(parseInt($('us').value) - 10));
+$('usPlus').addEventListener('click', () => setUs(parseInt($('us').value) + 10));
+$('saveOpen').addEventListener('click', () => action('/api/door/save_open'));
+$('saveClosed').addEventListener('click', () => action('/api/door/save_closed'));
+
+// ---- load cells ----
+$('tare').addEventListener('click', () => action('/api/tare'));
+
+// ---- valves ----
+const VALVES = [1, 2, 3];
+function buildValves() {
+  $('valves').innerHTML = '';
+  for (const v of VALVES) {
+    const d = document.createElement('div');
+    d.className = 'valve';
+    d.innerHTML = `
+      <div class="head"><span>Valve ${v}</span><span class="val" id="vv${v}">—</span></div>
+      <input type="range" id="v${v}" min="0" max="100" step="5" value="0">
+      <div class="row">
+        <button data-v="${v}" data-p="0">Close</button>
+        <button data-v="${v}" data-p="100">Open</button>
+      </div>
+      <div class="row" style="margin-top: 8px">
+        <input type="number" id="dk${v}" min="0.01" step="0.1" placeholder="kg to add" inputmode="decimal">
+        <button class="primary" data-dose="${v}">Dose</button>
+      </div>`;
+    $('valves').appendChild(d);
+    $(`v${v}`).addEventListener('change', (e) => setValve(v, parseFloat(e.target.value)));
+  }
+  $('valves').querySelectorAll('button[data-p]').forEach((b) =>
+    b.addEventListener('click', () => setValve(+b.dataset.v, parseFloat(b.dataset.p))));
+  $('valves').querySelectorAll('button[data-dose]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const v = +b.dataset.dose;
+      const kg = parseFloat($(`dk${v}`).value);
+      if (!(kg > 0)) { toast('Enter how many kg to add'); return; }
+      action(`/api/valves/${v}/dose`, {target_kg: kg, percent: 100});
+    }));
+}
+function setValve(v, p) {
+  $(`v${v}`).value = p;
+  action(`/api/valves/${v}`, {percent: p});
+}
+$('closeValves').addEventListener('click', () => action('/api/valves/close_all'));
+$('cancelDose').addEventListener('click', () => action('/api/dose/cancel'));
+buildValves();
+
+function showValves(s) {
+  for (const v of VALVES) {
+    const info = s.valves && s.valves[v];
+    if (!info) continue;
+    const pct = info.percent;
+    if (document.activeElement !== $(`v${v}`) && pct !== null) $(`v${v}`).value = pct;
+    const ang = info.angle !== null ? ` · ${info.angle.toFixed(0)}°` : '';
+    $(`vv${v}`).textContent = pct === null ? 'not commanded yet' : `${pct.toFixed(0)}% open${ang}`;
+  }
+  const d = s.dose;
+  $('doseStatus').textContent = d
+    ? `Valve ${d.valve}: ${d.added.toFixed(3)} / ${d.target.toFixed(3)} kg, ${d.status}` : '';
+}
+
+// ---- status polling ----
+async function poll() {
+  try {
+    const res = await fetch('/api/state');
+    const s = await res.json();
+    if (s.num_motors !== numMotors) buildMotors(s.num_motors);
+    showValves(s);
+    const fresh = s.weight !== null && s.weight_age_s < 2;
+    $('weight').textContent = s.weight === null ? '—' : s.weight.toFixed(3);
+    $('weight').style.opacity = fresh ? 1 : 0.4;
+    $('cells').textContent = s.cells.length
+      ? 'cells: ' + s.cells.map((c) => c.toFixed(3)).join('  ') + ' kg' : '';
+    if (s.door && s.door.mode === 'position' && document.activeElement !== $('door')) {
+      $('door').value = s.door.value;
+      $('doorVal').textContent = s.door.value.toFixed(2);
+    }
+    $('dot').classList.toggle('on', fresh);
+    $('conn').textContent = fresh ? 'ESP data live' : 'no load cell data';
+  } catch (e) {
+    $('dot').classList.remove('on');
+    $('conn').textContent = 'server unreachable';
+  }
+}
+setInterval(poll, 500);
+poll();
+</script>
+</body>
+</html>
