@@ -12,8 +12,14 @@
 # in the laptop's ~/.bashrc - never in this repo.
 set -euo pipefail
 
-IMAGE=imdl-humble
-CONTAINER=imdl
+# Overridable so two checkouts can each have their own container. The name is
+# the only thing that distinguishes them, and the attach branch below keys on
+# it: with the name left at the default, a second checkout's run.sh silently
+# attaches to a container that has the FIRST checkout mounted at /ws, and the
+# launch files you just pulled appear not to exist. Set IMDL_CONTAINER (the
+# tmux launcher reads the same variable) when sharing a machine.
+IMAGE="${IMDL_IMAGE:-imdl-humble}"
+CONTAINER="${IMDL_CONTAINER:-imdl}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(cd "${SCRIPT_DIR}/../ros2_ws" && pwd)"
 # Under sudo, $HOME is /root; keep using the invoking user's ~/maps.
