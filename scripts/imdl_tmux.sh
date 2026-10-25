@@ -200,8 +200,12 @@ add_setup() {
 if [[ "${SPLIT}" == true ]]; then
     # DISPLAY/XAUTHORITY let run.sh's xhost reach the laptop's own X session
     # from this SSH shell, so RViz can open on its screen.
+    # IMDL_CONTAINER goes along because in_container's 'docker exec' and
+    # run.sh's own attach check must agree on the name. Left to differ, every
+    # later window would exec into a container that has a different checkout
+    # mounted at /ws, which reads as "the launch file I just pulled is gone".
     add_setup "$(ssh_cmd "-t" "${LAPTOP_HOST}" \
-        "$(repo_sync) && cd docker && DISPLAY=:0 XAUTHORITY=\$HOME/.Xauthority ./run.sh --build")" \
+        "$(repo_sync) && cd docker && DISPLAY=:0 XAUTHORITY=\$HOME/.Xauthority IMDL_CONTAINER=${CONTAINER} ./run.sh --build")" \
         "pull the code + start the container (LEAVE IT RUNNING)"
     add_setup "$(in_container 'ws_build')" \
         "ws_build, after a new or changed launch file"

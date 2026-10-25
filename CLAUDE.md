@@ -277,6 +277,17 @@ exists for when a JetPack-matched torch is more trouble than it is worth.
   other branch does not have and setuptools fails to copy it. Fix:
   `rm -rf /ws/build_humble /ws/install_humble` in the container, then
   `ws_build`. The whole workspace rebuilds in ~14 s.
+- **Sharing a machine: use a second checkout AND a second container name.**
+  `IMDL_REPO_DIR=~/imdl-dispenser` moves every robot-side path, so a
+  teammate's `~/imdl-main` is never touched — `git checkout -B <branch>
+  FETCH_HEAD` would otherwise reset their branch, and it aborts outright if
+  they have uncommitted changes. But `run.sh` keys on the container NAME:
+  with a container called `imdl` already up, it attaches to that one instead
+  of mounting your checkout, and the launch files you just pulled look
+  missing. So pass `IMDL_CONTAINER=imdl-dispenser` too; the launcher forwards
+  it to `run.sh` and uses it for every `docker exec`. This separates the
+  *code*, not the *topics*: `ROS_DOMAIN_ID=2` and namespace `/Team2` are
+  fixed by the Create3, so two people still cannot drive it at once.
 - **A node that owns a device outlives the SSH drop that started it.** Two
   readers on one serial port makes sllidar read its serial number fine and then
   time out on the health code with `RESULT_OPERATION_TIMEOUT`, which reads as
