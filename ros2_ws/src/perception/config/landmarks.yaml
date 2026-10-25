@@ -25,31 +25,26 @@
 
 landmarks:
 
-  food_dispenser:
-    model_classes: [food_dispenser, dispenser, feeder]
-    min_confidence: 0.45
-    # Compact and boxed whole, so the centroid is stable between views.
-    bearing_sigma_deg: 3.0
-    # Depth lands on the front face, not the middle of the body.
-    range_sigma_m: 0.08
-    color: [0.1, 0.9, 0.2]
-    marker_scale_m: 0.20
-    note: >-
-      A container or machine that dispenses food: a hopper, bin or bottle,
-      often on a stand.
-
+  # The only landmark on this branch. The model has two classes, cow_head and
+  # cow_body, and both are claimed here: a head poking out of a box and a
+  # body half hidden behind one are equally a sighting of the cows, and the
+  # mapper fuses every such view into one position. They are not split into
+  # two landmarks because the mapper estimates one point per landmark; a
+  # separate cow_head landmark would just be the same place counted twice.
   cow_enclosure:
-    model_classes: [cow_enclosure, enclosure, pen, cow_pen]
-    min_confidence: 0.50
-    # An enclosure is wide, rarely fits in one frame, and the box centroid
-    # therefore wanders by a good fraction of its width from view to view.
-    # Trusting it like a dispenser would pull the fused point around.
+    model_classes: [cow_head, cow_body]
+    # The model was checked on unseen video at 0.35. Raise this if
+    # /landmarks/state shows views_rejected climbing from false positives.
+    min_confidence: 0.35
+    # Several cows stand at different spots in the enclosure, and a frame
+    # often shows only part of one, so the box centroid wanders a good
+    # fraction of the enclosure width from view to view.
     bearing_sigma_deg: 7.0
-    # Depth inside the box catches the near fence, the far fence, or whatever
-    # is inside it, so a range from an enclosure box is worth little.
+    # Depth inside a cow box lands on the cutout, the box behind it or the
+    # fence, so a range from it is worth little.
     range_sigma_m: 0.40
     color: [0.95, 0.6, 0.1]
     marker_scale_m: 0.35
     note: >-
-      The fenced or walled area the cows are kept in: a railed pen, a barrier
-      or a gated enclosure, larger than the robot.
+      Where the cows are kept: paper cow cutouts mounted on and behind
+      cardboard boxes, detected by head and/or body.
