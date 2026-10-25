@@ -6,14 +6,15 @@ It is only a front end for the topics of esp_driver_node, so start that first:
   /door/position, /door/raw_us, /door/save_open, /door/save_closed
   /mixer/motor_0, /mixer/motor_1
   /loadcell/weight, /loadcell/cells, /loadcell/tare
+  /Team2/cmd_vel (geometry_msgs/Twist, Create 3 base, parameter cmd_vel_topic)
   /valve1..3/percent (published), /valve1..3/angle (feedback). The valves are
   driven by raspberry/valve_controller.py, which must be running.
 
 Needs: pip install fastapi uvicorn
 
-Motors are a dead man's switch: the page keeps sending its setpoint, and the
-node only republishes it while those messages keep arriving. Close the tab or
-lose Wi-Fi and the motors stop. There is no login, use it on a trusted network.
+Motors and base driving are a dead man's switch: the page keeps sending its
+setpoint, and the node only republishes it while those messages keep arriving.
+Close the tab or lose Wi-Fi and the motors and the base stop. There is no login, use it on a trusted network.
 """
 
 import threading
@@ -26,6 +27,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from rclpy.executors import ExternalShutdownException
+from geometry_msgs.msg import Twist
 from rclpy.node import Node
 from std_msgs.msg import Float32, Float32MultiArray
 from std_srvs.srv import Trigger
@@ -38,6 +40,9 @@ HEARTBEAT_TIMEOUT_S = 0.8  # page sends every ~0.3 s; silence longer than this s
 SERVICE_TIMEOUT_S = 3.0
 SERVO_MIN_US = 500   # same limits as the firmware (mixer_esp32/src/config.h)
 SERVO_MAX_US = 2500
+MAX_LINEAR = 0.3    # m/s, Create 3 limit is 0.306 with the safety features on
+MAX_ANGULAR = 1.5   # rad/s
+DRIVE_TIMEOUT_S = 0.5
 VALVES = (1, 2, 3)
 DOSE_TIMEOUT_S = 120.0  # a dose that has not reached its weight by then is aborted
 WEIGHT_MAX_AGE_S = 1.0  # no fresh load cell reading -> abort the dose
@@ -52,6 +57,12 @@ class WebControlNode(Node):
             self.create_publisher(Float32, f'mixer/motor_{i}', 10)
             for i in range(config.NUM_MOTORS)
         ]
+        self.declare_parameter('cmd_vel_topic', '/Team2/cmd_vel')
+        self.cmd_vel_pub = self.create_publisher(
+            Twist, self.get_parameter('cmd_vel_topic').value, 10)
+        self.drive = (0.0, 0.0)
+        self.last_drive_t = 0.0
+        self._drive_active = False
         self.valve_pubs = {
             v: self.create_publisher(Float32, f'valve{v}/percent', 10) for v in VALVES
         }
@@ -78,6 +89,7 @@ class WebControlNode(Node):
         self._motors_active = False
         self.create_timer(1.0 / PUBLISH_HZ, self._publish_motors)
         self.create_timer(0.1, self._check_dose)
+        self.create_timer(0.1, self._publish_drive)
 
     def _on_weight(self, msg):
         with self.lock:
@@ -160,6 +172,27 @@ class WebControlNode(Node):
             for pub, s in zip(self.motor_pubs, speeds):
                 pub.publish(Float32(data=s))
 
+    def _publish_drive(self):
+        with self.lock:
+            fresh = time.monotonic() - self.last_drive_t < DRIVE_TIMEOUT_S
+            lin, ang = self.drive if fresh else (0.0, 0.0)
+            publish = fresh or self._drive_active
+            if not fresh:
+                self.drive = (0.0, 0.0)
+            self._drive_active = fresh and (lin != 0.0 or ang != 0.0)
+        if publish:
+            msg = Twist()
+            msg.linear.x = lin
+            msg.angular.z = ang
+            self.cmd_vel_pub.publish(msg)
+
+    def set_drive(self, linear, angular):
+        with self.lock:
+            self.drive = (max(-MAX_LINEAR, min(MAX_LINEAR, linear)),
+                          max(-MAX_ANGULAR, min(MAX_ANGULAR, angular)))
+            self.last_drive_t = time.monotonic()
+            self._drive_active = self.drive != (0.0, 0.0)
+
     def set_motors(self, speeds):
         with self.lock:
             self.motors = list(speeds)
@@ -214,6 +247,11 @@ class MotorsBody(BaseModel):
     speeds: list[float] = Field(..., description='-1.0 .. 1.0 per motor')
 
 
+class DriveBody(BaseModel):
+    linear: float = Field(0.0, description='m/s, forward positive')
+    angular: float = Field(0.0, description='rad/s, left positive')
+
+
 class DoorBody(BaseModel):
     position: float = Field(..., ge=0.0, le=1.0, description='0 = open, 1 = closed')
 
@@ -248,6 +286,11 @@ def create_app(ros):
         if len(body.speeds) != n:
             raise HTTPException(422, f'expected {n} speeds')
         ros.set_motors([max(-1.0, min(1.0, s)) for s in body.speeds])
+        return {'ok': True}
+
+    @app.post('/api/drive')
+    def drive(body: DriveBody):
+        ros.set_drive(body.linear, body.angular)
         return {'ok': True}
 
     @app.post('/api/door')
@@ -320,6 +363,8 @@ def main(args=None):
     finally:
         node.set_motors([0.0] * config.NUM_MOTORS)
         node._publish_motors()
+        node.set_drive(0.0, 0.0)
+        node._publish_drive()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
