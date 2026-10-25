@@ -207,6 +207,15 @@ elif [[ "${USE_LOCAL_DOCKER}" == true ]]; then
         "ws_build, after a new or changed launch file"
 fi
 if [[ -n "${JETSON_HOST}" ]]; then
+    # A node that owns the lidar or the camera survives the SSH drop that
+    # started it, and the next run then fails in a way that looks like broken
+    # hardware: sllidar reads the serial number fine and then times out on the
+    # health code, because two processes are racing for one serial port. The
+    # bracketed first letters stop the patterns matching this command's own
+    # line, which would otherwise kill the shell running it.
+    add_setup "$(ssh_cmd "-t" "${JETSON_HOST}" \
+        "pkill -f '[s]llidar_node|[v]4l2_camera_node|[l]andmark_detector_node'; sleep 1; pgrep -af '[s]llidar_node|[v]4l2_camera_node|[l]andmark_detector_node' || echo 'no stale nodes, devices free'")" \
+        "clear stale nodes still holding the lidar or camera (run after any crash or rebuild)"
     add_setup "$(robot_side 'v4l2-ctl --list-devices; sudo apt install -y ros-humble-v4l2-camera v4l-utils')" \
         "the Jetson's camera list, then its driver (wants sudo)"
     add_setup "$(ssh_cmd "-t" "${JETSON_HOST}" "$(repo_sync)")" \
@@ -347,10 +356,21 @@ tmux new-window -t "${SESSION}" -n setup
 if [[ ${#setup_cmds[@]} -gt 0 ]]; then
     tmux send-keys -t "${SESSION}:setup" "${setup_cmds[0]}"
     for ((i = 1; i < ${#setup_cmds[@]}; i++)); do
-        tmux split-window -t "${SESSION}:setup"
+        # Retile after every split, not once at the end: tmux splits the
+        # *current* pane, so without rebalancing each one is half the last and
+        # the fifth fails with "no space for a new pane". That used to abort
+        # the whole script under set -e and leave a session with two windows,
+        # which looks like a launcher bug rather than a full window.
+        if ! tmux split-window -t "${SESSION}:setup" 2>/dev/null; then
+            echo "setup pane $((i + 1)) did not fit in this terminal;" >&2
+            echo "  its command is in the guide (window 0). Enlarge and rerun" >&2
+            echo "  to get a pane for it." >&2
+            continue
+        fi
+        tmux select-layout -t "${SESSION}:setup" tiled >/dev/null
         tmux send-keys -t "${SESSION}:setup" "${setup_cmds[i]}"
     done
-    tmux select-layout -t "${SESSION}:setup" tiled
+    tmux select-layout -t "${SESSION}:setup" tiled >/dev/null
 fi
 
 # 2  lidar, by path out of the checkout rather than 'ros2 launch slam ...'.
