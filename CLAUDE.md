@@ -136,10 +136,9 @@ because they are easy to rediscover the hard way.
 
 **Addresses change (DHCP), and they changed again mid-session.** As of
 2026-10-25, second check: Jetson `jetson@10.23.60.116` (ARP-confirmed, was
-`.90`), feeding-station Pi `pi@10.23.60.130` (was `.114`, and `.114` is now
-**this Mac** — so an address can be reassigned to a different machine, not
-just go quiet). The laptop was `.146`, then `.77`; `arp -n <ip>` returning
-`(incomplete)` means nothing is there any more. Create3 namespace `/Team2`,
+`.90`), laptop `frl@10.23.60.146`, feeding-station Pi `pi@10.23.60.130`
+(was `.114`, and `.114` is now **this Mac** — so an address can be reassigned
+to a different machine, not just go quiet). Create3 namespace `/Team2`,
 `ROS_DOMAIN_ID=2`. Never trust an address in a comment, this one included.
 
 `arp -a -n | grep 10.23.60` lists what is actually on the subnet, and works
