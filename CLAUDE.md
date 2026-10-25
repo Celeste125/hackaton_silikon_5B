@@ -26,25 +26,39 @@ Three things run, two of them new on this branch:
                            frontier_explorer + camera_coverage_explorer
 ```
 
-## The naming is historical — read this first
+## The two landmarks, and the name mismatch
 
-The branch is called `dispenser-localization` and the code talks about a food
-dispenser, but **the current `landmarks.yaml` defines exactly one landmark,
-`cow_enclosure`**, fed by the model's `cow_head` and `cow_body` classes.
-`food_dispenser` was removed in `40e7cf3`. The pipeline is generic; only the
-config changed. Do not "fix" the branch name or the dispenser wording in old
-comments — it is just history.
+`landmarks.yaml` defines **two** landmarks, and between them they claim all
+three of the detector's classes:
 
-A leftover: `landmark_mapper`'s `legacy_dispenser_landmark` parameter still
-defaults to `food_dispenser`, which no longer exists, so the legacy
-`/dispenser/pose` republish simply never fires. Harmless.
+| Landmark | Model classes | What it is |
+|---|---|---|
+| `cow_enclosure` | `cow_head`, `cow_body` | Paper cow cutouts on and behind cardboard boxes. |
+| `food_dispenser` | `pipe` | The vertical pipes hanging from the wooden frame. |
+
+**The dispenser's class is called `pipe`.** The landmark name is the robot's,
+the class name is the model's, and `canonical_class` exists so the two need
+not match. `food_dispenser` was removed in `40e7cf3` when no model could see
+it and restored once `cows_pipes_yolov8.pt` could. So the branch name
+`dispenser-localization` is accurate again, not just history.
+
+One landmark is one point. The training README says "the vertical pipes",
+plural — if several are visible, `food_dispenser` as a single landmark gets
+you *one* of them plus a rising `rejected_measurement_count`, because both
+`solve_landmark`'s gating and `object_positions`'s consensus grouping keep the
+largest agreeing group rather than averaging. Split it into separate entries
+if more than one pipe has to be mapped.
+
+No longer a leftover: `landmark_mapper`'s `legacy_dispenser_landmark`
+defaults to `food_dispenser`, which exists again, so the legacy
+`/dispenser/pose` republish now actually fires.
 
 ## The two models
 
 | | Detector (model 1) | Location prior (model 2) |
 |---|---|---|
 | Question | "is it in this image, and where in the image" | "given the map so far, where is it likely to be" |
-| Status | **trained**, `perception/models/cow_yolov8.pt` | **not trained**, code complete |
+| Status | **trained**, `perception/models/cows_pipes_yolov8.pt` | **not trained**, code complete |
 | Called | object detection | semantic map completion |
 | Required? | yes, nothing works without it | no, off by default |
 
@@ -52,12 +66,21 @@ The detector is never asked for distance. A camera measures direction, not
 range; a model asked for range invents plausible numbers. Range comes from
 geometry.
 
-`cow_yolov8.pt` (by Aurelien, `40e7cf3`) is YOLOv8 detection, 640 input,
-classes `cow_head`/`cow_body`, conf 0.35, trained on 170 frames from 6 indoor
-videos. Its own manifest
-(`perception/models/cow_yolov8.yaml`) is honest that `val_map50` is still TODO,
-that val frames come from the same videos as training frames so the score is
-optimistic, and that Jetson latency is unmeasured.
+`cows_pipes_yolov8.pt` (`511a9c0`, replacing `cow_yolov8.pt` from `40e7cf3`)
+is YOLOv8s detection, 640 input, classes `cow_head`/`cow_body`/`pipe`, conf
+0.35. Training code is in [`cow_pipe_detector/`](cow_pipe_detector/README.md),
+which also has a ROS-free `test_camera.py` for trying it on a laptop webcam.
+
+The two halves of its training set are not equally trustworthy. The cows are
+170 frames from 6 of **this arena's** videos, reviewed in CVAT. The pipes are
+134 images from someone else's Roboflow dataset (`pipe-detection-rdfwn` v1,
+polygons converted to boxes) — so the pipe class has never seen this arena,
+and arena furniture with a strong vertical edge is the false positive to
+expect. Its own manifest
+(`perception/models/cows_pipes_yolov8.yaml`) is honest that `val_map50`,
+`val_map50_95` and `test_map50_pipe` are all still TODO, that val frames come
+from the same recordings as training frames so the score is optimistic, and
+that Jetson latency is unmeasured.
 
 Collecting data and training the prior: [`landmark_prior/README.md`](landmark_prior/README.md).
 The detector contract: [`perception/docs/landmark_model_handoff.md`](ros2_ws/src/perception/docs/landmark_model_handoff.md).
@@ -207,14 +230,17 @@ IMDL_CAM_X=0.08 IMDL_CAM_Y=0.0 IMDL_CAM_Z=0.35 IMDL_CAM_ROLL=-1.5707963 \
     --laptop frl@10.23.60.146 --feeder pi@10.23.60.114
 ```
 
-Windows: `guide setup lidar tools nav rviz camera explore coverage teleop
-detect landmark feeder`.
+Windows: `guide setup jetson tools laptop status teleop objects feeder`.
+Only two of them are a run: window 2 is one launch file on the Jetson
+(lidar, camera, camera TF, detector) and window 4 is one on the laptop
+(scan restamp, odom TF, SLAM, Nav2, twist_mux, frontier explorer, approach
+controller, RViz). The rest are read-only monitors, plus teleop.
 
 To run the real model instead of the stub:
 
 ```bash
 IMDL_LANDMARK_BACKEND=ultralytics \
-IMDL_LANDMARK_MODEL=~/imdl-main/ros2_ws/src/perception/models/cow_yolov8.pt
+IMDL_LANDMARK_MODEL=~/imdl-main/ros2_ws/src/perception/models/cows_pipes_yolov8.pt
 ```
 
 That needs **ultralytics installed on the Jetson**, which is deliberately not

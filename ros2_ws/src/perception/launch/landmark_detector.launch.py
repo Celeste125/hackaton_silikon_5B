@@ -92,7 +92,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'backend', default_value='stub',
-            choices=['ultralytics', 'onnx', 'stub', 'claude'],
+            choices=['disabled', 'ultralytics', 'onnx', 'stub', 'claude'],
             description=(
                 'ultralytics: a trained .pt or TensorRT .engine, the normal '
                 'path. onnx: the same model through onnxruntime, for a Jetson '

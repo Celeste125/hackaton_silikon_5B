@@ -365,9 +365,16 @@ def test_a_frame_with_no_detections_is_valid():
 # ----------------------------------------------------------------- backends
 
 
-def test_the_registry_offers_the_four_backends():
+def test_the_registry_offers_the_backends():
     assert set(available_backends()) == {
-        'ultralytics', 'onnx', 'stub', 'claude'}
+        'ultralytics', 'onnx', 'stub', 'claude', 'disabled'}
+
+
+def test_disabled_backend_reports_no_objects_without_weights():
+    backend = create_backend('disabled', {})
+    backend.load()
+    assert backend.detect(np.zeros((12, 16, 3), dtype=np.uint8)) == []
+    assert backend.describe()['backend'] == 'disabled'
 
 
 def test_an_unknown_backend_names_the_ones_that_exist():

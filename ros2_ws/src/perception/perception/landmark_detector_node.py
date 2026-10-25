@@ -306,8 +306,8 @@ class LandmarkDetectorNode(Node):
                 self._attribute(entry, color, depth_metres) for entry in raw)
             if detection is not None
         ]
-        if not detections:
-            return
+        # Empty frames are also observations: control must distinguish a lost
+        # target from a stalled camera, model, or network connection.
 
         intrinsics = resolve_intrinsics(
             color.width, color.height,

@@ -39,7 +39,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from scipy.ndimage import distance_transform_edt
-from std_msgs.msg import Empty
+from std_msgs.msg import Bool, Empty
 from tf2_ros import TransformException
 
 # Wiggle state machine
@@ -99,6 +99,10 @@ class FrontierExplorer(Node):
 
         self._map: OccupancyGrid | None = None
         self._ready = False
+        self._pause_requested = False
+        self._pending_goals = 0
+        self._active_handles = {}
+        self._cancel_requested = set()
 
         self._navigating = False
         self._current_goal: tuple[float, float] | None = None
@@ -141,6 +145,15 @@ class FrontierExplorer(Node):
             "/frontier_explorer/done",
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
         )
+        self._paused_pub = self.create_publisher(
+            Bool, '/frontier_explorer/paused', 1)
+        self.create_subscription(
+            Empty, '/frontier_explorer/pause', self._pause_cb,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self.create_subscription(
+            Bool, '/frontier_explorer/hold', self._hold_cb,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self.create_timer(0.1, self._publish_pause_state)
 
         self.create_subscription(OccupancyGrid, "/map", self._map_cb, 10)
         self.create_subscription(
@@ -262,6 +275,8 @@ class FrontierExplorer(Node):
     # ------------------------------------------------------------------
 
     def _return_home_cb(self, _msg: Empty):
+        if self._pause_requested:
+            return
         if self._exploration_done:
             self.get_logger().info(
                 "Return-home command received but already returning."
@@ -280,6 +295,8 @@ class FrontierExplorer(Node):
     # ------------------------------------------------------------------
 
     def _tick(self):
+        if self._pause_requested:
+            return
         if not self._ready or self._map is None:
             return
 
@@ -626,6 +643,8 @@ class FrontierExplorer(Node):
     # ------------------------------------------------------------------
 
     def _return_to_start(self):
+        if self._pause_requested:
+            return
         # Published here rather than beside each _exploration_done assignment:
         # all three of them call this, and it fires before the early return
         # below so the signal is sent even when there is no start pose to
@@ -652,8 +671,8 @@ class FrontierExplorer(Node):
             self.get_logger().warn("Nav2 not available for return-to-start.")
             return
 
-        future = self._nav_client.send_goal_async(goal)
-        future.add_done_callback(self._return_to_start_response_cb)
+        self._submit_goal(goal, self._return_to_start_response_cb,
+                          self._return_to_start_result_cb)
         self.get_logger().info(f"Navigating back to start ({sx:.2f}, {sy:.2f}).")
 
     def _return_to_start_response_cb(self, future):
@@ -661,7 +680,6 @@ class FrontierExplorer(Node):
         if not handle.accepted:
             self.get_logger().warn("Nav2 rejected return-to-start goal.")
             return
-        handle.get_result_async().add_done_callback(self._return_to_start_result_cb)
 
     def _return_to_start_result_cb(self, future):
         status = future.result().status
@@ -675,6 +693,8 @@ class FrontierExplorer(Node):
     # ------------------------------------------------------------------
 
     def _send_goal(self, gx: float, gy: float, pose: tuple[float, float, float]):
+        if self._pause_requested:
+            return
         goal_pose = PoseStamped()
         goal_pose.header.frame_id = "map"
         goal_pose.header.stamp = self.get_clock().now().to_msg()
@@ -691,8 +711,7 @@ class FrontierExplorer(Node):
             self.get_logger().warn("NavigateToPose server not available yet.")
             return
 
-        future = self._nav_client.send_goal_async(goal)
-        future.add_done_callback(self._goal_response_cb)
+        self._submit_goal(goal, self._goal_response_cb, self._goal_result_cb)
 
         self._navigating = True
         self._current_goal = (gx, gy)
@@ -709,7 +728,84 @@ class FrontierExplorer(Node):
             return
         self._goal_handle = handle
         self._nav_start_time = self._clock_secs()
-        handle.get_result_async().add_done_callback(self._goal_result_cb)
+
+    def _submit_goal(self, goal, response_callback, result_callback):
+        """Track even goals whose acceptance arrives AFTER the pause request.
+
+        A cancel response only says cancellation was accepted. The pause
+        acknowledgement waits for every goal's terminal result instead.
+        Keep this independent of _reset_nav_state, which replanning also uses.
+        """
+        if self._pause_requested:
+            return
+        self._pending_goals += 1
+        future = self._nav_client.send_goal_async(goal)
+
+        def accepted(response):
+            # On transport errors retain the pending count: we cannot prove
+            # that the remote server never started the goal.
+            try:
+                handle = response.result()
+            except Exception as exc:
+                self.get_logger().error(f'Goal acceptance unknown: {exc}')
+                return
+            self._pending_goals -= 1
+            if handle.accepted:
+                key = bytes(handle.goal_id.uuid)
+                self._active_handles[key] = handle
+
+                def finished(result):
+                    try:
+                        result.result()
+                    except Exception as exc:
+                        self.get_logger().error(f'Goal termination unknown: {exc}')
+                        return
+                    self._active_handles.pop(key, None)
+                    self._cancel_requested.discard(key)
+                    if not self._pause_requested:
+                        result_callback(result)
+
+                handle.get_result_async().add_done_callback(finished)
+                self._cancel_for_pause()
+            if not self._pause_requested:
+                response_callback(response)
+
+        future.add_done_callback(accepted)
+
+    def _pause_cb(self, _message):
+        self._pause_requested = True
+        self._cancel_for_pause()
+
+    def _hold_cb(self, message):
+        """Release only after every pending/active goal is known to have ended.
+
+        One reliable, latched Bool stream orders hold/release requests, so a
+        delayed pause on a second topic cannot race the normal resume path.
+        Lost controller/network input never releases an existing hold.
+        """
+        if message.data:
+            self._pause_cb(None)
+        elif (self._pause_requested and self._pending_goals == 0
+              and not self._active_handles):
+            self._reset_nav_state(cooldown=0.5)
+            self._stuck_last_pos = self._stuck_last_moved_time = None
+            self._no_frontier_ticks = 0
+            # The measurement may have interrupted the final return-home leg.
+            # Re-evaluate frontiers, then return home again if none remain.
+            self._exploration_done = False
+            self._pause_requested = False
+
+    def _cancel_for_pause(self):
+        if self._pause_requested:
+            for key, handle in self._active_handles.items():
+                if key not in self._cancel_requested:
+                    self._cancel_requested.add(key)
+                    handle.cancel_goal_async()
+
+    def _publish_pause_state(self):
+        self._paused_pub.publish(Bool(data=(
+            self._pause_requested and self._pending_goals == 0
+            and not self._active_handles)))
 
     def _goal_result_cb(self, future):
         status = future.result().status

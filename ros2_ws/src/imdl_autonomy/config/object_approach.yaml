@@ -1,0 +1,59 @@
+object_approach:
+  ros__parameters:
+    detections_topic: /landmarks/detections
+    target_landmarks: [food_dispenser, cow_enclosure]
+    scan_topic: /scan
+    nav_velocity_topic: /cmd_vel_smoothed
+    output_velocity_topic: /approach/cmd_vel
+    base_frame: base_link
+    odom_frame: odom
+    map_frame: map
+    # positions_file, map_id and require_detector_for_navigation are
+    # launch arguments, so setting them here would be overridden.
+    # Choosier than the mapper's 0.35, because a detection here moves the
+    # rover rather than just adding a bearing, but still inside reach of a
+    # model whose own default working point is 0.35: at 0.65 the probe may
+    # simply never trigger, which looks like a geometry fault and is not one.
+    # Check it against what the detector actually emits before tuning:
+    #   ros2 topic echo /landmarks/detections | grep -A2 confidence
+    min_confidence: 0.50
+    detection_timeout: 0.8
+    sensor_timeout: 0.5
+    stop_timeout: 8.0
+    settle_time: 0.5
+    alignment_timeout: 20.0
+    alignment_tolerance: 0.035
+    alignment_frames: 3
+    angular_gain: 1.0
+    max_angular_speed: 0.25
+    approach_speed: 0.06
+    # This is a bounded measurement probe, not a drive to the object.
+    max_probe_m: 0.25
+    approach_timeout: 12.0
+    progress_timeout: 3.0
+    retry_cooldown: 20.0
+    retry_viewpoint_m: 0.40
+    remeasure_cooldown: 30.0
+    remeasure_viewpoint_m: 0.50
+    # Heuristic uncertainty for multi-view fusion; tune with recorded trials.
+    fusion_bearing_sigma_rad: 0.10
+    fusion_min_range_sigma_m: 0.15
+    fusion_relative_range_sigma: 0.15
+    fusion_position_sigma_floor_m: 0.08
+    fusion_outlier_sigmas: 3.0
+    max_heading_error: 0.05
+    max_lateral_m: 0.04
+    max_bearing_error: 0.08
+    min_baseline_m: 0.08
+    # min_growth only rejects a degenerate fit. target_growth is how far the
+    # probe actually drives: range precision scales as size noise / growth, so
+    # 4% growth cannot measure anything, however tidy the fit looks.
+    min_growth: 0.04
+    target_growth: 0.20
+    min_samples: 5
+    # Accept the fit only when its own propagated sigma is within this
+    # fraction of the range. Replaces a residual threshold that was measured
+    # against the mean of 1/size rather than against the growth signal.
+    max_range_sigma_ratio: 0.12
+    max_range_m: 10.0
+    association_iou: 0.20

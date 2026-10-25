@@ -62,7 +62,7 @@ CAM_YAW="${IMDL_CAM_YAW:--1.5707963}"
 # Set IMDL_LANDMARK_BACKEND=ultralytics IMDL_LANDMARK_MODEL=~/models/x.pt once
 # the weights exist.
 STUB_LANDMARK="${IMDL_STUB_LANDMARK:-cow_enclosure}"
-LANDMARK_BACKEND="${IMDL_LANDMARK_BACKEND:-stub}"
+LANDMARK_BACKEND="${IMDL_LANDMARK_BACKEND:-disabled}"
 LANDMARK_MODEL="${IMDL_LANDMARK_MODEL:-}"
 CAM_WIDTH="${IMDL_CAM_WIDTH:-320}"
 CAM_HEIGHT="${IMDL_CAM_HEIGHT:-240}"
@@ -238,8 +238,8 @@ cat <<GUIDE_TEXT
 GUIDE_TEXT
 if [[ "${SPLIT}" == true ]]; then
 cat <<GUIDE_TEXT
-  lidar + camera ${JETSON_HOST}
-  Nav2 + RViz    ${LAPTOP_HOST}, inside the '${CONTAINER}' container
+  sensors+model  ${JETSON_HOST}
+  SLAM+Nav2+RViz ${LAPTOP_HOST}, inside the '${CONTAINER}' container
 GUIDE_TEXT
 else
 cat <<GUIDE_TEXT
@@ -254,75 +254,59 @@ cat <<GUIDE_TEXT
 
   Then, every run:
 
-  2  lidar    The lidar only, out of the checkout -- the Jetson's own
-              workspace has an older copy whose scans slam_toolbox
-              drops. Put the robot on its start mark first; that pose
-              becomes map (0, 0, yaw 0).
+  2  jetson   ONE launch file on the robot: lidar, camera, camera TF and
+              the detector. Out of the checkout, because the Jetson has
+              no colcon workspace -- a git pull there is the whole
+              deployment. Put the robot on its start mark first; that
+              pose becomes map (0, 0, yaw 0).
+              Camera ${CAM_WIDTH}x${CAM_HEIGHT} at ${CAM_FPS} fps, NOT VGA: a raw frame has
+              to arrive as ~650 intact UDP packets or it is dropped
+              whole, and VGA over this WiFi leaves RViz frozen on one
+              picture. Smaller still with IMDL_CAM_WIDTH/HEIGHT.
+              Detector backend '${LANDMARK_BACKEND}'. The default 'disabled'
+              publishes empty frames -- a camera heartbeat with no
+              weights. A stub can test mapping, but its fixed boxes
+              cannot measure expansion and never drive the rover.
+              Once the weights exist:
+                IMDL_LANDMARK_BACKEND=ultralytics \\
+                IMDL_LANDMARK_MODEL=~/imdl-main/ros2_ws/src/perception/models/cows_pipes_yolov8.pt
   3  tools    Three panes, all on demand: the odom rate (use it before
               window 4 -- see the gate below), the map saver, and a
               camera check.
-  4  nav      SLAM and Nav2 together, plus twist_mux for teleop. The
-              whole TF chain runs here, on one clock, because TF
-              cannot cross the WiFi within its 0.2 s tolerances.
-              Wait for "Managed nodes are active" (10-20 s).
-  5  rviz     Opens on ${RVIZ_WHERE} screen, not in this terminal. Set
-              the Map display's Color Scheme to 'raw', then 2D Goal
-              Pose. The 'Webcam' panel fills in once window 6 runs.
-  6  camera   The C920 and its mounting transform, one pane, run
-              straight out of the Jetson's checkout -- no colcon there.
-              ${CAM_WIDTH}x${CAM_HEIGHT} at ${CAM_FPS} fps, NOT VGA: a raw frame has to arrive
-              as ~650 intact UDP packets or it is dropped whole, and
-              VGA over this WiFi leaves RViz frozen on a single
-              picture. Smaller still with IMDL_CAM_WIDTH/HEIGHT.
-  7  explore  The robot maps the arena by itself. Only after window 4
-              says active. It drives as soon as you press Enter;
-              teleop (8) still overrides it, ctrl-c cancels.
-  8  coverage The lidar sweep in window 7 finishes when the LIDAR has
-              seen everything; the lidar sees 360 degrees and the camera
-              about 70 out of the front, so the dispenser may never have
-              been in frame. Start this at the same time as 7. It banks
-              coverage from the start whoever is driving, then takes
-              over when 7 is done and drives until the camera has swept
-              the floor. Watch it in window 3:
-                ros2 topic echo /camera_coverage/status
-              In RViz enable the 'Camera Coverage' map: floor the camera
-              has NOT looked at shows as occupied, and should drain.
-  9  teleop   Only when you need it. Press z about 6 times to slow
-              down. Outranks Nav2 at once; Nav2 drives again 0.5 s
-              after your last key press.
- 10  detect   The landmark model, on the Jetson with the camera, so no
-              frames cross the WiFi -- it publishes boxes as JSON, well
-              under a kilobyte a frame. Backend '${LANDMARK_BACKEND}'.
-              With the stub it needs NO trained model: it reports
-              '${STUB_LANDMARK}' in a box at the centre of every frame,
-              so aim the camera at the real object and the rest of the
-              chain -- bearings, TF, the fusion -- is exercised for
-              real. That is the point: it proves the camera mounting,
-              which is the one error no averaging ever removes.
-              Once the weights exist:
-                IMDL_LANDMARK_BACKEND=ultralytics \\
-                IMDL_LANDMARK_MODEL=~/models/imdl_landmarks.pt
-11  landmark  Turns those boxes into map positions and keeps improving
-              them. Runs on the nav side, where the TF chain is. Add a
-              MarkerArray on /landmarks/markers in RViz: a sphere, a
-              2-sigma ellipse and a label per landmark. Watch it in
-              window 3 with:
-                ros2 topic echo /landmarks/state
-              A bearing alone is a LINE, not a position, so one view
-              fixes nothing. Drive a metre sideways (window 7 or 8) and
-              the ellipse should round off and shrink. An ellipse that
-              stays a long streak means every view came from one side;
-              /landmarks/<name>/next_view holds a pose that would fix
-              it. The prior is off by default; see
-              landmark_prior/README.md.
-12  feeder   Only with --feeder. Two panes: the mixer load cell on
+  4  laptop   ONE launch file on the nav machine: scan restamp, odom TF,
+              SLAM, Nav2, twist_mux, the frontier explorer, the approach
+              controller, and RViz on ${RVIZ_WHERE} screen. All of it
+              together because the whole TF chain has to run on one
+              clock -- TF cannot cross the WiFi within its 0.2 s
+              tolerances. Wait for "Managed nodes are active" (10-20 s).
+              In RViz set the Map display's Color Scheme to 'raw'.
+              Then it drives itself: a real detection stops exploration,
+              aligns, takes a short straight measurement, saves map
+              coordinates, and resumes. A blocked or imprecise probe is
+              retried from another viewpoint. Saved targets can be
+              remeasured from new viewpoints to refine them; unmeasured
+              targets go first.
+              Add rviz:=false to run RViz separately, or
+              require_detector:=false to let Nav2 drive goals with no
+              detector running -- nothing can be measured in that mode.
+  5  status   Read-only: /approach/status -- state, target, travel,
+              range and its sigma, and what has been saved so far.
+  6  teleop   Only when you need it. Press z about 6 times to slow
+              down. Outranks Nav2 at once, downstream of everything
+              above, so it still drives when the approach gate does
+              not. Nav2 drives again 0.5 s after your last key press.
+  7  objects  Read-only: /approach/object_positions -- fused coordinates,
+              view counts and estimated uncertainty, plus the JSON file
+              path on the nav machine. RViz shows the same points under
+              'Measured Objects' on /approach/object_markers.
+  8  feeder   Only with --feeder. Two panes: the mixer load cell on
               the Pi (its GPIO, so nowhere else will do) and the silo
               bookkeeping on the nav side. Check it with:
                 ros2 topic echo /silo/status
               Assumes the Pi's own workspace is built.
 
-  2, 4, 5, 6, 7, 8, 10 and 11 keep running on their own once started.
-  window 7 there is nothing left to type -- just watch RViz.
+  Only 2 and 4 are a run: press Enter in 2, clear the odom gate below,
+  then press Enter in 4 and watch RViz. Both keep running on their own.
 
   BEFORE window 4, two gates. Nav2 activates its local costmap during
   bringup and that needs the odom -> base_link TF; if odom is not
@@ -342,7 +326,7 @@ cat <<GUIDE_TEXT
   switch window   ctrl-b <number>         detach  ctrl-b d
   stop a window   ctrl-b <number> ctrl-c  kill    tmux kill-session -t ${SESSION}
 
-  Emergency stop: ctrl-c in the nav window, then in window 3
+  Emergency stop: ctrl-c in the laptop window, then in window 3
     ros2 topic pub --rate 10 ${NAMESPACE}/cmd_vel geometry_msgs/msg/Twist "{}"
 GUIDE_TEXT
 } > "${GUIDE}"
@@ -373,21 +357,26 @@ if [[ ${#setup_cmds[@]} -gt 0 ]]; then
     tmux select-layout -t "${SESSION}:setup" tiled >/dev/null
 fi
 
-# 2  lidar, by path out of the checkout rather than 'ros2 launch slam ...'.
-# The Jetson's own workspace holds an older copy that stamps lidar_link and
-# publishes straight to /scan, ignoring fix_timestamps, so its frames reached
-# slam_toolbox ~0.28 s in the future on the Jetson's clock and every scan was
-# dropped. This copy remaps to /scan_raw for the nav side to restamp, and with
-# fix_timestamps:=false the only package it needs is sllidar_ros2 -- so still
-# no colcon on the Jetson.
+# 2  jetson: lidar, camera, camera TF and the detector, in one launch file.
+#
+# By path out of the checkout, not 'ros2 launch perception ...': the Jetson has
+# no colcon workspace for this repo, so a git pull there is the whole
+# deployment. jetson_bringup resolves its siblings relative to itself for the
+# same reason, and runs the detector as a plain python3 process.
+#
+# The lidar inside it publishes /scan_raw with fix_timestamps:=false. The
+# Jetson's own workspace holds an older copy that stamps lidar_link and
+# publishes straight to /scan, whose frames reached slam_toolbox ~0.28 s in the
+# future on the Jetson's clock, so every scan was dropped. The nav side
+# restamps instead.
 if [[ -n "${JETSON_HOST}" ]]; then
-    LIDAR_LAUNCH_CMD="ros2 launch ${REPO_DIR}/ros2_ws/src/slam/launch/lidar.launch.py"
+    JETSON_SRC="${REPO_DIR}/ros2_ws/src"
 else
-    LIDAR_LAUNCH_CMD="ros2 launch /ws/src/slam/launch/lidar.launch.py"
+    JETSON_SRC="/ws/src"
 fi
-tmux new-window -t "${SESSION}" -n lidar
-tmux send-keys -t "${SESSION}:lidar" \
-    "$(robot_side "${LIDAR_LAUNCH_CMD} fix_timestamps:=false")"
+tmux new-window -t "${SESSION}" -n jetson
+tmux send-keys -t "${SESSION}:jetson" \
+    "$(robot_side "ros2 launch ${JETSON_SRC}/perception/launch/jetson_bringup.launch.py backend:=${LANDMARK_BACKEND} model:=${LANDMARK_MODEL} stub_landmark:=${STUB_LANDMARK} width:=${CAM_WIDTH} height:=${CAM_HEIGHT} fps:=${CAM_FPS} x:=${CAM_X} y:=${CAM_Y} z:=${CAM_Z} roll:=${CAM_ROLL} pitch:=${CAM_PITCH} yaw:=${CAM_YAW}")"
 
 # 3  tools: the odom gate first, because it is needed before window 4.
 tmux new-window -t "${SESSION}" -n tools
@@ -400,72 +389,29 @@ tmux split-window -v -t "${SESSION}:tools"
 tmux send-keys -t "${SESSION}:tools" \
     "$(nav_side 'bash $(ros2 pkg prefix imdl_autonomy)/share/imdl_autonomy/scripts/check_camera.sh')"
 
-tmux new-window -t "${SESSION}" -n nav
-tmux send-keys -t "${SESSION}:nav" \
-    "$(nav_side 'ros2 launch imdl_autonomy slam_navigation.launch.py')"
+# 4  laptop: scan restamp, odom TF, SLAM, Nav2, twist_mux, the frontier
+# explorer, the approach controller and RViz. One launch file because they
+# belong on one machine: splitting the TF chain across the WiFi made
+# slam_toolbox drop every scan with 'queue is full' while Nav2 missed
+# transforms by 0.6-2.2 s. Pass rviz:=false to run RViz somewhere else.
+tmux new-window -t "${SESSION}" -n laptop
+tmux send-keys -t "${SESSION}:laptop" \
+    "$(nav_side "ros2 launch imdl_autonomy laptop_bringup.launch.py namespace:=${NAMESPACE} map_id:=${MAP_NAME} lidar_yaw:=${LIDAR_YAW}" x11)"
 
-tmux new-window -t "${SESSION}" -n rviz
-tmux send-keys -t "${SESSION}:rviz" \
-    "$(nav_side "ros2 launch imdl_simulation real_rviz.launch.py model_visual_yaw:=0.0 lidar_yaw:=${LIDAR_YAW}" x11)"
-
-# 6  camera. One pane: the launch file carries the measured mounting pose, so
-# the driver and its transform start and stop together.
-#
-# By path, and a launch file rather than 'ros2 run': v4l2_camera takes
-# image_size as a list, and a [320,240] literal cannot survive the nested
-# quoting these panes are built from, while plain integers can. The path keeps
-# the Jetson free of colcon: it only has to have pulled the branch.
-if [[ -n "${JETSON_HOST}" ]]; then
-    WEBCAM_LAUNCH_CMD="ros2 launch ${REPO_DIR}/ros2_ws/src/perception/launch/webcam_only.launch.py"
-else
-    WEBCAM_LAUNCH_CMD="ros2 launch /ws/src/perception/launch/webcam_only.launch.py"
-fi
-tmux new-window -t "${SESSION}" -n camera
-tmux send-keys -t "${SESSION}:camera" \
-    "$(robot_side "${WEBCAM_LAUNCH_CMD} width:=${CAM_WIDTH} height:=${CAM_HEIGHT} fps:=${CAM_FPS} x:=${CAM_X} y:=${CAM_Y} z:=${CAM_Z} roll:=${CAM_ROLL} pitch:=${CAM_PITCH} yaw:=${CAM_YAW}")"
-
-# Autonomous exploration. Runs where Nav2 runs, since it drives through the
-# navigate_to_pose action and reads /map.
-tmux new-window -t "${SESSION}" -n explore
-tmux send-keys -t "${SESSION}:explore" \
-    "$(nav_side 'ros2 launch imdl_autonomy frontier_explore.launch.py')"
-
-# The camera-coverage pass. Started alongside window 7, not after it: it
-# accumulates which floor the camera has looked at from the moment it runs,
-# whoever is driving, and only sends its own goals once window 7 reports done.
-tmux new-window -t "${SESSION}" -n coverage
-tmux send-keys -t "${SESSION}:coverage" \
-    "$(nav_side 'ros2 launch imdl_autonomy camera_coverage.launch.py')"
+# 5  status. Read-only. The legacy camera_coverage.launch.py sends its own
+# Nav2 goals and must not run alongside this workflow.
+tmux new-window -t "${SESSION}" -n status
+tmux send-keys -t "${SESSION}:status" \
+    "$(nav_side 'ros2 topic echo /approach/status')"
 
 tmux new-window -t "${SESSION}" -n teleop
 tmux send-keys -t "${SESSION}:teleop" \
     "$(robot_side "ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=${NAMESPACE}/cmd_vel_teleop")"
 
-# 9  detect. The landmark model, on the machine the camera is plugged into, so
-# the frames never cross the WiFi -- it publishes boxes as JSON instead.
-#
-# Run by path with python3, not 'ros2 launch perception ...', for the same
-# reason as the lidar and camera windows: the Jetson has no colcon workspace,
-# and a launch file would need the package installed to find the executable.
-# landmark_config is passed explicitly so the node never has to look the
-# package up either.
-PERCEPTION_DIR="${REPO_DIR}/ros2_ws/src/perception"
-if [[ "${LANDMARK_BACKEND}" == "stub" ]]; then
-    LANDMARK_ARGS="-p backend:=stub -p stub_landmark:=${STUB_LANDMARK}"
-else
-    LANDMARK_ARGS="-p backend:=${LANDMARK_BACKEND} -p model_path:=${LANDMARK_MODEL}"
-fi
-tmux new-window -t "${SESSION}" -n detect
-tmux send-keys -t "${SESSION}:detect" \
-    "$(robot_side "PYTHONPATH=${PERCEPTION_DIR} python3 ${PERCEPTION_DIR}/perception/landmark_detector_node.py --ros-args ${LANDMARK_ARGS} -p landmark_config:=${PERCEPTION_DIR}/config/landmarks.yaml -p image_topic:=/webcam/image_raw -p camera_info_topic:=/webcam/camera_info -p max_inference_rate_hz:=5.0")"
-
-# 10  landmark. The fusion, on the Nav2 side, because it does TF lookups at
-# each image's own timestamp and the TF chain lives there. publish_camera_tf
-# is false: window 6 already publishes base_link -> webcam_optical_frame, and
-# two publishers of one static transform is asking for trouble.
-tmux new-window -t "${SESSION}" -n landmark
-tmux send-keys -t "${SESSION}:landmark" \
-    "$(nav_side 'ros2 launch imdl_autonomy landmark_mapping.launch.py publish_camera_tf:=false')"
+# 7  objects. Read-only: the saved coordinates, as JSON.
+tmux new-window -t "${SESSION}" -n objects
+tmux send-keys -t "${SESSION}:objects" \
+    "$(nav_side 'ros2 topic echo /approach/object_positions')"
 
 # 11  feeder. Only with --feeder. The load cell is on the Pi's GPIO, so its
 # driver cannot run anywhere else.

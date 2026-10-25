@@ -23,15 +23,52 @@
 # Too small a value makes the fusion overconfident and the published
 # covariance a lie; too large only makes it converge more slowly.
 
+# models/cows_pipes_yolov8.pt has three classes -- cow_head, cow_body, pipe --
+# and all three are claimed below, across two landmarks. Nothing the model can
+# see is ignored any more.
+
 landmarks:
 
-  # The only landmark on this branch. The model (models/cows_pipes_yolov8.pt)
-  # has three classes; cow_head and cow_body are claimed here, and pipe is
-  # left unclaimed, so it is ignored with one log line. Both cow classes: a head poking out of a box and a
-  # body half hidden behind one are equally a sighting of the cows, and the
-  # mapper fuses every such view into one position. They are not split into
-  # two landmarks because the mapper estimates one point per landmark; a
-  # separate cow_head landmark would just be the same place counted twice.
+  # The food dispenser, which the model calls 'pipe': the vertical pipes
+  # hanging from the wooden frame. The class name is the model's, the landmark
+  # name is the robot's, and canonical_class exists precisely so the two need
+  # not match.
+  #
+  # ONE LANDMARK IS ONE POINT. The training README describes "the vertical
+  # pipes", plural, and if several of them are visible in the arena then
+  # claiming them all as one landmark asks the mapper for a single position
+  # for several objects. It will not average them into a point between them --
+  # the outlier gating in solve_landmark, and the consensus grouping in
+  # object_positions, both keep the largest agreeing group and mark the rest
+  # rejected -- so what you get is *one* of the pipes plus a rising
+  # rejected_measurement_count, not a meaningless midpoint. If more than one
+  # pipe has to go on the map, split this into pipe_a/pipe_b with their own
+  # entries; the model cannot tell them apart, so only position can.
+  food_dispenser:
+    model_classes: [pipe]
+    # The model's own default working point. Unlike the cow classes, this one
+    # was trained on 134 Roboflow images from someone else's dataset rather
+    # than on this arena, and its test mAP is still TODO in the manifest -- so
+    # a vertical edge of arena furniture is the false positive to expect here.
+    # Raise this first if /landmarks/state shows views_rejected climbing.
+    min_confidence: 0.35
+    # A pipe is narrow and its box is tight, so the centroid is a far better
+    # bearing than a part-hidden cow is. This is the cow value halved.
+    bearing_sigma_deg: 3.5
+    # A hanging pipe is a thin vertical object: depth samples on it are either
+    # the pipe or the wall metres behind it, with nothing in between.
+    range_sigma_m: 0.30
+    color: [0.2, 0.9, 0.3]
+    marker_scale_m: 0.25
+    note: >-
+      The feed dispenser: vertical pipes hanging from the wooden frame,
+      detected as the model's 'pipe' class.
+
+  # A head poking out of a box and a body half hidden behind one are equally a
+  # sighting of the cows, and the mapper fuses every such view into one
+  # position. They are not split into two landmarks because the mapper
+  # estimates one point per landmark; a separate cow_head landmark would just
+  # be the same place counted twice.
   cow_enclosure:
     model_classes: [cow_head, cow_body]
     # The model was checked on unseen video at 0.35. Raise this if
