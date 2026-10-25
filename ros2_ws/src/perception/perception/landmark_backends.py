@@ -5,7 +5,10 @@ uint8 array (OpenCV's convention, which is also what Ultralytics expects from
 a numpy source) and returns RawDetection list; it knows nothing about ROS, TF,
 the map or the landmark names.
 
-Four are built in:
+Five are built in:
+
+  disabled     No weights, no detections. Keeps the live camera heartbeat
+               running while bringing up exploration before a model arrives.
 
   ultralytics  A model trained with Ultralytics, either a ``.pt`` or a
                TensorRT ``.engine``. The normal path once the model exists;
@@ -98,6 +101,24 @@ def create_backend(name: str, options: Mapping[str, Any]) -> DetectorBackend:
 
 
 # ------------------------------------------------------------- ultralytics
+
+
+class DisabledBackend(DetectorBackend):
+    """Camera/transport heartbeat with no weights and no invented targets."""
+
+    name = 'disabled'
+
+    def __init__(self, options):
+        pass
+
+    def load(self):
+        pass
+
+    def detect(self, image_bgr):
+        return []
+
+
+register_backend('disabled', DisabledBackend)
 
 
 class UltralyticsBackend(DetectorBackend):

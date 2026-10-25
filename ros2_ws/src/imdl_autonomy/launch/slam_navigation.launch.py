@@ -112,6 +112,7 @@ def generate_launch_description():
             'odom_topic': [namespace, '/odom'],
             'scan_topic': '/scan',
             'cmd_vel_topic': nav_cmd_vel_topic,
+            'collision_input_topic': LaunchConfiguration('collision_input_topic'),
         }.items(),
     )
 
@@ -180,6 +181,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument('collision_input_topic', default_value='cmd_vel_smoothed'),
         DeclareLaunchArgument(
             'namespace',
             default_value='/Team2',

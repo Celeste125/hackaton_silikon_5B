@@ -1,8 +1,26 @@
 # Intelligent Machine Design Laboratory ROS 2 Workspace
 
-This repository contains the ROS 2 workspace for SLAM, localization, RealSense
-RGB-D perception, YOLO instance segmentation, mask-depth 3D geometry, target
-selection, and beacon heading command generation.
+The current rover workflow is **explore → detect → pause → align → measure
+range → save map coordinates → resume exploring**. A camera and replaceable
+detector run on the Jetson alongside the lidar driver. Small, timestamped
+detections cross ROS 2 to a separate Linux laptop running SLAM, Nav2 and the
+frontier explorer, which yields to the approach controller on that laptop.
+Range comes from bounding-box growth and measured odometry.
+The laptop records one food dispenser and one cow stall in a JSON file and
+shows them in RViz. A blocked probe is deferred until a different viewpoint.
+Previously recorded targets can be measured again after a cooldown and movement
+to another viewpoint; compatible measurements refine the saved position.
+
+Start with the [object approach runbook](ros2_ws/src/imdl_autonomy/docs/object_approach.md).
+A run is two commands: `jetson_bringup.launch.py` on the robot and
+`laptop_bringup.launch.py` on the navigation machine. The runbook covers both,
+plus the model interface, range derivation, configuration and hardware-free
+tests. No trained model is required to build
+or test the controller. Add weights later through `backend` and `model_path`.
+
+The workspace also retains the earlier SLAM, RGB-D block perception, landmark
+mapping, and manipulation pipelines documented below. Use the new runbook for
+the dispenser/cow-stall approach; it replaces the old camera-coverage handoff.
 
 The active development branch for this work is:
 

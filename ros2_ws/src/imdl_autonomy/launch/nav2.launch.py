@@ -151,6 +151,7 @@ def generate_launch_description():
             parameters=[configured_params],
             remappings=topic_remaps + [
                 ('cmd_vel_safe', cmd_vel_topic),
+                ('cmd_vel_smoothed', LaunchConfiguration('collision_input_topic')),
             ],
         ),
     ]
@@ -203,6 +204,7 @@ def generate_launch_description():
         DeclareLaunchArgument('odom_topic', default_value='/Team2/odom'),
         DeclareLaunchArgument('scan_topic', default_value='/scan'),
         DeclareLaunchArgument('cmd_vel_topic', default_value='/Team2/cmd_vel'),
+        DeclareLaunchArgument('collision_input_topic', default_value='cmd_vel_smoothed'),
         DeclareLaunchArgument(
             'use_front_ultrasonic',
             default_value='false',

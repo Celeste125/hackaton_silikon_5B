@@ -429,6 +429,8 @@ def parse_payload(text: str) -> DetectionFrame:
     wire format is checked rather than trusted.
     """
     document = json.loads(text)
+    if not isinstance(document, Mapping):
+        raise ValueError('detection payload must be an object')
     version = int(document.get('schema_version', 0))
     if version != SCHEMA_VERSION:
         raise ValueError(
@@ -451,8 +453,14 @@ def parse_payload(text: str) -> DetectionFrame:
         cx=float(raw.get('cx', width / 2.0)),
         cy=float(raw.get('cy', height / 2.0)),
         source=str(raw.get('source', 'unknown')))
+    if not all(math.isfinite(v) for v in (
+            intrinsics.fx, intrinsics.fy, intrinsics.cx, intrinsics.cy)):
+        raise ValueError('intrinsics must be finite')
 
     stamp = document.get('stamp') or {}
+    model = document.get('model') or {}
+    if not isinstance(model, Mapping):
+        raise ValueError('model metadata must be an object')
     detections = tuple(
         _parse_detection(entry) for entry in document.get('detections', []))
 
@@ -465,7 +473,7 @@ def parse_payload(text: str) -> DetectionFrame:
         intrinsics=intrinsics,
         detections=detections,
         inference_ms=float(document.get('inference_ms', 0.0)),
-        model=document.get('model') or {},
+        model=model,
     )
 
 
@@ -477,6 +485,8 @@ def _parse_detection(entry: Mapping[str, Any]) -> LandmarkDetection:
     if not isinstance(box, Sequence) or len(box) != 4:
         raise ValueError(f'{landmark}: box_norm must hold four numbers')
     values = tuple(float(v) for v in box)
+    if not all(math.isfinite(v) and 0.0 <= v <= 1.0 for v in values):
+        raise ValueError(f'{landmark}: box_norm must be finite and within [0, 1]')
     if values[2] <= values[0] or values[3] <= values[1]:
         raise ValueError(f'{landmark}: box_norm has zero area')
     confidence = float(entry.get('confidence', 0.0))
