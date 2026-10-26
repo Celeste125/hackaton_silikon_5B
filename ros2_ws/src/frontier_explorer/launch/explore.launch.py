@@ -43,10 +43,14 @@ def generate_launch_description():
             # A few metres at 0.18 m/s, plus replanning; 90 s was for corridors.
             'nav_timeout': LaunchConfiguration('nav_timeout'),
             'goal_blacklist_radius': 0.35,
-            'goal_max_dist_cells': 10,
-            # The footprint is 0.34 x 0.52 m, and the costmap inflation already
-            # keeps the robot off walls, so leave this to the costmap.
-            'min_wall_clearance_m': 0.0,
+            # A goal may be up to 1 m from its frontier: the lidar sees far,
+            # and a frontier in a tight spot needs a goal out in the open.
+            'goal_max_dist_cells': 20,
+            # Goals only where the planner can put the robot: it plans on a
+            # 0.25 m circle plus 0.01 m padding (nav2_params global_costmap),
+            # so anything closer than 0.26 m to a wall fails with "no valid
+            # path" and the frontier gets blacklisted.
+            'min_wall_clearance_m': 0.28,
             # Nav2's Spin recovery is valid on a differential drive, unlike the
             # Ackermann rover this came from, so give Nav2 room to recover
             # before the explorer cancels and replans.

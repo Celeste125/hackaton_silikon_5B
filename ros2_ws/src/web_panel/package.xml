@@ -13,6 +13,10 @@
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <!-- Optional: the Setup tab (taught poses) and laps are off without it. -->
+  <exec_depend>feed_mission</exec_depend>
   <!-- Optional: bumper/cliff/stall warnings are skipped without it. -->
   <exec_depend>irobot_create_msgs</exec_depend>
   <!-- pip: fastapi, uvicorn (tests: httpx, pytest) -->

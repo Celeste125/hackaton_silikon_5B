@@ -23,6 +23,7 @@ side door.
         ├── web_panel/            the web control panel
         ├── mixer_esp_driver/     ESP driver: load cells, mixer motors, door
         ├── frontier_explorer/    lidar, live SLAM + Nav2, frontier exploration, map saving
+        ├── feed_mission/         taught poses (silos, start, lap corners), lap driver
         ├── silo_controller/      silo valve servos on the Raspberry Pi
         └── sllidar_ros2/         SLAMTEC lidar driver (downloaded, not in git)
 ```
@@ -32,7 +33,8 @@ side door.
 | Package | Runs on | What it is for |
 | --- | --- | --- |
 | `robot_bringup` | Jetson | Launch files only. `bringup.launch.py` starts everything except navigation. |
-| `web_panel` | Jetson | The web control panel (port 8000): scale, valves, mixer motors and shake, door, driving, both camera feeds, battery, bumper warnings, map status. |
+| `web_panel` | Jetson | The web control panel (port 8000): scale, valves, mixer motors and shake, door, driving, both camera feeds, battery, bumper warnings, map status, teaching poses (Setup tab), laps. |
+| `feed_mission` | Jetson | The feeding run: poses taught once (`~/maps/arena_poses.yaml`) and the lap driver around the cow box. |
 | `mixer_esp_driver` | Jetson | Talks to the ESP32 over USB serial: weight from the 4 load cells, the 2 mixer motors (ramped, plus the shake pattern), the door servo. |
 | `frontier_explorer` | Jetson | Everything for driving around: the lidar launch, the live map (slam_toolbox), planning and driving (Nav2), exploring the arena on its own and saving the map when done. |
 | `silo_controller` | Raspberry Pi | Opens and closes the 3 silo valves (servos on a PCA9685). Runs in Docker on the Pi; `valve_cmd` commands it from the Jetson. |
@@ -54,6 +56,7 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 | `frontier_explorer mapping.launch.py` | lidar, `scan_timestamp_fixer`, `odom_tf_republisher`, slam_toolbox (no Nav2) | Map by driving with teleop yourself. Brings its own lidar: run bringup with `lidar:=false` |
 | `frontier_explorer rviz.launch.py` | RViz with `rviz/navigation.rviz`: map, costmaps, scan, footprint, TF, plans, goal, AMCL | Watch mapping or navigation (needs a display) |
 | `frontier_explorer nav2.launch.py` | Nav2 servers and lifecycle managers | Not by hand: `slam_navigation.launch.py` includes it |
+| `feed_mission mission.launch.py` | `lap_driver` | On top of navigation: laps around the cow box |
 
 `silo_controller` has no launch file: the Pi runs `valve_controller` in Docker
 (see its `Dockerfile`).
@@ -66,6 +69,7 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 | `odom_tf_republisher` | `/Team2/odom` -> `odom -> base_link` TF |
 | `frontier_explorer` | picks the best unexplored edge of `/map`, sends it to Nav2; at the end drives home, saves the map, reports done |
 | `valve_controller` | `/valve1..3/percent` -> servo angles, with saved open/closed calibration |
+| `lap_driver` | laps through the four taught corners: turn on the spot, drive straight, repeat. `/lap/start`, `/lap/stop`, `/lap/status`; drives `/Team2/cmd_vel_lap` (twist_mux, priority 50) |
 
 Parameters: `frontier_explorer/config/` (`nav2_params.yaml`,
 `slam_toolbox_params.yaml`, `twist_mux.yaml`) and
@@ -175,6 +179,39 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
 Use `slam_navigation` + `explore` to map, `navigation` to drive on that map;
 never both at once (both publish `map -> odom`).
 
+### Teach the poses and drive laps
+
+With bringup and `navigation.launch.py` running, open the panel's **Setup**
+tab. It shows where the robot is on the map. Drive it with the panel to each
+spot and press **Save here**:
+
+| Pose | Where |
+| --- | --- |
+| Silo 1, 2, 3 | parked under each pipe |
+| Start | where it waits before and after a run |
+| Corner 1-4 | the corners of the lap around the cow box, clockwise (the door is on the right), in driving order |
+
+They go to `~/maps/arena_poses.yaml`, in the map frame: teach them again after
+remapping. Leave room at the corners: the robot's own corners reach 0.31 m
+from its centre when it turns on the spot, and the lap driver refuses a turn
+while anything is that close.
+
+Then laps, from the panel (**Unload** tab: number of laps, door open on the
+straights or not) or by hand:
+
+```bash
+ros2 launch feed_mission mission.launch.py
+ros2 param set /lap_driver laps 2
+ros2 service call /lap/start std_srvs/srv/Trigger
+ros2 service call /lap/stop std_srvs/srv/Trigger     # STOP ALL in the panel does this too
+```
+
+If the robot is not at corner 1, Nav2 drives it there first. Each side is a
+turn on the spot to face the next corner, then a straight line to it,
+steered back onto the corner-to-corner line in the map frame, so odometry drift
+does not add up. It waits while anything is within `stop_distance` (0.15 m)
+in front and gives up after 20 s. Teleop overrides it at any time.
+
 ### The lidar on its own
 
 ```bash
@@ -182,9 +219,15 @@ ros2 launch frontier_explorer lidar.launch.py
 ros2 topic hz /scan
 ```
 
-Defaults: `serial_port:=/dev/ttyUSB0`, `serial_baudrate:=460800` (SLAMTEC C1),
-`frame_id:=base_link`. Override them if the lidar enumerates elsewhere or is a
-different model (A1/A2M8: 115200, A2M12/A3/S1: 256000).
+Defaults: `serial_port:=/dev/ttyUSB0`, `serial_baudrate:=460800` (SLAMTEC C1).
+Override them if the lidar enumerates elsewhere or is a different model
+(A1/A2M8: 115200, A2M12/A3/S1: 256000).
+
+The scans are in frame `laser`, which a static TF puts on `base_link` turned
+180 degrees: the lidar is mounted with its 0-degree direction to the robot's
+back. If it is remounted, change `lidar_yaw:=` (radians), and `lidar_x:=` /
+`lidar_y:=` if it moves off the centre. Check by driving straight: in RViz the
+walls must stay still while the robot moves.
 
 ### Cameras
 

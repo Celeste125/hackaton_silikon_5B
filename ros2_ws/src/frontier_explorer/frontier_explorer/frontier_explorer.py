@@ -419,9 +419,10 @@ class FrontierExplorer(Node):
         data, dist_cells, min_clear_cells = self._map_arrays(self._map)
         frontiers = self._find_frontiers(self._map, data, dist_cells, min_clear_cells)
 
-        # Drop frontiers whose centroid is too close to a wall.
-        # centroid_clearance is index 2; reuse min_wall_clearance_m as the threshold.
-        frontiers = [f for f in frontiers if f[2] >= self._min_wall_clear_m]
+        # Drop frontiers whose goal point is too close to a wall (index 5).
+        # The centroid may sit in a gap the robot cannot enter; what matters
+        # is that it can reach a spot from which the lidar sees the frontier.
+        frontiers = [f for f in frontiers if f[5] >= self._min_wall_clear_m]
 
         # If nothing actionable remains, go back to start immediately.
         if not frontiers:
@@ -888,6 +889,11 @@ class FrontierExplorer(Node):
         handle.get_result_async().add_done_callback(self._goal_result_cb)
 
     def _goal_result_cb(self, future):
+        if self._current_goal is None:
+            # The result of a goal this node cancelled itself (frontier gone,
+            # stuck, timeout): already handled there, and a new goal may be on
+            # its way, so do not blacklist or reset anything here.
+            return
         status = future.result().status
         if status == GoalStatus.STATUS_SUCCEEDED:
             self.get_logger().info("Frontier reached.")

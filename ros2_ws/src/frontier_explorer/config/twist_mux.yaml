@@ -18,6 +18,12 @@
         topic: cmd_vel_nav
         timeout: 0.5
         priority: 10
+      # feed_mission lap_driver: straight sides and turns around the cow box.
+      # Above Nav2, so a running Nav2 goal cannot fight it; below teleop.
+      lap:
+        topic: cmd_vel_lap
+        timeout: 0.5
+        priority: 50
       teleop:
         topic: cmd_vel_teleop
         timeout: 0.5

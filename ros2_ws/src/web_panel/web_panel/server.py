@@ -14,6 +14,9 @@ It is only a front end for topics of other nodes, mostly esp_driver_node:
   cameras.launch.py. Streamed to the page as MJPEG at /api/camera/<n>.mjpg.
   /Team2/battery_state (battery), /Team2/hazard_detection (bump, cliff, stall;
   needs irobot_create_msgs), /frontier_explorer/status (mapping progress).
+  Setup tab: the robot's pose (TF map -> base_link) is saved under a name
+  (silo1..3, start, lap1..4) in the feed_mission poses file. Laps:
+  /lap/start, /lap/stop, /lap/status and the parameters of /lap_driver.
 
 Needs: pip install fastapi uvicorn
 
@@ -28,6 +31,7 @@ Every request carries an X-Client-Id header that the page generates per tab.
 """
 
 import asyncio
+import math
 import threading
 import time
 from pathlib import Path
@@ -38,14 +42,23 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from rclpy.executors import ExternalShutdownException
+from rclpy.time import Time
 from geometry_msgs.msg import Twist
+from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+from rcl_interfaces.srv import SetParameters
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, CompressedImage
 from std_msgs.msg import Float32, Float32MultiArray, String
 from std_srvs.srv import Trigger
+from tf2_ros import Buffer, TransformException, TransformListener
 
 from web_panel.control_lease import ControlLease
+
+try:  # taught poses and laps need feed_mission; the rest works without it
+    from feed_mission import poses as pose_store
+except ImportError:
+    pose_store = None
 
 try:  # Create 3 hazards are optional: without the messages they are not shown
     from irobot_create_msgs.msg import HazardDetection, HazardDetectionVector
@@ -69,6 +82,7 @@ CAMERA_TOPICS = ['/camera0/image_raw/compressed', '/camera1/image_raw/compressed
 CAMERA_STREAM_FPS = 10.0  # per browser; caps Wi-Fi use, the cameras run at 15
 CAMERA_STALE_S = 2.0
 HAZARD_HOLD_S = 0.6  # a hazard stays on the page this long after its last report
+POSE_MAX_AGE_S = 2.0  # older map -> base_link is not saved as a pose
 
 
 class WebControlNode(Node):
@@ -126,8 +140,17 @@ class WebControlNode(Node):
             String, '/frontier_explorer/status', self._on_explorer_status, latched)
         self.trigger_clients = {
             name: self.create_client(Trigger, name)
-            for name in ('loadcell/tare', 'door/save_open', 'door/save_closed')
+            for name in ('loadcell/tare', 'door/save_open', 'door/save_closed',
+                         'lap/start', 'lap/stop')
         }
+        # Robot pose on the map, for the Setup tab.
+        self.declare_parameter('poses_file', '~/maps/arena_poses.yaml')
+        self.poses_file = self.get_parameter('poses_file').value
+        self.tf = Buffer()
+        self.tf_listener = TransformListener(self.tf, self)
+        self.lap_status = None
+        self.create_subscription(String, 'lap/status', self._on_lap_status, latched)
+        self.lap_params = self.create_client(SetParameters, '/lap_driver/set_parameters')
 
         self.lease = ControlLease(CONTROL_TIMEOUT_S)
         self.lock = threading.Lock()
@@ -177,6 +200,52 @@ class WebControlNode(Node):
             for d in msg.detections:
                 if d.type in names:
                     self.hazards[names[d.type]] = now
+
+    def _on_lap_status(self, msg):
+        with self.lock:
+            self.lap_status = msg.data
+
+    def robot_pose(self):
+        """{'x', 'y', 'yaw', 'age_s'} from TF map -> base_link, or None."""
+        try:
+            t = self.tf.lookup_transform('map', 'base_link', Time())
+        except TransformException:
+            return None
+        q = t.transform.rotation
+        stamp = Time.from_msg(t.header.stamp)
+        age = (self.get_clock().now() - stamp).nanoseconds * 1e-9
+        return {
+            'x': t.transform.translation.x, 'y': t.transform.translation.y,
+            'yaw': math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z)),
+            'age_s': max(0.0, age),
+        }
+
+    def saved_poses(self):
+        if pose_store is None:
+            return None
+        try:
+            return pose_store.load(self.poses_file)
+        except Exception as e:  # a broken file must not take the panel down
+            self.get_logger().warn(f'cannot read {self.poses_file}: {e}', throttle_duration_sec=30.0)
+            return {}
+
+    def set_lap_params(self, laps, open_door):
+        if not self.lap_params.wait_for_service(timeout_sec=1.0):
+            return False, 'lap_driver is not running: ros2 launch feed_mission mission.launch.py'
+        req = SetParameters.Request()
+        req.parameters = [
+            Parameter(name='laps', value=ParameterValue(
+                type=ParameterType.PARAMETER_INTEGER, integer_value=int(laps))),
+            Parameter(name='open_door', value=ParameterValue(
+                type=ParameterType.PARAMETER_BOOL, bool_value=bool(open_door))),
+        ]
+        done = threading.Event()
+        future = self.lap_params.call_async(req)
+        future.add_done_callback(lambda _: done.set())
+        if not done.wait(SERVICE_TIMEOUT_S):
+            return False, 'lap_driver did not answer'
+        bad = [r.reason for r in future.result().results if not r.successful]
+        return (False, '; '.join(bad)) if bad else (True, '')
 
     def _on_explorer_status(self, msg):
         with self.lock:
@@ -324,6 +393,9 @@ class WebControlNode(Node):
     def emergency_stop(self):
         self.stop_outputs()
         self.close_all_valves()
+        lap_stop = self.trigger_clients['lap/stop']
+        if lap_stop.service_is_ready():  # fire and forget: STOP must never wait
+            lap_stop.call_async(Trigger.Request())
 
     def set_door(self, position):
         self.door_pub.publish(Float32(data=float(position)))
@@ -338,7 +410,9 @@ class WebControlNode(Node):
     def call(self, name):
         client = self.trigger_clients[name]
         if not client.wait_for_service(timeout_sec=1.0):
-            return False, f'service /{name} not available, is esp_driver_node running?'
+            owner = ('lap_driver (ros2 launch feed_mission mission.launch.py)'
+                     if name.startswith('lap/') else 'esp_driver_node')
+            return False, f'service /{name} not available, is {owner} running?'
         done = threading.Event()
         future = client.call_async(Trigger.Request())
         future.add_done_callback(lambda _: done.set())
@@ -356,7 +430,7 @@ class WebControlNode(Node):
                 got = (self.weight - d['start']) if self.weight is not None else 0.0
                 dose = {'valve': d['valve'], 'target': d['target'], 'status': d['status'],
                         'added': got}
-            return {
+            state = {
                 'valves': {str(v): {'percent': self.valve_percent[v],
                                     'angle': self.valve_angle[v]} for v in VALVES},
                 'dose': dose,
@@ -376,10 +450,15 @@ class WebControlNode(Node):
                 },
                 'hazards': sorted(n for n, t in self.hazards.items() if now - t < HAZARD_HOLD_S),
                 'explorer': self.explorer_status,
+                'lap': self.lap_status,
                 'motors': list(self.motors),
                 'shake': dict(self.shake) if self.shake else None,
                 'num_motors': len(self.motors),
             }
+        # Outside the lock: TF and the poses file have their own.
+        state['pose'] = self.robot_pose()
+        state['poses'] = self.saved_poses()
+        return state
 
 
 class MotorsBody(BaseModel):
@@ -412,6 +491,11 @@ class ValveBody(BaseModel):
 class DoseBody(BaseModel):
     target_kg: float = Field(..., gt=0.0, le=50.0, description='weight to add')
     percent: float = Field(100.0, gt=0.0, le=100.0)
+
+
+class LapBody(BaseModel):
+    laps: int = Field(1, ge=1, le=50)
+    open_door: bool = Field(False, description='open the door on the straights')
 
 
 class ClaimBody(BaseModel):
@@ -571,6 +655,40 @@ def create_app(ros):
         client_id(request)  # cancelling is always safe, so any device may do it
         ros.cancel_dose()
         return {'ok': True}
+
+    @app.post('/api/poses/{name}', dependencies=[Depends(require_control)])
+    def save_pose(name: str):
+        """Save where the robot is now, on the map, under this name."""
+        if pose_store is None:
+            raise HTTPException(503, 'feed_mission is not installed')
+        if name not in pose_store.NAMES:
+            raise HTTPException(404, f'unknown pose {name}')
+        p = ros.robot_pose()
+        if p is None or p['age_s'] > POSE_MAX_AGE_S:
+            return {'ok': False, 'message': 'Robot not localized on the map: start navigation (or SLAM) first'}
+        saved = pose_store.save_pose(name, p['x'], p['y'], p['yaw'], path=ros.poses_file)
+        return {'ok': True, 'message': f"Saved {name} at {saved['x']:.2f}, {saved['y']:.2f}"}
+
+    @app.delete('/api/poses/{name}', dependencies=[Depends(require_control)])
+    def clear_pose(name: str):
+        if pose_store is None:
+            raise HTTPException(503, 'feed_mission is not installed')
+        pose_store.clear_pose(name, path=ros.poses_file)
+        return {'ok': True, 'message': f'Cleared {name}'}
+
+    @app.post('/api/lap/start', dependencies=[Depends(require_control)])
+    def lap_start(body: LapBody):
+        ok, msg = ros.set_lap_params(body.laps, body.open_door)
+        if not ok:
+            return {'ok': False, 'message': msg}
+        ok, msg = ros.call('lap/start')
+        return {'ok': ok, 'message': msg}
+
+    @app.post('/api/lap/stop')
+    def lap_stop(request: Request):
+        client_id(request)  # stopping is always safe, so any device may do it
+        ok, msg = ros.call('lap/stop')
+        return {'ok': ok, 'message': msg}
 
     @app.post('/api/tare', dependencies=[Depends(require_control)])
     def tare():

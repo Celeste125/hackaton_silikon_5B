@@ -452,11 +452,14 @@ global_costmap:
       # The planner (Smac 2D) treats the robot as a point that must stay out
       # of the inscribed radius. With the real 0.34 x 0.52 m rectangle that
       # is only 0.18 m, so paths ran 0.2-0.3 m from walls, and the corners
-      # (0.31 m out) hit the wall on the next turn in place. Planning on the
-      # circle around the whole robot keeps every path where it can turn.
-      # The local costmap keeps the real rectangle for the controller,
-      # collision monitor and recoveries.
-      robot_radius: 0.31
+      # hit the wall on the next turn in place. 0.25 m plus the 0.01 m
+      # padding is half the robot's width (0.26 m): planned paths may run
+      # with the sides touching distance from a wall, so getting close to the
+      # silos works. Turns in place are still checked against the real
+      # rectangle (local costmap, controller, collision monitor), so a turn
+      # that would hit is refused, not driven. The circle around the whole
+      # robot (0.31 m) guaranteed every turn, but kept it 30 cm off walls.
+      robot_radius: 0.25
       footprint_padding: 0.01
       plugins: [static_layer, obstacle_layer, inflation_layer]
       static_layer:

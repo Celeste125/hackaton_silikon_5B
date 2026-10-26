@@ -283,6 +283,20 @@
   @keyframes slosh { 50% { transform: scaleX(.6) translateX(-3px); } }
 
   .motor + .motor { margin-top: 6px; }
+
+  .here { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: rgba(0, 0, 0, .22); border: 1px solid var(--edge-soft); font-size: 14px; }
+  .here b { font-variant-numeric: tabular-nums; }
+  .pose-group { margin-top: 14px; }
+  .pose-group h3 { margin-bottom: 2px; }
+  .pose { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--edge-soft); }
+  .pose:first-of-type { border-top: 0; }
+  .pose .name { flex: 1; min-width: 0; }
+  .pose .name small { display: block; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .pose .name small.set { color: var(--live); }
+  .pose button { min-height: 40px; padding: 6px 12px; font-size: 14px; }
+  .lapstatus { font-size: 14px; font-weight: 600; margin: 8px 0 0; min-height: 1.45em; }
+  .lapstatus.run { color: var(--live); }
+  .lapstatus.bad { color: var(--stop); }
   .presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   @media (max-width: 420px) { .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .presets button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px; }
@@ -301,7 +315,7 @@
     .tools .pane.active { display: block; }
     .nav {
       position: sticky; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 5;
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 6px;
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 6px;
     }
     .nav button { min-height: 52px; padding: 4px; font-size: 13px; background: transparent; border-color: transparent; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; }
     .nav button svg { width: 22px; height: 22px; }
@@ -433,6 +447,7 @@
         <button role="tab" id="tab-load" aria-controls="pane-load" data-tab="load">Load</button>
         <button role="tab" id="tab-mix" aria-controls="pane-mix" data-tab="mix">Mix<span class="badge" id="mixBadge" hidden></span></button>
         <button role="tab" id="tab-unload" aria-controls="pane-unload" data-tab="unload">Unload</button>
+        <button role="tab" id="tab-setup" aria-controls="pane-setup" data-tab="setup">Setup</button>
       </div>
       <div class="panes">
         <!-- Load -->
@@ -489,6 +504,19 @@
             <input type="range" id="door" min="0" max="1" step="0.01" value="0">
             <div class="scale" aria-hidden="true"><span>Open</span><span>Closed</span></div>
           </div>
+          <div class="sub">
+            <h3>Laps around the cow box</h3>
+            <p class="hint" style="margin: 2px 0 10px">Straight sides and turns on the spot through the four corners saved in Setup. Nav2 first drives to corner 1 if the robot is elsewhere.</p>
+            <div class="row">
+              <label class="field">Laps<input type="number" id="lapCount" min="1" max="50" step="1" value="1" inputmode="numeric"></label>
+              <button id="lapDoor" aria-pressed="false" style="align-self: flex-end">Door open on straights</button>
+            </div>
+            <div class="row" style="margin-top: 8px">
+              <button class="primary" id="lapStart">Drive laps</button>
+              <button id="lapStop">Stop laps</button>
+            </div>
+            <p class="lapstatus" id="lapStatus" aria-live="polite"></p>
+          </div>
           <details class="sub">
             <summary>Set the door's open and closed ends</summary>
             <div class="slider">
@@ -506,6 +534,13 @@
             <p class="hint">The servo follows the slider. Move it until the door is fully open and save, then do the same for closed.</p>
           </details>
         </div>
+
+        <!-- Setup: teach the poses once -->
+        <div class="pane" role="tabpanel" id="pane-setup" aria-labelledby="tab-setup">
+          <div class="here" role="status" aria-live="polite"><span class="dot idle" id="poseDot"></span><span id="poseText">Waiting for the robot's position…</span></div>
+          <p class="hint">Drive the robot to each spot (Drive), then press Save. The pose is the robot's position and heading on the saved map, so navigation must be running.</p>
+          <div id="poseList" data-needs-control></div>
+        </div>
       </div>
     </section>
   </main>
@@ -520,6 +555,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 4v4h-4"/></svg>Mix</button>
     <button role="tab" data-view-btn="unload" aria-controls="view-tools">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="11" rx="2"/><path d="M12 15v6M9 18l3 3 3-3"/></svg>Unload</button>
+    <button role="tab" data-view-btn="setup" aria-controls="view-tools">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>Setup</button>
   </nav>
 </div>
 
@@ -596,7 +633,7 @@ function paintRange(el) {
 document.addEventListener('input', (e) => { if (e.target.type === 'range') paintRange(e.target); });
 
 // ---- layout: stage tabs (desktop) and views (phone) ----
-const TOOLS = ['load', 'mix', 'unload'];
+const TOOLS = ['load', 'mix', 'unload', 'setup'];
 let tool = TOOLS.includes(store.get('tool')) ? store.get('tool') : 'load';
 let view = ['drive', ...TOOLS].includes(store.get('view')) ? store.get('view') : 'drive';
 
@@ -626,8 +663,8 @@ document.querySelectorAll('.tabs [role=tab]').forEach((b) => {
   b.addEventListener('click', () => { showTool(b.dataset.tab); if (view !== 'drive') showView(b.dataset.tab); });
   b.addEventListener('keydown', (e) => {
     const i = TOOLS.indexOf(tool);
-    if (e.key === 'ArrowRight') { e.preventDefault(); showTool(TOOLS[(i + 1) % 3], true); }
-    if (e.key === 'ArrowLeft') { e.preventDefault(); showTool(TOOLS[(i + 2) % 3], true); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); showTool(TOOLS[(i + 1) % TOOLS.length], true); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); showTool(TOOLS[(i + TOOLS.length - 1) % TOOLS.length], true); }
   });
 });
 document.querySelectorAll('[data-view-btn]').forEach((b) =>
@@ -950,6 +987,78 @@ function showValves(s) {
   box.classList.toggle('bad', d.status !== 'done' && d.status !== 'running');
 }
 
+// ---- setup: taught poses ----
+const POSE_GROUPS = [
+  ['Silos', 'Park under each pipe, facing the way you will approach it.',
+    [['silo1', 'Silo 1'], ['silo2', 'Silo 2'], ['silo3', 'Silo 3']]],
+  ['Start', 'Where the robot waits before and after a run.', [['start', 'Start']]],
+  ['Lap corners', 'Clockwise around the cow box (the door is on the right), in driving order. Leave room to turn: the robot\'s corners reach 31 cm from its centre.',
+    [['lap1', 'Corner 1'], ['lap2', 'Corner 2'], ['lap3', 'Corner 3'], ['lap4', 'Corner 4']]],
+];
+const deg = (rad) => Math.round(rad * 180 / Math.PI);
+function buildPoses() {
+  $('poseList').innerHTML = POSE_GROUPS.map(([title, hint, items]) => `
+    <div class="pose-group">
+      <h3>${title}</h3>
+      <p class="hint" style="margin: 0 0 4px">${hint}</p>
+      ${items.map(([key, label]) => `
+        <div class="pose">
+          <div class="name">${label}<small id="ps-${key}">Not saved</small></div>
+          <button class="quiet" data-save="${key}">Save here</button>
+          <button data-clear="${key}" aria-label="Clear ${label}">Clear</button>
+        </div>`).join('')}
+    </div>`).join('');
+  $('poseList').querySelectorAll('[data-save]').forEach((b) =>
+    b.addEventListener('click', () => action(`/api/poses/${b.dataset.save}`).then(poll)));
+  $('poseList').querySelectorAll('[data-clear]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      try {
+        const res = await fetch(`/api/poses/${b.dataset.clear}`, {method: 'DELETE', headers: HEADERS});
+        if (res.status === 403) throw new Error('View only: another device is in control');
+        toast((await res.json()).message);
+        poll();
+      } catch (e) { toast(String(e.message || e), true); }
+    }));
+}
+buildPoses();
+function showPoses(s) {
+  const p = s.pose;
+  const live = p && p.age_s < 2;
+  $('poseDot').className = `dot ${live ? 'on' : 'idle'}`;
+  $('poseText').innerHTML = !p ? 'Not localized: start <code>navigation.launch.py</code> (or SLAM)'
+    : `Robot at <b>${p.x.toFixed(2)}, ${p.y.toFixed(2)} m</b>, heading <b>${deg(p.yaw)}°</b>${live ? '' : ' (stale)'}`;
+  const saved = s.poses;
+  for (const [, , items] of POSE_GROUPS) {
+    for (const [key] of items) {
+      const el = $(`ps-${key}`);
+      const q = saved && saved[key];
+      el.classList.toggle('set', !!q);
+      el.textContent = saved === null ? 'feed_mission not installed'
+        : q ? `${q.x.toFixed(2)}, ${q.y.toFixed(2)} m, ${deg(q.yaw)}°` : 'Not saved';
+    }
+  }
+}
+
+// ---- laps ----
+$('lapDoor').addEventListener('click', () => {
+  const b = $('lapDoor');
+  b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+});
+$('lapStart').addEventListener('click', () => {
+  const laps = parseInt($('lapCount').value, 10);
+  if (!(laps >= 1)) { toast('Enter how many laps', true); $('lapCount').focus(); return; }
+  action('/api/lap/start', {laps, open_door: $('lapDoor').getAttribute('aria-pressed') === 'true'});
+});
+$('lapStop').addEventListener('click', () => action('/api/lap/stop'));
+function showLap(st) {
+  const el = $('lapStatus');
+  el.textContent = st ? `Laps: ${st}` : 'Lap driver not running';
+  const running = !!st && /^(lap |approach|blocked)/.test(st);
+  el.classList.toggle('run', running);
+  el.classList.toggle('bad', !!st && (st.startsWith('failed') || st.startsWith('blocked')));
+  $('lapStart').className = running ? 'running' : 'primary';
+}
+
 // ---- cameras ----
 // One camera large, the other as a thumbnail you tap to swap. Streams stop
 // when they are off-screen, the tab is hidden or the cameras are turned off,
@@ -1155,6 +1264,8 @@ async function poll() {
     showBattery(s.battery);
     showExplorer(s.explorer);
     showHazards(s.hazards);
+    showPoses(s);
+    showLap(s.lap);
     const fresh = s.weight !== null && s.weight_age_s < 2;
     $('weight').textContent = s.weight === null ? '—' : s.weight.toFixed(3);
     $('weightBox').style.opacity = fresh ? 1 : 0.45;
