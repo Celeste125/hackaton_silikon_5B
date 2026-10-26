@@ -37,17 +37,3 @@ htmlcov/
 *.bag
 *.db3
 *.mcap
-
-# Demonstration recordings are local evidence, not source-controlled artifacts.
-/document/*.mp4
-/document/*.webm
-
-# Large local ML artifacts. Keep only layout documentation and model provenance
-# in Git. The deployable model is versioned with the ROS perception package.
-/yolo_seg/data/
-/yolo_seg/experiment/
-/yolo_seg/model/*
-!/yolo_seg/README.md
-!/yolo_seg/model/README.md
-!/yolo_seg/registry/
-!/yolo_seg/registry/**

@@ -1,95 +1,115 @@
-# Intelligent Machine Design Laboratory ROS 2 Workspace
+# Feed mixer robot
 
-This repository contains the ROS 2 workspace for SLAM, localization, RealSense
-RGB-D perception, YOLO instance segmentation, mask-depth 3D geometry, target
-selection, and beacon heading command generation.
+An iRobot Create 3 that maps the arena on its own, fills feed from a three-silo
+dispenser, mixes it, and drives laps around the cow area unloading it through a
+side door.
 
-The active development branch for this work is:
+| Machine | Runs |
+| --- | --- |
+| Jetson (on the robot) | lidar, SLAM + Nav2, frontier explorer, mixer ESP driver, web panel |
+| ESP32 (USB serial to the Jetson) | 4 load cells, 2 mixer motors, door servo |
+| Raspberry Pi | silo valve servos |
+| Create 3 base | its own ROS 2 nodes under `/Team2` (odometry, `cmd_vel`, bumpers) |
 
-```bash
-feature/slam_perception
-```
-
-## Repository Layout
+## Repository layout
 
 ```text
 .
-├── document/
-│   ├── plan.md
-│   ├── group-plan_en.md
-│   └── task specifications and local demonstration evidence
-├── maps/
-│   ├── arena_map.yaml
-│   ├── arena_map.pgm
-│   ├── arena_map.data
-│   └── arena_map.posegraph
-├── yolo_seg/
-│   ├── data/
-│   │   ├── releases/final_v1/
-│   │   ├── raw_bags/
-│   │   ├── cvat_exports/
-│   │   └── archive/
-│   ├── experiment/
-│   │   ├── training/
-│   │   ├── evaluation/
-│   │   └── archive/
-│   ├── model/                 # local generic pretrained weights
-│   ├── registry/              # tracked model provenance
-│   └── scripts/
+├── mixer_esp32/                ESP32 firmware (PlatformIO), see its README
+├── raspberry/
+│   ├── valve_controller.py     ROS 2 node for the valve servos (PCA9685)
+│   ├── servo_sweep.py          find a servo's usable pulse range
+│   ├── data/valve_calibration.json
+│   └── Dockerfile
+├── valve_cmd.py                command / calibrate the valves from the Jetson
 └── ros2_ws/
-    ├── dependencies.repos     # pinned external ROS package sources
+    ├── dependencies.repos      pinned sllidar_ros2 source
     └── src/
-        ├── perception/
-        │   ├── config/perception.yaml
-        │   ├── launch/
-        │   │   ├── camera.launch.py
-        │   │   └── yolo_segmentation.launch.py
-        │   ├── models/yolo11n_seg_imdl.pt
-        │   └── perception/
-        │       ├── depth_align.py
-        │       ├── yolo_segmentation_node.py
-        │       ├── target_pose_estimator.py
-        │       ├── target_selector.py
-        │       ├── beacon_heading_controller.py
-        │       ├── perception_visualizer.py
-        │       ├── object_geometry_utils.py
-        │       ├── perception_visualization_utils.py
-        │       ├── target_selection_utils.py
-        │       └── yolo_detection_utils.py
-        └── slam/
-            ├── config/
-            │   ├── amcl_params.yaml
-            │   └── slam_toolbox_params.yaml
-            ├── launch/
-            │   ├── localization.launch.py
-            │   └── mapping.launch.py
-            └── slam/
-                ├── odom_tf_republisher.py
-                └── scan_timestamp_fixer.py
+        ├── frontier_explorer/  lidar launch, SLAM + Nav2, frontier exploration
+        └── mixer_esp_driver/   ROS driver and web panel for the ESP
 ```
 
-`yolo_seg/data/`, `yolo_seg/experiment/`, raw recordings, local generic
-weights, and Colcon build outputs are intentionally excluded from Git. The
-deployable model, runtime schemas, ROS source, maps, documentation, and model
-registry remain version-controlled.
+### `frontier_explorer`
 
-## Runtime Assumptions
+| Launch file | What it starts |
+| --- | --- |
+| `lidar.launch.py` | The lidar alone: `sllidar_node` (`/scan_raw`) and `scan_timestamp_fixer` (`/scan`). Use it to test the lidar. |
+| `slam_navigation.launch.py` | `odom_tf_republisher`, `scan_timestamp_fixer`, slam_toolbox, Nav2 and twist_mux. Map and navigate at the same time. |
+| `explore.launch.py` | The frontier explorer: sends Nav2 goals until no frontier is left, then drives back to the start. |
+| `mapping.launch.py` | Lidar + slam_toolbox only, for mapping by teleop without Nav2. |
+| `nav2.launch.py` | Nav2 itself; included by `slam_navigation.launch.py`. |
 
-- ROS 2 Humble is installed.
-- The robot publishes Create3 odometry on `/Team2/odom`.
-- The SLAMTEC LIDAR is connected on `/dev/ttyUSB0`.
-- The Intel RealSense camera publishes RGB and depth images through
-  `realsense2_camera`.
-- The saved map for localization is available at `~/maps/arena_map.yaml`.
-- The Jetson and Create3 use the same ROS 2 network settings:
-  `ROS_DOMAIN_ID=2` and `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`.
+| Node | Does |
+| --- | --- |
+| `scan_timestamp_fixer` | `/scan_raw` -> `/scan`, stamped with the Jetson's clock |
+| `odom_tf_republisher` | `/Team2/odom` -> `odom -> base_link` TF |
+| `frontier_explorer` | picks the best frontier in `/map` and sends it to Nav2 |
 
-If the map files are stored in this repository, copy them to the runtime path:
+Parameters are in `config/`: `nav2_params.yaml`, `slam_toolbox_params.yaml`,
+`twist_mux.yaml`. Nav2 and slam_toolbox themselves come from apt.
+
+## Setup on the Jetson
 
 ```bash
-mkdir -p ~/maps
-cp maps/arena_map.* ~/maps/
+sudo apt install python3-vcstool ros-humble-navigation2 ros-humble-nav2-bringup \
+  ros-humble-slam-toolbox ros-humble-twist-mux ros-humble-teleop-twist-keyboard \
+  ros-humble-irobot-create-msgs
+cd ~/imdl-main
+vcs import --skip-existing ros2_ws/src < ros2_ws/dependencies.repos
+cd ros2_ws
+colcon build --symlink-install
+source install/setup.bash
 ```
+
+Build from a shell that has only `/opt/ros/humble` sourced. A workspace built
+while another one is sourced keeps that one as an underlay for good.
+
+ROS settings on the Jetson and the robot: `ROS_DOMAIN_ID=2`,
+`RMW_IMPLEMENTATION=rmw_fastrtps_cpp`, robot namespace `/Team2`.
+
+## Run
+
+Run `sws` first in every terminal (`cd ~/imdl-main/ros2_ws && source install/setup.bash`).
+
+### Test the lidar
+
+```bash
+ros2 launch frontier_explorer lidar.launch.py
+ros2 topic hz /scan
+```
+
+Defaults: `serial_port:=/dev/ttyUSB0`, `serial_baudrate:=460800` (SLAMTEC C1),
+`frame_id:=base_link`. Override them if the lidar enumerates elsewhere or is a
+different model (A1/A2M8: 115200, A2M12/A3/S1: 256000).
+
+### Map the arena
+
+One terminal each:
+
+```bash
+ros2 launch frontier_explorer lidar.launch.py fix_timestamps:=false
+ros2 launch frontier_explorer slam_navigation.launch.py   # wait for "Managed nodes are active"
+ros2 launch frontier_explorer explore.launch.py           # the robot starts driving
+ros2 run nav2_map_server map_saver_cli -f ~/maps/arena    # once exploration is done
+```
+
+`slam_navigation.launch.py` runs its own scan timestamp fixer, hence
+`fix_timestamps:=false` on the lidar. Teleop on `/Team2/cmd_vel_teleop`
+overrides Nav2 through twist_mux; Nav2 resumes 0.5 s after the last key press:
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/Team2/cmd_vel_teleop
+```
+
+### Mixer, door and web panel
+
+```bash
+ros2 launch mixer_esp_driver base_teleop.launch.py
+```
+
+The ESP is on `/dev/ttyCH341USB0` (`mixer_esp_driver/config.py`). The Create 3
+base needs no launch file: its firmware publishes `/Team2/*` and listens on
+`/Team2/cmd_vel`.
 
 ## Jetson to Create 3 over the USB-Ethernet dongle
 
@@ -148,23 +168,23 @@ The Jetson and its own address must be in the list. A profile with only the
 robot makes the robot visible and every node on the Jetson invisible, and the
 reverse without a profile. `~/.bashrc` on the Jetson exports
 `FASTRTPS_DEFAULT_PROFILES_FILE` for this profile and `ROS_LOCALHOST_ONLY=0`,
-and defines `sws` (`cd ~/imdl-main/ros2_ws && source install/setup.bash`). Every
-ROS process on the Jetson needs that variable. After changing it, run
-`ros2 daemon stop`, and give `ros2 node list` a few seconds (or `--spin-time 10`).
+and defines `sws`. Every ROS process on the Jetson needs that variable. After
+changing it, run `ros2 daemon stop`, and give `ros2 node list` a few seconds
+(or `--spin-time 10`).
 
 ### After a reboot
 
 - Plug the dongle in before the robot starts its ROS app. If the robot booted
   without it, restart the app from its web page ("Restart application"), since
   the app only uses the wired interface that exists when it starts.
-- Nothing launches automatically. Start the ESP driver, camera, lidar, SLAM and
-  Nav2 yourself, after the wired link is up.
+- Nothing launches automatically. Start the ESP driver, the lidar and
+  navigation yourself, after the wired link is up.
 - Run `sws` first and launch from `~/imdl-main/ros2_ws`. The ESP driver reads
   `loadcell_calibration.json` and `door_calibration.json` from the **current
   directory**; launched from `~` it used the wrong load-cell calibration and
   the default door ends (1000/2000 us) instead of 500/2600 us.
 
-### Web panel: one controller at a time
+## Web panel: one controller at a time
 
 Open the panel (`http://<jetson>:8000`, or through an SSH tunnel) on as many
 devices as you like. Only one holds control; the rest are view-only. Press
@@ -173,302 +193,9 @@ stops their motors and the base). The holder keeps control while its page is
 open, and it frees itself a few seconds after the page closes or loses contact.
 **STOP ALL**, **Close all valves** and **Cancel dose** work from every device.
 
-This replaced a bug where every open tab sent its own motor/drive setpoint and
-the last writer won, so two open tabs made the motors alternate on and off.
 Do not run `ros2 topic pub` on `/mixer/motor_*` or `/Team2/cmd_vel` while a
 device holds control; the panel publishes there too. It is protection against
 collisions between people, not security: there is still no login.
 
 Code: `mixer_esp_driver/control_lease.py` and `web_control.py`. Tests:
 `pytest ros2_ws/src/mixer_esp_driver/test` (needs `fastapi` and `httpx`).
-
-## Build
-
-From the ROS 2 workspace:
-
-```bash
-cd ~/Desktop/intelligent-machine-design-laboratory/ros2_ws
-colcon build --packages-select slam perception --symlink-install
-source install/setup.bash
-```
-
-## External ROS Dependencies
-
-The SLAMTEC LIDAR driver is an external dependency rather than copied into the
-project history. Restore its pinned source after cloning the repository:
-
-```bash
-sudo apt install python3-vcstool
-cd ~/Desktop/intelligent-machine-design-laboratory
-vcs import --skip-existing ros2_ws/src < ros2_ws/dependencies.repos
-```
-
-## SLAM Package
-
-The `slam` package handles LIDAR input, odometry TF republishing, mapping, and
-AMCL localization.
-
-### Key Files
-
-| File | Purpose |
-| --- | --- |
-| `ros2_ws/src/slam/launch/mapping.launch.py` | Starts the LIDAR driver, fixes scan timestamps, republishes odom TF, and launches `slam_toolbox` for mapping. |
-| `ros2_ws/src/slam/launch/localization.launch.py` | Starts localization-only mode with LIDAR, timestamp correction, odom TF, `map_server`, lifecycle manager, and AMCL. |
-| `ros2_ws/src/slam/slam/scan_timestamp_fixer.py` | Subscribes to `/scan_raw`, rewrites the timestamp using the Jetson clock, and republishes `/scan`. |
-| `ros2_ws/src/slam/slam/odom_tf_republisher.py` | Subscribes to `/Team2/odom` and republishes `odom -> base_link` TF using the Jetson clock. |
-| `ros2_ws/src/slam/config/amcl_params.yaml` | AMCL particle filter, laser model, frame, and update parameters. |
-| `ros2_ws/src/slam/config/slam_toolbox_params.yaml` | Parameters for `slam_toolbox` mapping. |
-
-### Mapping
-
-```bash
-cd ~/Desktop/intelligent-machine-design-laboratory/ros2_ws
-source install/setup.bash
-ros2 launch slam mapping.launch.py
-```
-
-Important topics and frames:
-
-| Name | Description |
-| --- | --- |
-| `/scan_raw` | Raw LIDAR scan from `sllidar_node`. |
-| `/scan` | Timestamp-corrected scan used by SLAM and AMCL. |
-| `/Team2/odom` | Create3 odometry input. |
-| `/tf` | Includes the republished `odom -> base_link` transform. |
-| `/map` | Occupancy grid from `slam_toolbox`. |
-| `/robot_pose` | Remapped robot pose output. |
-
-### Localization
-
-```bash
-cd ~/Desktop/intelligent-machine-design-laboratory/ros2_ws
-source install/setup.bash
-ros2 launch slam localization.launch.py
-```
-
-Useful checks:
-
-```bash
-ros2 topic list
-ros2 topic echo /robot_pose --once
-ros2 run tf2_ros tf2_echo map base_link
-ros2 topic hz /scan
-ros2 topic hz /Team2/odom
-```
-
-## Perception Package
-
-The `perception` package starts the RealSense camera pipeline, aligns depth to
-the RGB image, performs YOLO instance segmentation, estimates 3D object
-positions from mask depth, selects the requested block target, and generates a
-beacon heading command.
-
-### Key Files
-
-| File | Purpose |
-| --- | --- |
-| `ros2_ws/src/perception/launch/camera.launch.py` | Formal single-command launch: RealSense, depth alignment, YOLO, 3D geometry, target selection, beacon control, and static `base_link -> camera_link` TF. |
-| `ros2_ws/src/perception/config/perception.yaml` | Shared runtime parameters for all perception nodes. |
-| `ros2_ws/src/perception/perception/depth_align.py` | Reprojects raw depth into the RGB camera frame and publishes aligned depth. |
-| `ros2_ws/src/perception/perception/yolo_segmentation_node.py` | Detects the four block classes and `blue_obstacle`; publishes raw 2D masks on `/yolo/detections`. |
-| `ros2_ws/src/perception/perception/target_pose_estimator.py` | Fuses YOLO masks with aligned depth, camera intrinsics, and TF; publishes all 3D objects on legacy JSON `/detected_objects` and typed `/perception/detected_objects`. |
-| `ros2_ws/src/perception/perception/target_selector.py` | Selects only a valid requested block and publishes `/current_target_object` and `/target_block_pose`. |
-| `ros2_ws/src/perception/perception/beacon_heading_controller.py` | Computes heading error from `base_link` to `/target_block_pose` and publishes `/beacon_cmd`. |
-| `ros2_ws/src/perception/perception/perception_visualizer.py` | Produces a compressed side-by-side YOLO plus aligned-depth display and map-frame RViz markers. It is diagnostic only and does not affect target selection. |
-
-### Camera And Perception Launch
-
-```bash
-cd ~/Desktop/intelligent-machine-design-laboratory/ros2_ws
-source install/setup.bash
-ros2 launch perception camera.launch.py
-```
-
-Default measured camera extrinsics:
-
-| Transform | x | y | z | roll | pitch | yaw |
-| --- | --- | --- | --- | --- | --- | --- |
-| `base_link -> camera_link` | `0.19 m` | `0.0 m` | `-0.02 m` | `0.0 rad` | `0.262 rad` | `0.0 rad` |
-
-These values can be overridden at launch:
-
-```bash
-ros2 launch perception camera.launch.py camera_x:=0.19 camera_y:=0.0 camera_z:=-0.02 camera_pitch:=0.262
-```
-
-### Perception Pipeline
-
-```text
-RealSense RGB + depth
-  -> depth_align.py
-  -> yolo_segmentation_node.py
-  -> /yolo/detections
-  -> target_pose_estimator.py
-  -> /detected_objects (legacy JSON) + /perception/detected_objects (typed)
-  -> perception_visualizer.py
-  -> /perception/fused_debug/compressed + /perception/object_markers
-  -> target_selector.py
-  -> /current_target_object + /target_block_pose
-  -> beacon_heading_controller.py
-  -> /beacon_cmd
-
-TF tree
-  map -> odom -> base_link -> camera_link
-    -> camera_color_frame -> camera_color_optical_frame
-    -> camera_depth_frame -> camera_depth_optical_frame
-```
-
-### Perception Topics
-
-| Topic | Type | Publisher | Description |
-| --- | --- | --- | --- |
-| `/camera/camera/color/image_raw` | `sensor_msgs/msg/Image` | RealSense | RGB image input. |
-| `/camera/camera/depth/image_rect_raw` | `sensor_msgs/msg/Image` | RealSense | Raw depth image input. |
-| `/camera/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/msg/Image` | `depth_align.py` | Depth image aligned to RGB pixels. |
-| `/yolo/detections` | `std_msgs/msg/String` | `yolo_segmentation_node.py` | Raw 2D YOLO masks, boxes, classes, and confidence. |
-| `/yolo/debug_image` | `sensor_msgs/msg/Image` | `yolo_segmentation_node.py` | Optional debug image, enabled with `runtime_mode:=debug`. |
-| `/yolo/debug_image/compressed` | `sensor_msgs/msg/CompressedImage` | `yolo_segmentation_node.py` | JPEG-compressed debug image for remote laptop visualization. |
-| `/detected_objects` | `std_msgs/msg/String` | `target_pose_estimator.py` | All 3D objects, including `blue_obstacle`; contains depth and map/base coordinates where valid. |
-| `/perception/detected_objects` | `imdl_msgs/msg/DetectedObjectArray` | `target_pose_estimator.py` | Shared typed object list for navigation and control; includes class, image coordinates, depth, base/map coordinates, and validity flags. |
-| `/perception/fused_debug/compressed` | `sensor_msgs/msg/CompressedImage` | `perception_visualizer.py` | Side-by-side YOLO view and colorized aligned depth with per-object `Z` depth and base-frame `R` range. Debug mode only. |
-| `/perception/object_markers` | `visualization_msgs/msg/MarkerArray` | `perception_visualizer.py` | Map-frame marker and distance label for every object with a valid `position_map`. |
-| `/requested_target_class` | `std_msgs/msg/String` | Task controller | Requested block class: `red_block`, `yellow_block`, `green_block`, or `blue_block`. |
-| `/current_target_object` | `std_msgs/msg/String` | `target_selector.py` | Selected target object, target request, stale state, and selection reason. |
-| `/target_block_pose` | `geometry_msgs/msg/PoseStamped` | `target_selector.py` | Map-frame pose of the selected valid block only. |
-| `/beacon_cmd` | `std_msgs/msg/Float32` | `beacon_heading_controller.py` | Heading error in radians. Positive means target left, negative means target right, near zero means target ahead. |
-
-### Navigation and Control Handoff
-
-New navigation and control consumers should subscribe to the typed
-`/perception/detected_objects` topic, rather than the legacy JSON topic.
-
-- [Navigation perception handoff](ros2_ws/src/perception/docs/navigation_perception_handoff.md)
-- [Control perception handoff](ros2_ws/src/perception/docs/control_perception_handoff.md)
-- [Complete typed-interface contract](ros2_ws/src/perception/docs/typed_detected_objects_interface.md)
-- [Hardware-free B/C mock integration](ros2_ws/src/imdl_integration_tools/docs/bc_mock_integration.md)
-
-Example `/detected_objects` payload:
-
-```json
-[
-  {
-    "class_name": "red_block",
-    "is_block": true,
-    "confidence": 0.98,
-    "depth_m": 0.62,
-    "position_map": {"x": 1.2, "y": 0.3, "z": -0.1},
-    "transform_status": "ok"
-  }
-]
-```
-
-### Perception Checks
-
-```bash
-ros2 node list --no-daemon | grep -E "depth_align|yolo_segmentation|target_pose_estimator|target_selector|beacon_heading"
-ros2 topic list --no-daemon | grep -E "detected|aligned_depth|target|beacon"
-ros2 topic echo /yolo/detections std_msgs/msg/String --once
-ros2 topic echo /detected_objects std_msgs/msg/String --once
-ros2 topic echo /perception/detected_objects imdl_msgs/msg/DetectedObjectArray --once
-ros2 topic echo /target_block_pose geometry_msgs/msg/PoseStamped --once
-ros2 topic echo /beacon_cmd std_msgs/msg/Float32 --once
-ros2 run tf2_ros tf2_echo map camera_color_optical_frame
-```
-
-If ROS 2 CLI graph discovery behaves strangely, restart the daemon:
-
-```bash
-ros2 daemon stop
-sleep 2
-ros2 daemon start
-```
-
-On ROS 2 Humble, `--no-daemon` is placed after the subcommand, for example:
-
-```bash
-ros2 topic list --no-daemon
-ros2 node list --no-daemon
-```
-
-### Beacon Command
-
-`beacon_heading_controller.py` subscribes to `/target_block_pose`, looks up the
-latest `target_frame -> base_link` transform, and publishes the angular error
-on `/beacon_cmd`.
-
-Interpretation:
-
-| `/beacon_cmd` value | Meaning |
-| --- | --- |
-| Positive | Target is to the left of the robot heading. |
-| Near zero | Target is approximately in front. |
-| Negative | Target is to the right of the robot heading. |
-
-Quick check:
-
-```bash
-ros2 topic echo /beacon_cmd std_msgs/msg/Float32
-```
-
-Move the colored target left and right in front of the camera. The command
-should change sign around zero.
-
-## Typical Startup Order
-
-For localization plus perception:
-
-```bash
-# Terminal 1
-cd ~/Desktop/intelligent-machine-design-laboratory/ros2_ws
-source install/setup.bash
-ros2 launch slam localization.launch.py
-
-# Terminal 2
-cd ~/Desktop/intelligent-machine-design-laboratory/ros2_ws
-source install/setup.bash
-ros2 launch perception camera.launch.py
-```
-
-Then verify:
-
-```bash
-ros2 topic echo /robot_pose --once
-ros2 topic echo /detected_objects std_msgs/msg/String --once
-ros2 topic echo /target_block_pose geometry_msgs/msg/PoseStamped --once
-ros2 topic echo /beacon_cmd std_msgs/msg/Float32 --once
-```
-
-## Interfaces Ready For Navigation Team
-
-These are the main outputs provided by the SLAM and perception stack:
-
-| Topic | Type | Purpose |
-| --- | --- | --- |
-| `/map` | `nav_msgs/msg/OccupancyGrid` | Saved SLAM map for localization and planning. |
-| `/scan` | `sensor_msgs/msg/LaserScan` | LIDAR scan for localization and obstacle information. |
-| `/robot_pose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | Robot pose in the `map` frame. |
-| `/tf`, `/tf_static` | `tf2_msgs/msg/TFMessage` | Frame tree: `map -> odom -> base_link -> camera_link -> camera frames`. |
-| `/detected_objects` | `std_msgs/msg/String` | Legacy JSON object list, retained while consumers migrate. |
-| `/perception/detected_objects` | `imdl_msgs/msg/DetectedObjectArray` | Shared typed object list for navigation and control consumers. |
-| `/current_target_object` | `std_msgs/msg/String` | Selected requested block and its status. |
-| `/target_block_pose` | `geometry_msgs/msg/PoseStamped` | Main target position in the `map` frame. |
-| `/beacon_cmd` | `std_msgs/msg/Float32` | Heading command for beacon alignment or target following. |
-
-Useful interface check:
-
-```bash
-ros2 topic list --no-daemon | grep -E "^/map$|^/scan$|^/robot_pose$|^/yolo/detections$|^/target_block_pose$|^/detected_objects$|^/current_target_object$|^/beacon_cmd$"
-```
-
-## Notes
-
-- `target_pose_estimator.py` uses the latest available TF when transforming
-  camera points to the target frame. This avoids failures caused by RealSense
-  image timestamps being slightly ahead of the TF buffer.
-- `/detected_objects` remains the legacy `std_msgs/msg/String` JSON interface.
-  New navigation and control consumers should use
-  `/perception/detected_objects` (`imdl_msgs/msg/DetectedObjectArray`);
-  see `ros2_ws/src/perception/docs/typed_detected_objects_interface.md`.
-- The frozen YOLO model has five classes: four block classes and
-  `blue_obstacle`. `blue_obstacle` is published for navigation but is never a
-  selectable grasp target.
