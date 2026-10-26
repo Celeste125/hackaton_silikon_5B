@@ -99,6 +99,11 @@ class FrontierExplorer(Node):
         # with no actionable frontiers (all remaining clusters are too small or
         # have no reachable goal point — already filtered by min_frontier_size).
         self.declare_parameter("done_ticks_threshold", 5)
+        # When every remaining frontier has failed (blacklisted), clear the
+        # blacklist and retry them this many times, then call exploration done.
+        # A frontier the robot can never see past (the inside of the cow box)
+        # would otherwise keep it retrying forever.
+        self.declare_parameter("max_blacklist_clears", 1)
         # Stuck detection: if the rover hasn't moved more than stuck_dist_m in
         # stuck_timeout_s seconds we cancel the goal and replan — this fires
         # before Nav2's own recovery (Spin etc.) which is wrong for Ackermann.
@@ -120,6 +125,8 @@ class FrontierExplorer(Node):
         self._min_wall_clear_m = self.get_parameter("min_wall_clearance_m").value
         self._goal_max_dist = self.get_parameter("goal_max_dist_cells").value
         self._done_ticks_threshold = self.get_parameter("done_ticks_threshold").value
+        self._max_blacklist_clears = self.get_parameter("max_blacklist_clears").value
+        self._blacklist_clears = 0
         self._stuck_dist_m = self.get_parameter("stuck_dist_m").value
         self._stuck_timeout_s = self.get_parameter("stuck_timeout_s").value
         startup_delay = self.get_parameter("nav2_startup_delay").value
@@ -435,6 +442,15 @@ class FrontierExplorer(Node):
 
         valid = [f for f in frontiers if not self._is_blacklisted(f[3], f[4])]
         if not valid:
+            if self._blacklist_clears >= self._max_blacklist_clears:
+                self.get_logger().info(
+                    f"All {len(frontiers)} remaining frontiers failed again — "
+                    "exploration done, returning to start position."
+                )
+                self._exploration_done = True
+                self._return_to_start()
+                return
+            self._blacklist_clears += 1
             self.get_logger().warn("All frontiers blacklisted — clearing blacklist.")
             self._blacklisted.clear()
             valid = frontiers
@@ -642,7 +658,14 @@ class FrontierExplorer(Node):
             labeled[seed] = label
             while queue:
                 r, c = queue.pop()
-                for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                # 8-connected: a frontier along a wall that is diagonal in the
+                # map is a staircase whose steps touch only at corners. With 4
+                # neighbours it split into 1-3 cell pieces, all below
+                # min_frontier_size, so whole unexplored edges were ignored.
+                for dr, dc in (
+                    (-1, 0), (1, 0), (0, -1), (0, 1),
+                    (-1, -1), (-1, 1), (1, -1), (1, 1),
+                ):
                     nr, nc = r + dr, c + dc
                     if (
                         0 <= nr < h

@@ -18,11 +18,20 @@ def generate_launch_description():
                 'channel_type': 'serial',
                 'serial_port': '/dev/ttyUSB0',
                 'serial_baudrate': 460800,
-                'frame_id': 'base_link',
+                'frame_id': 'laser',
                 'angle_compensate': True,
             }],
             remappings=[('/scan', '/scan_raw')],
             output='screen'
+        ),
+
+        # The lidar is mounted turned 180 degrees; see lidar.launch.py.
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='lidar_tf',
+            arguments=['--yaw', '3.14159265', '--frame-id', 'base_link',
+                       '--child-frame-id', 'laser'],
         ),
 
         # Rewrite scan timestamps with the Jetson clock to match TF time.
