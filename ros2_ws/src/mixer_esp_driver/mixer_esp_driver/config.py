@@ -31,6 +31,16 @@ FILTER_WINDOW = 5
 # motors if nothing arrives for 500 ms, so keep this well above 2 Hz.
 MOTOR_SEND_HZ = 10
 
+# The ramp and the shake pattern are computed at this rate; a changed speed is
+# sent right away. 200 Hz = 5 ms timing for the shake reversals.
+MOTOR_LOOP_HZ = 200
+
+# Motors ramp to a new speed instead of jumping (protects gearbox and power
+# supply). Units: full speed per second, so 2.0 = 0 -> 100% in 0.5 s.
+# 0 = no ramp. The shake pattern (/mixer/shake) never ramps. The ESP itself
+# applies every speed instantly.
+RAMP_PER_S = 2.0
+
 # Safety: a motor stops if its topic gets no message for this long (e.g. the
 # commanding node crashed). Keep publishing at a few Hz. 0 = never stop.
 COMMAND_TIMEOUT_S = 1.0

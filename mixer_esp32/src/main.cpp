@@ -13,9 +13,10 @@
  *   Host -> ESP
  *     M <speed0> <speed1>   Motor speeds, -1.0 .. 1.0 (negative = reverse).
  *                           e.g. "M 0.5 -0.25"
- *                           Must be resent at least every CMD_TIMEOUT_MS,
- *                           otherwise the motors ramp down to 0 (safety if
- *                           the ROS node or the USB cable dies).
+ *                           Applied instantly, no ramp: smoothing is done by
+ *                           the ROS driver. Must be resent at least every
+ *                           CMD_TIMEOUT_MS, otherwise the motors stop (safety
+ *                           if the ROS node or the USB cable dies).
  *     S <us>                Door servo pulse width in microseconds,
  *                           e.g. "S 1500". Clamped to SERVO_MIN_US..
  *                           SERVO_MAX_US. The servo only starts getting
@@ -109,7 +110,6 @@ void pollCells() {
 float targetSpeed[NUM_MOTORS];
 float currentSpeed[NUM_MOTORS];
 uint32_t lastCmdMs = 0;
-uint32_t lastRampUs = 0;
 
 // The LEDC (PWM) API changed between Arduino-ESP32 core 2.x and 3.x.
 void pwmAttach(int pin, int channel, uint32_t freq = PWM_FREQ_HZ,
@@ -144,26 +144,15 @@ void applyMotor(int i, float speed) {
 }
 
 void updateMotors() {
-  uint32_t nowUs = micros();
-  float dt = (nowUs - lastRampUs) * 1e-6f;
-  lastRampUs = nowUs;
-
   // Safety stop when the host goes quiet.
   if (CMD_TIMEOUT_MS > 0 && millis() - lastCmdMs > CMD_TIMEOUT_MS) {
     for (int i = 0; i < NUM_MOTORS; i++) targetSpeed[i] = 0;
   }
 
   for (int i = 0; i < NUM_MOTORS; i++) {
-    float next = targetSpeed[i];
-    if (RAMP_PER_S > 0) {
-      float maxStep = RAMP_PER_S * dt;
-      float diff = targetSpeed[i] - currentSpeed[i];
-      if (diff > maxStep) next = currentSpeed[i] + maxStep;
-      if (diff < -maxStep) next = currentSpeed[i] - maxStep;
-    }
-    if (next != currentSpeed[i]) {
-      currentSpeed[i] = next;
-      applyMotor(i, next);
+    if (targetSpeed[i] != currentSpeed[i]) {
+      currentSpeed[i] = targetSpeed[i];
+      applyMotor(i, currentSpeed[i]);
     }
   }
 }
@@ -267,7 +256,6 @@ void setup() {
   }
 
   Serial.begin(SERIAL_BAUD);
-  lastRampUs = micros();
   printInfo();
 }
 

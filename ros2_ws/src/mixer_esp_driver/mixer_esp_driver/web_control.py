@@ -4,7 +4,7 @@
 
 It is only a front end for the topics of esp_driver_node, so start that first:
   /door/position, /door/raw_us, /door/save_open, /door/save_closed
-  /mixer/motor_0, /mixer/motor_1
+  /mixer/motor_0, /mixer/motor_1, /mixer/shake (unjam pattern, run on the ESP)
   /loadcell/weight, /loadcell/cells, /loadcell/tare
   /Team2/cmd_vel (geometry_msgs/Twist, Create 3 base, parameter cmd_vel_topic)
   /valve1..3/percent (published), /valve1..3/angle (feedback). The valves are
@@ -95,7 +95,12 @@ class WebControlNode(Node):
         self.motors = [0.0] * config.NUM_MOTORS
         self.last_motor_t = 0.0
         self._motors_active = False
+        self.shake_pub = self.create_publisher(Float32MultiArray, 'mixer/shake', 10)
+        self.shake = None  # {'fwd_ms', 'rev_ms', 'speeds'} while shaking
+        self.last_shake_t = 0.0
+        self._shake_active = False
         self.create_timer(1.0 / PUBLISH_HZ, self._publish_motors)
+        self.create_timer(1.0 / PUBLISH_HZ, self._publish_shake)
         self.create_timer(0.1, self._check_dose)
         self.create_timer(0.1, self._publish_drive)
 
@@ -180,6 +185,27 @@ class WebControlNode(Node):
             for pub, s in zip(self.motor_pubs, speeds):
                 pub.publish(Float32(data=s))
 
+    def _publish_shake(self):
+        # Same dead man's switch as the motors. When the pattern ends, one
+        # empty message tells the driver to stop it right away.
+        with self.lock:
+            fresh = (self.shake is not None
+                     and time.monotonic() - self.last_shake_t < HEARTBEAT_TIMEOUT_S)
+            if not fresh:
+                self.shake = None
+            shake = self.shake
+            publish = fresh or self._shake_active
+            self._shake_active = fresh
+        if publish:
+            data = [shake['fwd_ms'], shake['rev_ms'], *shake['speeds']] if shake else []
+            self.shake_pub.publish(Float32MultiArray(data=[float(v) for v in data]))
+
+    def set_shake(self, fwd_ms, rev_ms, speeds):
+        with self.lock:
+            self.shake = {'fwd_ms': fwd_ms, 'rev_ms': rev_ms, 'speeds': list(speeds)}
+            self.last_shake_t = time.monotonic()
+            self.motors = [0.0] * len(self.motors)
+
     def _publish_drive(self):
         with self.lock:
             fresh = time.monotonic() - self.last_drive_t < DRIVE_TIMEOUT_S
@@ -203,6 +229,7 @@ class WebControlNode(Node):
 
     def set_motors(self, speeds):
         with self.lock:
+            self.shake = None  # plain speeds end the shake pattern
             self.motors = list(speeds)
             self.last_motor_t = time.monotonic()
             self._motors_active = any(speeds)
@@ -256,12 +283,19 @@ class WebControlNode(Node):
                 'cells': list(self.cells),
                 'door': self.door,
                 'motors': list(self.motors),
+                'shake': dict(self.shake) if self.shake else None,
                 'num_motors': len(self.motors),
             }
 
 
 class MotorsBody(BaseModel):
     speeds: list[float] = Field(..., description='-1.0 .. 1.0 per motor')
+
+
+class ShakeBody(BaseModel):
+    fwd_ms: float = Field(..., ge=0.0, le=10000.0, description='time at +speed')
+    rev_ms: float = Field(..., ge=0.0, le=10000.0, description='time at -speed')
+    speeds: list[float] = Field(..., description='-1.0 .. 1.0 per motor, 0 = motor off')
 
 
 class DriveBody(BaseModel):
@@ -351,6 +385,17 @@ def create_app(ros):
         ros.set_motors([max(-1.0, min(1.0, s)) for s in body.speeds])
         return {'ok': True}
 
+    @app.post('/api/shake', dependencies=[Depends(require_control)])
+    def shake(body: ShakeBody):
+        """Resend every ~0.3 s while shaking, like /api/motors."""
+        n = ros.state()['num_motors']
+        if len(body.speeds) != n:
+            raise HTTPException(422, f'expected {n} speeds')
+        if body.fwd_ms + body.rev_ms < 20:
+            raise HTTPException(422, 'fwd_ms + rev_ms must be >= 20')
+        ros.set_shake(body.fwd_ms, body.rev_ms, [max(-1.0, min(1.0, s)) for s in body.speeds])
+        return {'ok': True}
+
     @app.post('/api/drive', dependencies=[Depends(require_control)])
     def drive(body: DriveBody):
         ros.set_drive(body.linear, body.angular)
@@ -428,6 +473,7 @@ def main(args=None):
     finally:
         node.set_motors([0.0] * config.NUM_MOTORS)
         node._publish_motors()
+        node._publish_shake()
         node.set_drive(0.0, 0.0)
         node._publish_drive()
         node.destroy_node()

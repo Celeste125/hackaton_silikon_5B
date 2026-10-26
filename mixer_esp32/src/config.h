@@ -60,11 +60,6 @@ const MotorPins MOTORS[] = {
 const uint32_t PWM_FREQ_HZ = 20000;
 const uint8_t PWM_BITS = 10;  // duty resolution: 0..1023
 
-// Motors ramp to the new speed instead of jumping (protects gearbox and
-// power supply). Units: full speed per second, so 2.0 = 0 -> 100% in 0.5 s.
-// 0 = no ramp, jump instantly.
-const float RAMP_PER_S = 2.0f;
-
 // Motors stop if no "M" command arrives for this long. 0 = never (only for
 // testing by hand in a serial monitor!).
 const uint32_t CMD_TIMEOUT_MS = 500;

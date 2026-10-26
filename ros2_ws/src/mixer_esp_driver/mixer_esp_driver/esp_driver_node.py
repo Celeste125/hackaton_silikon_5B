@@ -9,6 +9,13 @@ Load cells
 Motors
   /mixer/motor_0, /mixer/motor_1  std_msgs/Float32, -1.0 .. 1.0 (negative = reverse)
   e.g. ros2 topic pub -r 5 /mixer/motor_0 std_msgs/Float32 "data: 0.5"
+  Speed changes are ramped here (config.RAMP_PER_S); the ESP applies every
+  speed instantly.
+  /mixer/shake  std_msgs/Float32MultiArray [fwd_ms, rev_ms, speed0, speed1]
+                Unjam pattern: +speed for fwd_ms, -speed for rev_ms, repeat,
+                no ramp. Overrides /mixer/motor_* while it is fresh; publish
+                an empty array to stop it.
+  e.g. ros2 topic pub -r 5 /mixer/shake std_msgs/msg/Float32MultiArray "data: [150, 150, 1.0, 1.0]"
 
 Door servo
   /door/position  std_msgs/Float32  0.0 = fully open, 1.0 = fully closed
@@ -56,14 +63,21 @@ class EspDriverNode(Node):
         self.create_service(Trigger, 'loadcell/tare', self.on_tare)
         self.create_service(Trigger, 'loadcell/reload_calibration', self.on_reload)
 
-        self.speeds = [0.0] * config.NUM_MOTORS
+        self.speeds = [0.0] * config.NUM_MOTORS  # targets from the topics
+        self.output = [0.0] * config.NUM_MOTORS  # what the ESP was last sent
         self.last_cmd = [None] * config.NUM_MOTORS
         for i in range(config.NUM_MOTORS):
             self.create_subscription(
                 Float32, f'mixer/motor_{i}',
                 lambda msg, i=i: self.on_motor_cmd(i, msg), 10,
             )
-        self.create_timer(1.0 / config.MOTOR_SEND_HZ, self.send_motors)
+        self.pattern = None  # (fwd_ms, rev_ms, [speeds]) while shaking
+        self.pattern_start = 0.0
+        self.last_pattern = None
+        self.create_subscription(Float32MultiArray, 'mixer/shake', self.on_shake, 10)
+        self._last_tick = time.monotonic()
+        self._last_send = 0.0
+        self.create_timer(1.0 / config.MOTOR_LOOP_HZ, self.update_motors)
 
         # Door servo. _servo_us is None until the first command, so the servo
         # is not driven (and doesn't jump) before someone asks for a position.
@@ -244,10 +258,52 @@ class EspDriverNode(Node):
         self.speeds[i] = max(-1.0, min(1.0, msg.data))
         self.last_cmd[i] = time.monotonic()
 
-    def send_motors(self):
-        # Sent every tick, also when nothing changed: that keeps the ESP's
-        # 500 ms watchdog fed. If this node dies, the ESP stops the motors.
+    def on_shake(self, msg):
+        if not msg.data:
+            self.pattern = None
+            return
+        if len(msg.data) != 2 + config.NUM_MOTORS:
+            self.get_logger().error(
+                f'mixer/shake needs [fwd_ms, rev_ms] + {config.NUM_MOTORS} speeds',
+                throttle_duration_sec=5.0,
+            )
+            return
+        fwd_ms, rev_ms = (max(0.0, min(10000.0, v)) for v in msg.data[:2])
+        if fwd_ms + rev_ms < 20:
+            self.get_logger().error('mixer/shake: fwd_ms + rev_ms must be >= 20',
+                                    throttle_duration_sec=5.0)
+            return
+        pattern = (fwd_ms, rev_ms, [max(-1.0, min(1.0, v)) for v in msg.data[2:]])
         now = time.monotonic()
+        # The web panel resends the same pattern every 100 ms; keep its phase,
+        # or it would restart before ever reaching the reverse half.
+        if pattern != self.pattern:
+            self.pattern_start = now
+        self.pattern = pattern
+        self.last_pattern = now
+        # Back to standstill, not the old speeds, when the pattern ends.
+        self.speeds = [0.0] * config.NUM_MOTORS
+
+    def _shake_output(self, now):
+        fwd_ms, rev_ms, speeds = self.pattern
+        phase_ms = ((now - self.pattern_start) * 1000.0) % (fwd_ms + rev_ms)
+        sign = 1.0 if phase_ms < fwd_ms else -1.0
+        return [sign * s for s in speeds]
+
+    def _ramp_output(self, dt):
+        if config.RAMP_PER_S <= 0:
+            return list(self.speeds)
+        step = config.RAMP_PER_S * dt
+        return [o + max(-step, min(step, t - o)) for o, t in zip(self.output, self.speeds)]
+
+    def update_motors(self):
+        now = time.monotonic()
+        dt, self._last_tick = now - self._last_tick, now
+
+        if (self.pattern is not None and config.COMMAND_TIMEOUT_S > 0
+                and now - self.last_pattern > config.COMMAND_TIMEOUT_S):
+            self.pattern = None
+            self.get_logger().warn(f'shake: no command for {config.COMMAND_TIMEOUT_S}s, stopped')
         for i in range(config.NUM_MOTORS):
             stale = self.last_cmd[i] is not None and now - self.last_cmd[i] > config.COMMAND_TIMEOUT_S
             if config.COMMAND_TIMEOUT_S > 0 and stale and self.speeds[i] != 0.0:
@@ -255,9 +311,20 @@ class EspDriverNode(Node):
                 self.get_logger().warn(
                     f'motor {i}: no command for {config.COMMAND_TIMEOUT_S}s, stopped'
                 )
-        self._write('M ' + ' '.join(f'{s:.3f}' for s in self.speeds) + '\n')
+
+        # Shake flips direction instantly; everything else ramps, also out
+        # of a shake back to standstill.
+        output = self._shake_output(now) if self.pattern is not None else self._ramp_output(dt)
+        changed = output != self.output
+        self.output = output
+        # Resent at MOTOR_SEND_HZ also when nothing changed: that keeps the
+        # ESP's 500 ms watchdog fed. If this node dies, the ESP stops the motors.
+        keepalive = now - self._last_send >= 1.0 / config.MOTOR_SEND_HZ
+        if changed or keepalive:
+            self._write('M ' + ' '.join(f'{s:.3f}' for s in output) + '\n')
+            self._last_send = now
         # Resent too, so the servo recovers if the ESP resets.
-        if self._servo_us is not None:
+        if keepalive and self._servo_us is not None:
             self._write(f'S {self._servo_us:.0f}\n')
 
     # ---- door servo ----------------------------------------------------------

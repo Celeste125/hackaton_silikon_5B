@@ -43,7 +43,7 @@ HX711 to load cell: E+ red, E- black, A- green, A+ white.
 
 | Direction | Line | Meaning |
 |---|---|---|
-| host -> ESP | `M 0.5 -0.25` | motor speeds -1..1. Resend at least every 500 ms or the motors ramp to 0 |
+| host -> ESP | `M 0.5 -0.25` | motor speeds -1..1. Applied instantly (no ramp; the ROS driver smooths). Resend at least every 500 ms or the motors stop |
 | host -> ESP | `S 1500` | door servo pulse width in us (clamped to `SERVO_MIN_US..SERVO_MAX_US`); holds position, no timeout |
 | host -> ESP | `?` | print the info line |
 | ESP -> host | `I mixer_esp32 cells=4 motors=2 servo=1` | info, at boot and on `?` |
