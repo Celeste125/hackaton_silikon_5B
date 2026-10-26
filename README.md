@@ -52,6 +52,7 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 | `frontier_explorer explore.launch.py` | `frontier_explorer` | On top of that: explore the whole arena, then save the map |
 | `frontier_explorer navigation.launch.py` | `map_server` (saved map), AMCL, Nav2, `odom_tf_republisher`, twist_mux | On top of bringup: drive on the saved map, no more mapping |
 | `frontier_explorer mapping.launch.py` | lidar, `scan_timestamp_fixer`, `odom_tf_republisher`, slam_toolbox (no Nav2) | Map by driving with teleop yourself. Brings its own lidar: run bringup with `lidar:=false` |
+| `frontier_explorer rviz.launch.py` | RViz with `rviz/navigation.rviz`: map, costmaps, scan, footprint, TF, plans, goal, AMCL | Watch mapping or navigation (needs a display) |
 | `frontier_explorer nav2.launch.py` | Nav2 servers and lifecycle managers | Not by hand: `slam_navigation.launch.py` includes it |
 
 `silo_controller` has no launch file: the Pi runs `valve_controller` in Docker
@@ -61,7 +62,7 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 | --- | --- |
 | `esp_driver_node` | serial link to the ESP: `/loadcell/*`, `/mixer/motor_*`, `/mixer/shake`, `/door/*` |
 | `web_panel` | the web panel on port 8000; streams `/camera0` and `/camera1` as MJPEG |
-| `scan_timestamp_fixer` | `/scan_raw` -> `/scan`, restamped with the Jetson's clock so scans and TF match |
+| `scan_timestamp_fixer` | `/scan_raw` -> `/scan`, restamped with the Jetson's clock so scans and TF match. Also drops returns closer than `min_range` (0.16 m): the legs of the platform above the lidar |
 | `odom_tf_republisher` | `/Team2/odom` -> `odom -> base_link` TF |
 | `frontier_explorer` | picks the best unexplored edge of `/map`, sends it to Nav2; at the end drives home, saves the map, reports done |
 | `valve_controller` | `/valve1..3/percent` -> servo angles, with saved open/closed calibration |
@@ -251,6 +252,7 @@ directly. `/home/jetson/fastdds_create3_local.xml`:
     <rtps>
       <builtin>
         <initialPeersList>
+          <locator><udpv4><address>239.255.0.1</address></udpv4></locator>
           <locator><udpv4><address>127.0.0.1</address></udpv4></locator>
           <locator><udpv4><address>192.168.186.3</address></udpv4></locator>
           <locator><udpv4><address>192.168.186.2</address></udpv4></locator>
@@ -263,7 +265,14 @@ directly. `/home/jetson/fastdds_create3_local.xml`:
 
 The Jetson and its own address must be in the list. A profile with only the
 robot makes the robot visible and every node on the Jetson invisible, and the
-reverse without a profile. `~/.bashrc` on the Jetson exports
+reverse without a profile.
+
+Keep the multicast address `239.255.0.1` in the list too. Without it, a
+process only looks for the first 4 ROS processes (participants) at each
+address, and bringup plus navigation is about 20 on the Jetson alone. Later
+processes then cannot find each other: slam_toolbox never saw
+`odom_tf_republisher`, so it dropped every scan with "Message Filter dropping
+message ... the queue is full" and no map was built. `~/.bashrc` on the Jetson exports
 `FASTRTPS_DEFAULT_PROFILES_FILE` for this profile and `ROS_LOCALHOST_ONLY=0`,
 and defines `sws`. Every ROS process on the Jetson needs that variable. After
 changing it, run `ros2 daemon stop`, and give `ros2 node list` a few seconds
