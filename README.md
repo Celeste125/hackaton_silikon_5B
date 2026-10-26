@@ -56,7 +56,7 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 | `frontier_explorer mapping.launch.py` | lidar, `scan_timestamp_fixer`, `odom_tf_republisher`, slam_toolbox (no Nav2) | Map by driving with teleop yourself. Brings its own lidar: run bringup with `lidar:=false` |
 | `frontier_explorer rviz.launch.py` | RViz with `rviz/navigation.rviz`: map, costmaps, scan, footprint, TF, plans, goal, AMCL | Watch mapping or navigation (needs a display) |
 | `frontier_explorer nav2.launch.py` | Nav2 servers and lifecycle managers | Not by hand: `slam_navigation.launch.py` includes it |
-| `feed_mission mission.launch.py` | `lap_driver` | On top of navigation: laps around the cow box |
+| `feed_mission mission.launch.py` | `lap_driver`, `relocalizer` | On top of navigation: teaching poses, laps around the cow box |
 
 `silo_controller` has no launch file: the Pi runs `valve_controller` in Docker
 (see its `Dockerfile`).
@@ -70,6 +70,7 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 | `frontier_explorer` | picks the best unexplored edge of `/map`, sends it to Nav2; at the end drives home, saves the map, reports done |
 | `valve_controller` | `/valve1..3/percent` -> servo angles, with saved open/closed calibration |
 | `lap_driver` | laps through the four taught corners: turn on the spot, drive straight, repeat. `/lap/start`, `/lap/stop`, `/lap/status`; drives `/Team2/cmd_vel_lap` (twist_mux, priority 50) |
+| `relocalizer` | `/relocalize`: finds the robot on the map from the lidar and corrects AMCL (`/initialpose`) |
 
 Parameters: `frontier_explorer/config/` (`nav2_params.yaml`,
 `slam_toolbox_params.yaml`, `twist_mux.yaml`) and
@@ -181,9 +182,17 @@ never both at once (both publish `map -> odom`).
 
 ### Teach the poses and drive laps
 
-With bringup and `navigation.launch.py` running, open the panel's **Setup**
-tab. It shows where the robot is on the map. Drive it with the panel to each
-spot and press **Save here**:
+With bringup, `navigation.launch.py` and `feed_mission mission.launch.py`
+running, open the panel's **Setup** tab. It shows where the robot is on the
+map. Check that first: in RViz the scan must sit on the map's walls. If it does
+not (AMCL started from a wrong estimate), let the robot stand still and press
+**Find robot on map** (or `ros2 service call /relocalize std_srvs/srv/Trigger`).
+It matches the scan against the whole map and corrects AMCL, but only when the
+match is good and clearly better than anywhere else; otherwise it says why
+and changes nothing. A pose saved while the position is wrong is wrong by as
+much.
+
+Then drive the robot with the panel to each spot and press **Save here**:
 
 | Pose | Where |
 | --- | --- |
@@ -196,12 +205,12 @@ remapping. Leave room at the corners: the robot's own corners reach 0.31 m
 from its centre when it turns on the spot, and the lap driver refuses a turn
 while anything is that close.
 
-Then laps, from the panel (**Unload** tab: number of laps, door open on the
-straights or not) or by hand:
+Then laps, from the panel (**Unload** tab: number of laps; door closed, open
+on the two long sides only, or on all sides) or by hand:
 
 ```bash
-ros2 launch feed_mission mission.launch.py
 ros2 param set /lap_driver laps 2
+ros2 param set /lap_driver door_sides long    # none | long | all
 ros2 service call /lap/start std_srvs/srv/Trigger
 ros2 service call /lap/stop std_srvs/srv/Trigger     # STOP ALL in the panel does this too
 ```
