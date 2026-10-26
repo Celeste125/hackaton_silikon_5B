@@ -20,7 +20,9 @@ Safety: it stops while anything is in front of the robot (stop_distance), and
 refuses a turn while anything is inside the circle its corners sweep. After
 block_timeout_s it gives up. It drives through twist_mux (cmd_vel_lap,
 priority between Nav2 and teleop), so teleop takes over at any time.
-Parameters `laps`, `open_door` and `door_open_position` are read at each start.
+Parameters `laps`, `door_sides` and `door_open_position` are read at each start.
+door_sides: none (door stays closed, e.g. dry runs), long (open on the two
+longest sides only: feed along the long sides of the box) or all.
 Status on /lap/status (latched): idle, approach, side 3/8 ..., done, failed: ...
 """
 
@@ -88,6 +90,18 @@ def straight_command(pose, start, target, speed, max_w=0.6, gain=2.5,
     return v, w, remaining, False
 
 
+def door_open_sides(corners, mode):
+    """Indices of the sides (side i runs corner i -> corner i+1) with the door open."""
+    if mode == 'all':
+        return {0, 1, 2, 3}
+    if mode == 'long':
+        lengths = [math.dist(corners[i], corners[(i + 1) % 4]) for i in range(4)]
+        return set(sorted(range(4), key=lambda i: -lengths[i])[:2])
+    if mode == 'none':
+        return set()
+    raise ValueError(f'door_sides must be none, long or all, not "{mode}"')
+
+
 def blocked_ahead(points, half_len, half_w, stop_distance):
     """True if a point (base_link, Nx2) is in front of the robot within stop_distance."""
     if len(points) == 0:
@@ -117,7 +131,7 @@ class LapDriver(Node):
         p('approach_tolerance', 0.25)  # closer than this to lap1: no Nav2 needed
         p('half_length', 0.17)         # footprint, as in nav2_params local_costmap
         p('half_width', 0.26)
-        p('open_door', False)          # open the door on the straights
+        p('door_sides', 'none')        # none, long (two longest sides) or all
         p('door_open_position', 0.0)   # 0 = fully open, 1 = closed
         p('cmd_vel_topic', '/Team2/cmd_vel_lap')
         p('map_frame', 'map')
@@ -145,6 +159,7 @@ class LapDriver(Node):
         self.blocked_since = None
         self.nav_goal = None
         self.door_open = False
+        self.door_sides = set()
         self._set_status('idle')
         self.create_timer(1.0 / LOOP_HZ, self._step)
 
@@ -197,6 +212,11 @@ class LapDriver(Node):
         if pose is None:
             response.success = False
             response.message = 'robot not localized: no map -> base_link (start navigation)'
+            return response
+        try:
+            self.door_sides = door_open_sides(corners, self.g('door_sides'))
+        except ValueError as e:
+            response.success, response.message = False, str(e)
             return response
         self.corners = corners
         self.segment = 0
@@ -287,7 +307,7 @@ class LapDriver(Node):
             self._blocked('obstacle ahead')
             return
         self._unblocked()
-        self._door(self.g('open_door'))
+        self._door(self.segment % 4 in self.door_sides)
         v, w, _, done = straight_command(pose, start, target, self.g('speed'))
         if not done:
             self._drive(v, w)

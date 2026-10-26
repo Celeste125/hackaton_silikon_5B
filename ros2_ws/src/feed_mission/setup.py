@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'lap_driver = feed_mission.lap_driver:main',
+            'relocalizer = feed_mission.relocalize:main',
         ],
     },
 )

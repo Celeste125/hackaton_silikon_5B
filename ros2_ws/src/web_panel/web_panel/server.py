@@ -141,7 +141,7 @@ class WebControlNode(Node):
         self.trigger_clients = {
             name: self.create_client(Trigger, name)
             for name in ('loadcell/tare', 'door/save_open', 'door/save_closed',
-                         'lap/start', 'lap/stop')
+                         'lap/start', 'lap/stop', 'relocalize')
         }
         # Robot pose on the map, for the Setup tab.
         self.declare_parameter('poses_file', '~/maps/arena_poses.yaml')
@@ -229,15 +229,15 @@ class WebControlNode(Node):
             self.get_logger().warn(f'cannot read {self.poses_file}: {e}', throttle_duration_sec=30.0)
             return {}
 
-    def set_lap_params(self, laps, open_door):
+    def set_lap_params(self, laps, door_sides):
         if not self.lap_params.wait_for_service(timeout_sec=1.0):
             return False, 'lap_driver is not running: ros2 launch feed_mission mission.launch.py'
         req = SetParameters.Request()
         req.parameters = [
             Parameter(name='laps', value=ParameterValue(
                 type=ParameterType.PARAMETER_INTEGER, integer_value=int(laps))),
-            Parameter(name='open_door', value=ParameterValue(
-                type=ParameterType.PARAMETER_BOOL, bool_value=bool(open_door))),
+            Parameter(name='door_sides', value=ParameterValue(
+                type=ParameterType.PARAMETER_STRING, string_value=door_sides)),
         ]
         done = threading.Event()
         future = self.lap_params.call_async(req)
@@ -407,16 +407,16 @@ class WebControlNode(Node):
         with self.lock:
             self.door = {'mode': 'raw_us', 'value': float(us)}
 
-    def call(self, name):
+    def call(self, name, timeout=SERVICE_TIMEOUT_S):
         client = self.trigger_clients[name]
         if not client.wait_for_service(timeout_sec=1.0):
-            owner = ('lap_driver (ros2 launch feed_mission mission.launch.py)'
-                     if name.startswith('lap/') else 'esp_driver_node')
+            owner = ('feed_mission (ros2 launch feed_mission mission.launch.py)'
+                     if name.startswith('lap/') or name == 'relocalize' else 'esp_driver_node')
             return False, f'service /{name} not available, is {owner} running?'
         done = threading.Event()
         future = client.call_async(Trigger.Request())
         future.add_done_callback(lambda _: done.set())
-        if not done.wait(SERVICE_TIMEOUT_S):
+        if not done.wait(timeout):
             return False, f'/{name} timed out'
         res = future.result()
         return res.success, res.message
@@ -495,7 +495,8 @@ class DoseBody(BaseModel):
 
 class LapBody(BaseModel):
     laps: int = Field(1, ge=1, le=50)
-    open_door: bool = Field(False, description='open the door on the straights')
+    door_sides: str = Field('none', pattern='^(none|long|all)$',
+                            description='door open on no sides, the two long sides, or all')
 
 
 class ClaimBody(BaseModel):
@@ -669,6 +670,12 @@ def create_app(ros):
         saved = pose_store.save_pose(name, p['x'], p['y'], p['yaw'], path=ros.poses_file)
         return {'ok': True, 'message': f"Saved {name} at {saved['x']:.2f}, {saved['y']:.2f}"}
 
+    @app.post('/api/relocalize', dependencies=[Depends(require_control)])
+    def relocalize():
+        """Find the robot on the map from the lidar and correct AMCL (takes ~10 s)."""
+        ok, msg = ros.call('relocalize', timeout=40.0)
+        return {'ok': ok, 'message': msg}
+
     @app.delete('/api/poses/{name}', dependencies=[Depends(require_control)])
     def clear_pose(name: str):
         if pose_store is None:
@@ -678,7 +685,7 @@ def create_app(ros):
 
     @app.post('/api/lap/start', dependencies=[Depends(require_control)])
     def lap_start(body: LapBody):
-        ok, msg = ros.set_lap_params(body.laps, body.open_door)
+        ok, msg = ros.set_lap_params(body.laps, body.door_sides)
         if not ok:
             return {'ok': False, 'message': msg}
         ok, msg = ros.call('lap/start')

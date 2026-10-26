@@ -508,8 +508,14 @@
             <h3>Laps around the cow box</h3>
             <p class="hint" style="margin: 2px 0 10px">Straight sides and turns on the spot through the four corners saved in Setup. Nav2 first drives to corner 1 if the robot is elsewhere.</p>
             <div class="row">
-              <label class="field">Laps<input type="number" id="lapCount" min="1" max="50" step="1" value="1" inputmode="numeric"></label>
-              <button id="lapDoor" aria-pressed="false" style="align-self: flex-end">Door open on straights</button>
+              <label class="field fit">Laps<input type="number" id="lapCount" min="1" max="50" step="1" value="1" inputmode="numeric" style="width: 90px"></label>
+              <div class="field">Door
+                <div class="seg" role="group" aria-label="Door during laps" id="lapDoor">
+                  <button data-door="none" aria-pressed="true">Closed</button>
+                  <button data-door="long" aria-pressed="false">Long sides</button>
+                  <button data-door="all" aria-pressed="false">All sides</button>
+                </div>
+              </div>
             </div>
             <div class="row" style="margin-top: 8px">
               <button class="primary" id="lapStart">Drive laps</button>
@@ -537,8 +543,11 @@
 
         <!-- Setup: teach the poses once -->
         <div class="pane" role="tabpanel" id="pane-setup" aria-labelledby="tab-setup">
-          <div class="here" role="status" aria-live="polite"><span class="dot idle" id="poseDot"></span><span id="poseText">Waiting for the robot's position…</span></div>
-          <p class="hint">Drive the robot to each spot (Drive), then press Save. The pose is the robot's position and heading on the saved map, so navigation must be running.</p>
+          <div class="row">
+            <div class="here" role="status" aria-live="polite"><span class="dot idle" id="poseDot"></span><span id="poseText">Waiting for the robot's position…</span></div>
+            <button class="fit" id="reloc" data-needs-control>Find robot on map</button>
+          </div>
+          <p class="hint">Drive the robot to each spot (Drive), then press Save. The pose is the robot's position and heading on the saved map, so navigation must be running. If the position looks wrong (in RViz the scan does not sit on the walls), stand still and press Find robot on map first: every saved pose is only as good as that position.</p>
           <div id="poseList" data-needs-control></div>
         </div>
       </div>
@@ -1039,15 +1048,24 @@ function showPoses(s) {
   }
 }
 
-// ---- laps ----
-$('lapDoor').addEventListener('click', () => {
-  const b = $('lapDoor');
-  b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+$('reloc').addEventListener('click', async () => {
+  const b = $('reloc');
+  b.disabled = true;
+  b.textContent = 'Searching…';
+  try { await action('/api/relocalize'); poll(); }
+  finally { b.disabled = false; b.textContent = 'Find robot on map'; }
 });
+
+// ---- laps ----
+let lapDoor = 'none';
+$('lapDoor').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+  lapDoor = b.dataset.door;
+  $('lapDoor').querySelectorAll('button').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+}));
 $('lapStart').addEventListener('click', () => {
   const laps = parseInt($('lapCount').value, 10);
   if (!(laps >= 1)) { toast('Enter how many laps', true); $('lapCount').focus(); return; }
-  action('/api/lap/start', {laps, open_door: $('lapDoor').getAttribute('aria-pressed') === 'true'});
+  action('/api/lap/start', {laps, door_sides: lapDoor});
 });
 $('lapStop').addEventListener('click', () => action('/api/lap/stop'));
 function showLap(st) {
