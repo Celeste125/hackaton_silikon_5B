@@ -91,6 +91,97 @@ mkdir -p ~/maps
 cp maps/arena_map.* ~/maps/
 ```
 
+## Jetson to Create 3 over the USB-Ethernet dongle
+
+The Create 3 is wired to the Jetson with a USB-C to Ethernet dongle on the
+robot and a cable to the Jetson's RJ45 port. The robot has no Wi-Fi network
+saved; only the Jetson is on Wi-Fi (`imdl_5Ghz`, the only Wi-Fi profile it keeps).
+The Create 3 supports 2.4 GHz only, so it could not join the 5 GHz network anyway.
+
+A direct USB-C to USB-C cable to the Jetson does not work: the Jetson never
+gets a USB data link from the robot (`/sys/class/udc/*/state` stays `default`),
+and `A`-to-`C` cables cannot work because both ends are USB hosts. Use the
+dongle.
+
+| | Address | Where it is set |
+| --- | --- | --- |
+| Create 3 (web server, ROS) | `192.168.186.2` | fixed by the robot's `usb0`/dongle |
+| Jetson wired port `enP8p1s0` | `192.168.186.3/24`, no gateway | NetworkManager profile `Wired connection 1` (persistent) |
+| Jetson Wi-Fi | DHCP, changes between reboots | find it with `arp -a` on the MAC `f8:3d:c6:ad:a5:11` |
+
+Robot settings (web page at `http://192.168.186.2`, Application ->
+Configuration): domain `2`, namespace `/Team2`, `rmw_fastrtps_cpp`, no
+discovery server.
+
+### Reach the robot's web page from your laptop
+
+```bash
+ssh -N -L 8081:192.168.186.2:80 jetson@<jetson-wifi-ip>
+# open http://localhost:8081
+```
+
+### Discovery needs a Fast DDS profile
+
+Without Wi-Fi the robot no longer announces itself by multicast on the wired
+link, so plain `ros2 topic list` on the Jetson shows only
+`/parameter_events` and `/rosout`. The Jetson therefore contacts the robot
+directly. `/home/jetson/fastdds_create3_local.xml`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <participant profile_name="create3_unicast_and_local" is_default_profile="true">
+    <rtps>
+      <builtin>
+        <initialPeersList>
+          <locator><udpv4><address>127.0.0.1</address></udpv4></locator>
+          <locator><udpv4><address>192.168.186.3</address></udpv4></locator>
+          <locator><udpv4><address>192.168.186.2</address></udpv4></locator>
+        </initialPeersList>
+      </builtin>
+    </rtps>
+  </participant>
+</profiles>
+```
+
+The Jetson and its own address must be in the list. A profile with only the
+robot makes the robot visible and every node on the Jetson invisible, and the
+reverse without a profile. `~/.bashrc` on the Jetson exports
+`FASTRTPS_DEFAULT_PROFILES_FILE` for this profile and `ROS_LOCALHOST_ONLY=0`,
+and defines `sws` (`cd ~/imdl-main/ros2_ws && source install/setup.bash`). Every
+ROS process on the Jetson needs that variable. After changing it, run
+`ros2 daemon stop`, and give `ros2 node list` a few seconds (or `--spin-time 10`).
+
+### After a reboot
+
+- Plug the dongle in before the robot starts its ROS app. If the robot booted
+  without it, restart the app from its web page ("Restart application"), since
+  the app only uses the wired interface that exists when it starts.
+- Nothing launches automatically. Start the ESP driver, camera, lidar, SLAM and
+  Nav2 yourself, after the wired link is up.
+- Run `sws` first and launch from `~/imdl-main/ros2_ws`. The ESP driver reads
+  `loadcell_calibration.json` and `door_calibration.json` from the **current
+  directory**; launched from `~` it used the wrong load-cell calibration and
+  the default door ends (1000/2000 us) instead of 500/2600 us.
+
+### Web panel: one controller at a time
+
+Open the panel (`http://<jetson>:8000`, or through an SSH tunnel) on as many
+devices as you like. Only one holds control; the rest are view-only. Press
+**Take control** to claim it (taking it over from another device asks first and
+stops their motors and the base). The holder keeps control while its page is
+open, and it frees itself a few seconds after the page closes or loses contact.
+**STOP ALL**, **Close all valves** and **Cancel dose** work from every device.
+
+This replaced a bug where every open tab sent its own motor/drive setpoint and
+the last writer won, so two open tabs made the motors alternate on and off.
+Do not run `ros2 topic pub` on `/mixer/motor_*` or `/Team2/cmd_vel` while a
+device holds control; the panel publishes there too. It is protection against
+collisions between people, not security: there is still no login.
+
+Code: `mixer_esp_driver/control_lease.py` and `web_control.py`. Tests:
+`pytest ros2_ws/src/mixer_esp_driver/test` (needs `fastapi` and `httpx`).
+
 ## Build
 
 From the ROS 2 workspace:

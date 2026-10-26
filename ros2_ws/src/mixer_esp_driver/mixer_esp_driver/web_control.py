@@ -15,6 +15,11 @@ Needs: pip install fastapi uvicorn
 Motors and base driving are a dead man's switch: the page keeps sending its
 setpoint, and the node only republishes it while those messages keep arriving.
 Close the tab or lose Wi-Fi and the motors and the base stop. There is no login, use it on a trusted network.
+
+Many browsers can open the panel, but only one holds control at a time (see
+control_lease.py). Everyone else is view-only and can take control over
+explicitly. STOP ALL, close all valves and cancel dose work from any device.
+Every request carries an X-Client-Id header that the page generates per tab.
 """
 
 import threading
@@ -23,7 +28,7 @@ from pathlib import Path
 
 import rclpy
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from rclpy.executors import ExternalShutdownException
@@ -33,8 +38,10 @@ from std_msgs.msg import Float32, Float32MultiArray
 from std_srvs.srv import Trigger
 
 from mixer_esp_driver import config
+from mixer_esp_driver.control_lease import ControlLease
 
 INDEX_HTML = Path(__file__).parent / 'web' / 'index.html'
+CONTROL_TIMEOUT_S = 6.0  # the holder is silent this long -> control is free
 PUBLISH_HZ = 10.0
 HEARTBEAT_TIMEOUT_S = 0.8  # page sends every ~0.3 s; silence longer than this stops the motors
 SERVICE_TIMEOUT_S = 3.0
@@ -79,6 +86,7 @@ class WebControlNode(Node):
             for name in ('loadcell/tare', 'door/save_open', 'door/save_closed')
         }
 
+        self.lease = ControlLease(CONTROL_TIMEOUT_S)
         self.lock = threading.Lock()
         self.weight = None
         self.cells = []
@@ -199,6 +207,15 @@ class WebControlNode(Node):
             self.last_motor_t = time.monotonic()
             self._motors_active = any(speeds)
 
+    def stop_outputs(self):
+        """Zero the motors and the base, e.g. when control changes hands."""
+        self.set_motors([0.0] * config.NUM_MOTORS)
+        self.set_drive(0.0, 0.0)
+
+    def emergency_stop(self):
+        self.stop_outputs()
+        self.close_all_valves()
+
     def set_door(self, position):
         self.door_pub.publish(Float32(data=float(position)))
         with self.lock:
@@ -269,18 +286,64 @@ class DoseBody(BaseModel):
     percent: float = Field(100.0, gt=0.0, le=100.0)
 
 
+class ClaimBody(BaseModel):
+    force: bool = Field(False, description='take control even if another device holds it')
+
+
 def create_app(ros):
     app = FastAPI(title='Mixer control')
+
+    def client_id(request: Request):
+        cid = request.headers.get('x-client-id', '').strip()
+        if not cid or len(cid) > 64:
+            raise HTTPException(400, 'missing X-Client-Id header')
+        return cid
+
+    def client_label(request: Request, cid):
+        host = request.client.host if request.client else '?'
+        return f'{host} ({cid[:4]})'
+
+    def require_control(request: Request):
+        """Dependency of every command: only the device holding control may send it."""
+        if not ros.lease.touch(client_id(request)):
+            raise HTTPException(403, {
+                'error': 'not_in_control',
+                'holder': ros.lease.snapshot()['holder'],
+            })
 
     @app.get('/')
     def index():
         return FileResponse(INDEX_HTML)
 
     @app.get('/api/state')
-    def state():
-        return ros.state()
+    def state(request: Request):
+        cid = request.headers.get('x-client-id', '').strip()
+        if cid:
+            ros.lease.touch(cid)  # the holder's poll keeps its control alive while idle
+        return {**ros.state(), 'control': ros.lease.snapshot(cid or None)}
 
-    @app.post('/api/motors')
+    @app.post('/api/control/claim')
+    def control_claim(body: ClaimBody, request: Request):
+        cid = client_id(request)
+        ok, changed = ros.lease.claim(cid, client_label(request, cid), force=body.force)
+        if ok and changed:
+            ros.stop_outputs()  # the new holder starts from standstill
+        return {'ok': ok, 'control': ros.lease.snapshot(cid)}
+
+    @app.post('/api/control/release')
+    def control_release(request: Request):
+        if ros.lease.release(client_id(request)):
+            ros.stop_outputs()
+        return {'ok': True}
+
+    @app.post('/api/stop')
+    def stop(request: Request):
+        """Safe state for everyone: motors, base and valves. Needs no control."""
+        client_id(request)
+        ros.emergency_stop()
+        return {'ok': True}
+
+    @app.post('/api/motors', dependencies=[Depends(require_control)])
     def motors(body: MotorsBody):
         n = ros.state()['num_motors']
         if len(body.speeds) != n:
@@ -288,44 +351,45 @@ def create_app(ros):
         ros.set_motors([max(-1.0, min(1.0, s)) for s in body.speeds])
         return {'ok': True}
 
-    @app.post('/api/drive')
+    @app.post('/api/drive', dependencies=[Depends(require_control)])
     def drive(body: DriveBody):
         ros.set_drive(body.linear, body.angular)
         return {'ok': True}
 
-    @app.post('/api/door')
+    @app.post('/api/door', dependencies=[Depends(require_control)])
     def door(body: DoorBody):
         ros.set_door(body.position)
         return {'ok': True}
 
-    @app.post('/api/door/raw_us')
+    @app.post('/api/door/raw_us', dependencies=[Depends(require_control)])
     def door_raw(body: RawUsBody):
         ros.set_door_raw(body.us)
         return {'ok': True}
 
-    @app.post('/api/door/save_open')
+    @app.post('/api/door/save_open', dependencies=[Depends(require_control)])
     def save_open():
         ok, msg = ros.call('door/save_open')
         return {'ok': ok, 'message': msg}
 
-    @app.post('/api/door/save_closed')
+    @app.post('/api/door/save_closed', dependencies=[Depends(require_control)])
     def save_closed():
         ok, msg = ros.call('door/save_closed')
         return {'ok': ok, 'message': msg}
 
     @app.post('/api/valves/close_all')
-    def valves_close_all():
+    def valves_close_all(request: Request):
+        client_id(request)  # closing is always safe, so any device may do it
         ros.close_all_valves()
         return {'ok': True}
 
-    @app.post('/api/valves/{valve}')
+    @app.post('/api/valves/{valve}', dependencies=[Depends(require_control)])
     def valve(valve: int, body: ValveBody):
         if valve not in VALVES:
             raise HTTPException(404, 'no such valve')
         ros.set_valve(valve, body.percent)
         return {'ok': True}
 
-    @app.post('/api/valves/{valve}/dose')
+    @app.post('/api/valves/{valve}/dose', dependencies=[Depends(require_control)])
     def valve_dose(valve: int, body: DoseBody):
         if valve not in VALVES:
             raise HTTPException(404, 'no such valve')
@@ -333,11 +397,12 @@ def create_app(ros):
         return {'ok': ok, 'message': msg}
 
     @app.post('/api/dose/cancel')
-    def dose_cancel():
+    def dose_cancel(request: Request):
+        client_id(request)  # cancelling is always safe, so any device may do it
         ros.cancel_dose()
         return {'ok': True}
 
-    @app.post('/api/tare')
+    @app.post('/api/tare', dependencies=[Depends(require_control)])
     def tare():
         ok, msg = ros.call('loadcell/tare')
         return {'ok': ok, 'message': msg}

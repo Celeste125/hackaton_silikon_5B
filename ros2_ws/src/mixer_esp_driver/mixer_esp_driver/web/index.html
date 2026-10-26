@@ -58,26 +58,38 @@
     opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw;
   }
   #toast.show { opacity: 1; }
+  #ctl { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-left: 4px solid var(--muted); }
+  #ctl.me { border-left-color: var(--ok); }
+  #ctl.other { border-left-color: var(--danger); }
+  #ctl .msg { flex: 1; min-width: 180px; }
+  #ctl .msg small { display: block; color: var(--muted); font-size: 13px; }
+  #ctl button { flex: none; }
+  body.viewer .needs-control { opacity: .4; pointer-events: none; }
 </style>
 </head>
-<body>
+<body class="viewer">
 <header>
   <h1>Mixer control</h1>
   <div class="status"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
 </header>
 
+<section id="ctl">
+  <div class="msg"><span id="ctlMsg">Checking control…</span><small id="ctlSub"></small></div>
+  <button id="ctlBtn" class="primary" style="display:none"></button>
+</section>
+
 <section>
   <h2>Load cells</h2>
   <div class="weight"><span id="weight">—</span> <small>kg</small></div>
   <div class="cells" id="cells"></div>
-  <div class="row" style="margin-top: 12px">
+  <div class="row needs-control" style="margin-top: 12px">
     <button id="tare">Tare (zero)</button>
   </div>
 </section>
 
 <section>
   <h2>Valves (feeder)</h2>
-  <div id="valves"></div>
+  <div id="valves" class="needs-control"></div>
   <div id="doseStatus" class="hint" style="margin: 0 0 10px"></div>
   <div class="row">
     <button id="closeValves">Close all valves</button>
@@ -88,14 +100,14 @@
 
 <section>
   <h2>Motors</h2>
-  <div id="motors"></div>
+  <div id="motors" class="needs-control"></div>
   <div class="row">
     <button class="danger" id="stop">STOP ALL (space)</button>
   </div>
-  <p class="hint">Stops automatically if this page closes or loses connection.</p>
+  <p class="hint">Stops automatically if this page closes or loses connection. STOP ALL works from any device, even without control.</p>
 </section>
 
-<section>
+<section class="needs-control">
   <h2>Drive base</h2>
   <div class="pad" id="pad">
     <button data-l="1" data-a="1">↖</button><button data-l="1" data-a="0">▲</button><button data-l="1" data-a="-1">↗</button>
@@ -113,7 +125,7 @@
   <p class="hint">Hold a button or W A S D / arrow keys to drive; release to stop. Reversing is limited by the Create 3 backup limit.</p>
 </section>
 
-<section>
+<section class="needs-control">
   <h2>Door</h2>
   <div class="row">
     <button class="primary" id="open">Open</button>
@@ -147,6 +159,20 @@ const $ = (id) => document.getElementById(id);
 let numMotors = 0;
 let speeds = [];
 
+// One id per tab. Only the tab that holds control may command the robot.
+const CLIENT_ID = (() => {
+  let id = sessionStorage.getItem('clientId');
+  if (!id) {
+    id = (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    sessionStorage.setItem('clientId', id);
+  }
+  return id;
+})();
+const HEADERS = {'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID};
+let haveControl = false;
+
 function toast(msg) {
   const t = $('toast');
   t.textContent = msg;
@@ -158,9 +184,14 @@ function toast(msg) {
 async function post(path, body) {
   const res = await fetch(path, {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: HEADERS,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (res.status === 403) {
+    let holder = null;
+    try { holder = (await res.json()).detail.holder; } catch (e) { /* keep null */ }
+    throw new Error(`View only: ${holder || 'another device'} is in control`);
+  }
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   return res.json();
 }
@@ -204,10 +235,11 @@ function setSpeed(i, v) {
 function stopAll() {
   for (let i = 0; i < numMotors; i++) setSpeed(i, 0);
   setDrive(0, 0);
+  post('/api/stop').catch(() => toast('STOP failed: server unreachable'));  // works without control
 }
 
 function sendMotors() {
-  if (!numMotors) return;
+  if (!numMotors || !haveControl) return;
   post('/api/motors', {speeds}).catch(() => {});
 }
 
@@ -223,6 +255,7 @@ const speedLin = () => parseFloat($('lin').value);
 const speedAng = () => parseFloat($('ang').value);
 
 function sendDrive() {
+  if (!haveControl) return;
   post('/api/drive', {linear: drive.l * speedLin(), angular: drive.a * speedAng()}).catch(() => {});
 }
 function setDrive(l, a) {
@@ -252,6 +285,7 @@ function keyDrive() {
   setDrive(Math.sign(l), Math.sign(a));
 }
 document.addEventListener('keydown', (e) => {
+  if (!haveControl) return;
   if (!(e.code in KEYS) || e.target.tagName === 'INPUT' && e.target.type === 'number') return;
   e.preventDefault();
   if (!heldKeys.has(e.code)) { heldKeys.add(e.code); keyDrive(); }
@@ -345,12 +379,74 @@ function showValves(s) {
     ? `Valve ${d.valve}: ${d.added.toFixed(3)} / ${d.target.toFixed(3)} kg, ${d.status}` : '';
 }
 
+// ---- control lease ----
+// Only one device at a time commands the robot; the rest only watch. The server
+// zeroes the motors and the base whenever control changes hands.
+function resetControls() {
+  for (let i = 0; i < numMotors; i++) {
+    speeds[i] = 0;
+    $(`m${i}`).value = 0;
+    $(`mv${i}`).textContent = '0.00';
+  }
+  drive = {l: 0, a: 0};
+  $('pad').querySelectorAll('button').forEach((b) => b.classList.remove('held'));
+  heldKeys.clear();
+}
+
+function showControl(c) {
+  const had = haveControl;
+  haveControl = !!c.you;
+  document.body.classList.toggle('viewer', !haveControl);
+  $('ctl').classList.toggle('me', haveControl);
+  $('ctl').classList.toggle('other', !haveControl && !!c.held);
+  if (had && !haveControl) toast(`Control was taken over by ${c.holder || 'another device'}`);
+  if (had !== haveControl) resetControls();
+  if (haveControl) {
+    $('ctlMsg').textContent = 'You are in control';
+    $('ctlSub').textContent = 'Other devices can watch but not command. Release when you are done.';
+    $('ctlBtn').textContent = 'Release control';
+    $('ctlBtn').className = '';
+  } else {
+    $('ctlMsg').textContent = c.held
+      ? `View only: ${c.holder} is in control` : 'View only: nobody is in control';
+    $('ctlSub').textContent = 'STOP ALL, close valves and cancel dose still work from here.';
+    $('ctlBtn').textContent = 'Take control';
+    $('ctlBtn').className = 'primary';
+  }
+  $('ctlBtn').style.display = '';
+}
+
+$('ctlBtn').addEventListener('click', async () => {
+  try {
+    if (haveControl) {
+      await post('/api/control/release');
+    } else {
+      let r = await post('/api/control/claim', {force: false});
+      if (!r.ok) {
+        const who = r.control.holder || 'another device';
+        if (!confirm(`${who} is in control. Take over? Their motors and drive will stop.`)) return;
+        r = await post('/api/control/claim', {force: true});
+      }
+      showControl(r.control);
+      return;
+    }
+    poll();
+  } catch (e) {
+    toast(String(e));
+  }
+});
+
+window.addEventListener('pagehide', () => {
+  if (haveControl) fetch('/api/control/release', {method: 'POST', headers: HEADERS, keepalive: true});
+});
+
 // ---- status polling ----
 async function poll() {
   try {
-    const res = await fetch('/api/state');
+    const res = await fetch('/api/state', {headers: HEADERS});
     const s = await res.json();
     if (s.num_motors !== numMotors) buildMotors(s.num_motors);
+    if (s.control) showControl(s.control);
     showValves(s);
     const fresh = s.weight !== null && s.weight_age_s < 2;
     $('weight').textContent = s.weight === null ? '—' : s.weight.toFixed(3);
