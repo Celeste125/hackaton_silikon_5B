@@ -4,14 +4,15 @@ No saved map, no AMCL, no 2D Pose Estimate. slam_toolbox owns the /map topic
 and the map -> odom TF, Nav2 plans on top of it, and goals come from the
 frontier explorer (explore.launch.py) or RViz (2D Goal Pose).
 
-Everything runs on the Jetson beside the lidar:
+Everything runs on the Jetson beside the lidar. The lidar, with its scan
+restamping, comes from the robot bringup:
 
-    ros2 launch frontier_explorer lidar.launch.py fix_timestamps:=false
+    ros2 launch robot_bringup bringup.launch.py
     ros2 launch frontier_explorer slam_navigation.launch.py
 
-With run_slam (the default) this launch runs the whole TF chain -- scan
-restamping, odom -> base_link, slam_toolbox's map -> odom -- on one machine and
-one clock. TF lookups inside a message-filter chain have tolerances of 0.2 s,
+With run_slam (the default) this launch runs the rest of the TF chain --
+odom -> base_link and slam_toolbox's map -> odom -- so scan stamps and TF share
+the Jetson's clock. TF lookups inside a message-filter chain have tolerances of 0.2 s,
 so they cannot cross a busy Wi-Fi link: splitting the chain between two
 machines makes slam_toolbox drop every scan and Nav2 fail every transform.
 Pass run_slam:=false to consume a slam_toolbox running elsewhere (e.g.
@@ -201,11 +202,11 @@ def generate_launch_description():
             ),
         ),
         DeclareLaunchArgument(
-            'fix_scan_timestamps', default_value='true',
+            'fix_scan_timestamps', default_value='false',
             choices=['true', 'false'],
             description=(
-                'Restamp /scan_raw as /scan here. Launch the lidar with '
-                'fix_timestamps:=false so only one machine restamps.'
+                'Restamp /scan_raw as /scan here too. Only when the lidar runs '
+                'with fix_timestamps:=false; the bringup already restamps.'
             ),
         ),
         DeclareLaunchArgument(

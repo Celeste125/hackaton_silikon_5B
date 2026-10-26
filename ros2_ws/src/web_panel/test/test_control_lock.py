@@ -21,10 +21,13 @@ except ImportError:
     _stub('rclpy')
     _stub('rclpy.executors', ExternalShutdownException=RuntimeError)
     _stub('rclpy.node', Node=object)
+    _stub('rclpy.qos', DurabilityPolicy=object, QoSProfile=object, qos_profile_sensor_data=None)
     _stub('geometry_msgs')
     _stub('geometry_msgs.msg', Twist=object)
+    _stub('sensor_msgs')
+    _stub('sensor_msgs.msg', BatteryState=object, CompressedImage=object)
     _stub('std_msgs')
-    _stub('std_msgs.msg', Float32=object, Float32MultiArray=object)
+    _stub('std_msgs.msg', Float32=object, Float32MultiArray=object, String=object)
     _stub('std_srvs')
     _stub('std_srvs.srv', Trigger=object)
 
@@ -33,8 +36,8 @@ pytest.importorskip('httpx')
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from mixer_esp_driver.control_lease import ControlLease  # noqa: E402
-from mixer_esp_driver.web_control import create_app  # noqa: E402
+from web_panel.control_lease import ControlLease  # noqa: E402
+from web_panel.server import create_app  # noqa: E402
 
 
 class FakeRos:

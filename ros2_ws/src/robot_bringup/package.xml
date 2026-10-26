@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>robot_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch files that start the robot: drivers, cameras, lidar, web panel.</description>
+  <maintainer email="todo@todo.todo">Team 2</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>mixer_esp_driver</exec_depend>
+  <exec_depend>web_panel</exec_depend>
+  <exec_depend>frontier_explorer</exec_depend>
+  <exec_depend>v4l2_camera</exec_depend>
+  <exec_depend>compressed_image_transport</exec_depend>
+  <exec_depend>teleop_twist_keyboard</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

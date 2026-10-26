@@ -1,8 +1,9 @@
-"""Web control panel for the mixer ESP driver.
+"""Web control panel for the robot.
 
-  ros2 run mixer_esp_driver web_control        then open http://<robot-ip>:8000
+  ros2 run web_panel web_panel        then open http://<robot-ip>:8000
+  (robot_bringup's bringup.launch.py starts it with everything else)
 
-It is only a front end for the topics of esp_driver_node, so start that first:
+It is only a front end for topics of other nodes, mostly esp_driver_node:
   /door/position, /door/raw_us, /door/save_open, /door/save_closed
   /mixer/motor_0, /mixer/motor_1, /mixer/shake (unjam pattern, run on the ESP)
   /loadcell/weight, /loadcell/cells, /loadcell/tare
@@ -11,6 +12,8 @@ It is only a front end for the topics of esp_driver_node, so start that first:
   driven by silo_controller/valve_controller.py on the Pi, which must be running.
   /camera0, /camera1 image_raw/compressed (JPEG, parameter camera_topics), from
   cameras.launch.py. Streamed to the page as MJPEG at /api/camera/<n>.mjpg.
+  /Team2/battery_state (battery), /Team2/hazard_detection (bump, cliff, stall;
+  needs irobot_create_msgs), /frontier_explorer/status (mapping progress).
 
 Needs: pip install fastapi uvicorn
 
@@ -37,13 +40,17 @@ from pydantic import BaseModel, Field
 from rclpy.executors import ExternalShutdownException
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import CompressedImage
-from std_msgs.msg import Float32, Float32MultiArray
+from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
+from sensor_msgs.msg import BatteryState, CompressedImage
+from std_msgs.msg import Float32, Float32MultiArray, String
 from std_srvs.srv import Trigger
 
-from mixer_esp_driver import config
-from mixer_esp_driver.control_lease import ControlLease
+from web_panel.control_lease import ControlLease
+
+try:  # Create 3 hazards are optional: without the messages they are not shown
+    from irobot_create_msgs.msg import HazardDetection, HazardDetectionVector
+except ImportError:
+    HazardDetection = HazardDetectionVector = None
 
 INDEX_HTML = Path(__file__).parent / 'web' / 'index.html'
 CONTROL_TIMEOUT_S = 6.0  # the holder is silent this long -> control is free
@@ -61,16 +68,20 @@ WEIGHT_MAX_AGE_S = 1.0  # no fresh load cell reading -> abort the dose
 CAMERA_TOPICS = ['/camera0/image_raw/compressed', '/camera1/image_raw/compressed']
 CAMERA_STREAM_FPS = 10.0  # per browser; caps Wi-Fi use, the cameras run at 15
 CAMERA_STALE_S = 2.0
+HAZARD_HOLD_S = 0.6  # a hazard stays on the page this long after its last report
 
 
 class WebControlNode(Node):
     def __init__(self):
-        super().__init__('web_control')
+        super().__init__('web_panel')
+        # Must match NUM_MOTORS in the firmware / mixer_esp_driver config.py.
+        self.declare_parameter('num_motors', 2)
+        self.num_motors = int(self.get_parameter('num_motors').value)
         self.door_pub = self.create_publisher(Float32, 'door/position', 10)
         self.raw_us_pub = self.create_publisher(Float32, 'door/raw_us', 10)
         self.motor_pubs = [
             self.create_publisher(Float32, f'mixer/motor_{i}', 10)
-            for i in range(config.NUM_MOTORS)
+            for i in range(self.num_motors)
         ]
         self.declare_parameter('cmd_vel_topic', '/Team2/cmd_vel')
         self.cmd_vel_pub = self.create_publisher(
@@ -98,6 +109,21 @@ class WebControlNode(Node):
             self.create_subscription(
                 CompressedImage, topic, lambda m, i=i: self._on_camera(i, m),
                 qos_profile_sensor_data)
+        self.battery = None  # {'percent', 'charging', 'voltage', 't'}
+        self.declare_parameter('battery_topic', '/Team2/battery_state')
+        self.create_subscription(
+            BatteryState, self.get_parameter('battery_topic').value, self._on_battery,
+            qos_profile_sensor_data)
+        self.hazards = {}  # name -> last monotonic time it was reported
+        if HazardDetectionVector is not None:
+            self.declare_parameter('hazard_topic', '/Team2/hazard_detection')
+            self.create_subscription(
+                HazardDetectionVector, self.get_parameter('hazard_topic').value,
+                self._on_hazards, qos_profile_sensor_data)
+        self.explorer_status = None
+        latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(
+            String, '/frontier_explorer/status', self._on_explorer_status, latched)
         self.trigger_clients = {
             name: self.create_client(Trigger, name)
             for name in ('loadcell/tare', 'door/save_open', 'door/save_closed')
@@ -109,7 +135,7 @@ class WebControlNode(Node):
         self.cells = []
         self.last_weight_t = 0.0
         self.door = None  # last commanded position or ('raw', us)
-        self.motors = [0.0] * config.NUM_MOTORS
+        self.motors = [0.0] * self.num_motors
         self.last_motor_t = 0.0
         self._motors_active = False
         self.shake_pub = self.create_publisher(Float32MultiArray, 'mixer/shake', 10)
@@ -125,6 +151,36 @@ class WebControlNode(Node):
         with self.lock:
             self.weight = float(msg.data)
             self.last_weight_t = time.monotonic()
+
+    def _on_battery(self, msg):
+        pct = msg.percentage
+        if pct != pct:  # NaN: unknown
+            pct = None
+        elif pct <= 1.0:  # sensor_msgs says 0..1; some drivers send 0..100
+            pct *= 100.0
+        charging = msg.power_supply_status in (
+            BatteryState.POWER_SUPPLY_STATUS_CHARGING, BatteryState.POWER_SUPPLY_STATUS_FULL)
+        with self.lock:
+            self.battery = {'percent': pct, 'charging': charging,
+                            'voltage': float(msg.voltage), 't': time.monotonic()}
+
+    def _on_hazards(self, msg):
+        names = {
+            HazardDetection.BUMP: 'bump',
+            HazardDetection.CLIFF: 'cliff',
+            HazardDetection.STALL: 'stall',
+            HazardDetection.WHEEL_DROP: 'wheel drop',
+            HazardDetection.BACKUP_LIMIT: 'backup limit',
+        }  # OBJECT_PROXIMITY (IR) fires all the time near walls, not shown
+        now = time.monotonic()
+        with self.lock:
+            for d in msg.detections:
+                if d.type in names:
+                    self.hazards[names[d.type]] = now
+
+    def _on_explorer_status(self, msg):
+        with self.lock:
+            self.explorer_status = msg.data
 
     def _on_camera(self, i, msg):
         if 'jpeg' not in msg.format and 'jpg' not in msg.format:
@@ -262,7 +318,7 @@ class WebControlNode(Node):
 
     def stop_outputs(self):
         """Zero the motors and the base, e.g. when control changes hands."""
-        self.set_motors([0.0] * config.NUM_MOTORS)
+        self.set_motors([0.0] * self.num_motors)
         self.set_drive(0.0, 0.0)
 
     def emergency_stop(self):
@@ -312,6 +368,14 @@ class WebControlNode(Node):
                     {'topic': t, 'age_s': (now - f[2]) if f else None}
                     for t, f in zip(self.camera_topics, self.camera_frames)
                 ],
+                'battery': None if self.battery is None else {
+                    'percent': self.battery['percent'],
+                    'charging': self.battery['charging'],
+                    'voltage': self.battery['voltage'],
+                    'age_s': now - self.battery['t'],
+                },
+                'hazards': sorted(n for n, t in self.hazards.items() if now - t < HAZARD_HOLD_S),
+                'explorer': self.explorer_status,
                 'motors': list(self.motors),
                 'shake': dict(self.shake) if self.shake else None,
                 'num_motors': len(self.motors),
@@ -532,7 +596,7 @@ def main(args=None):
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.set_motors([0.0] * config.NUM_MOTORS)
+        node.set_motors([0.0] * node.num_motors)
         node._publish_motors()
         node._publish_shake()
         node.set_drive(0.0, 0.0)

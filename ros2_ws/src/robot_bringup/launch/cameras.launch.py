@@ -1,9 +1,9 @@
 """The two USB webcams (Logitech C920), as JPEG for the web panel.
 
-  ros2 launch mixer_esp_driver cameras.launch.py
+  ros2 launch robot_bringup cameras.launch.py   (or as part of bringup.launch.py)
 
 Each camera is a v4l2_camera node. With compressed_image_transport installed
-it also publishes <ns>/image_raw/compressed (JPEG), which web_control streams
+it also publishes <ns>/image_raw/compressed (JPEG), which web_panel streams
 to the browser:
 
   /camera0/image_raw/compressed  USB port 2.2 (was /dev/video0)

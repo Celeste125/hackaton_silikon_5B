@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>web_panel</name>
+  <version>0.1.0</version>
+  <description>Web control panel for the robot: mixer, valves, door, base, cameras.</description>
+  <maintainer email="todo@todo.todo">Team 2</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <!-- Optional: bumper/cliff/stall warnings are skipped without it. -->
+  <exec_depend>irobot_create_msgs</exec_depend>
+  <!-- pip: fastapi, uvicorn (tests: httpx, pytest) -->
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -6,7 +6,7 @@ side door.
 
 | Machine | Runs |
 | --- | --- |
-| Jetson (on the robot) | lidar, SLAM + Nav2, frontier explorer, mixer ESP driver, web panel |
+| Jetson (on the robot) | lidar, cameras, SLAM + Nav2, frontier explorer, mixer ESP driver, web panel |
 | ESP32 (USB serial to the Jetson) | 4 load cells, 2 mixer motors, door servo |
 | Raspberry Pi | silo valve servos (`silo_controller`) |
 | Create 3 base | its own ROS 2 nodes under `/Team2` (odometry, `cmd_vel`, bumpers) |
@@ -19,8 +19,10 @@ side door.
 └── ros2_ws/
     ├── dependencies.repos        pinned sllidar_ros2 source (vcs import)
     └── src/
+        ├── robot_bringup/        launch files that start the robot
+        ├── web_panel/            the web control panel
+        ├── mixer_esp_driver/     ESP driver: load cells, mixer motors, door
         ├── frontier_explorer/    lidar, live SLAM + Nav2, frontier exploration, map saving
-        ├── mixer_esp_driver/     ESP driver: load cells, mixer motors, door; web panel
         ├── silo_controller/      silo valve servos on the Raspberry Pi
         └── sllidar_ros2/         SLAMTEC lidar driver (downloaded, not in git)
 ```
@@ -29,37 +31,39 @@ side door.
 
 | Package | Runs on | What it is for |
 | --- | --- | --- |
-| `frontier_explorer` | Jetson | Everything for driving around: starts the lidar, builds the map live (slam_toolbox), plans and drives (Nav2), explores the arena on its own and saves the map when it is done. |
-| `mixer_esp_driver` | Jetson | Talks to the ESP32 over USB serial: weight from the 4 load cells, the 2 mixer motors (ramped, plus the shake pattern), the door servo. Also serves the web panel, and launches the two webcams it shows. |
+| `robot_bringup` | Jetson | Launch files only. `bringup.launch.py` starts everything except navigation. |
+| `web_panel` | Jetson | The web control panel (port 8000): scale, valves, mixer motors and shake, door, driving, both camera feeds, battery, bumper warnings, map status. |
+| `mixer_esp_driver` | Jetson | Talks to the ESP32 over USB serial: weight from the 4 load cells, the 2 mixer motors (ramped, plus the shake pattern), the door servo. |
+| `frontier_explorer` | Jetson | Everything for driving around: the lidar launch, the live map (slam_toolbox), planning and driving (Nav2), exploring the arena on its own and saving the map when done. |
 | `silo_controller` | Raspberry Pi | Opens and closes the 3 silo valves (servos on a PCA9685). Runs in Docker on the Pi; `valve_cmd` commands it from the Jetson. |
-| `sllidar_ros2` | Jetson | SLAMTEC's lidar driver, pinned in `dependencies.repos`. We only use its `sllidar_node`, through our `lidar.launch.py`. |
+| `sllidar_ros2` | Jetson | SLAMTEC's lidar driver, pinned in `dependencies.repos`. We only use its `sllidar_node`, through `lidar.launch.py`. |
 
 The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
-bumpers and so on, and listens on `/Team2/cmd_vel`.
+`/Team2/battery_state`, bumpers and so on, and listens on `/Team2/cmd_vel`.
 
 ## Launch files
 
 | Launch file | What it starts | When to use it |
 | --- | --- | --- |
-| `frontier_explorer lidar.launch.py` | `sllidar_node` (`/scan_raw`) and `scan_timestamp_fixer` (`/scan`) | Test the lidar; always runs under SLAM |
-| `frontier_explorer slam_navigation.launch.py` | `odom_tf_republisher`, `scan_timestamp_fixer`, slam_toolbox, Nav2, twist_mux | Map and navigate at the same time |
-| `frontier_explorer explore.launch.py` | `frontier_explorer` | Explore the whole arena on its own, then save the map |
-| `frontier_explorer mapping.launch.py` | lidar, `scan_timestamp_fixer`, `odom_tf_republisher`, slam_toolbox (no Nav2) | Map by driving with teleop yourself |
+| `robot_bringup bringup.launch.py` | `esp_driver_node`, `web_panel`, both cameras, the lidar. Switches: `web:=false`, `cameras:=false`, `lidar:=false`, `teleop:=true` | Every time: starts the robot |
+| `robot_bringup cameras.launch.py` | two `v4l2_camera` nodes: `/camera0`, `/camera1` (`image_raw` + `image_raw/compressed` JPEG) | Only the cameras; bringup includes it |
+| `frontier_explorer lidar.launch.py` | `sllidar_node` (`/scan_raw`) and `scan_timestamp_fixer` (`/scan`) | Only the lidar, e.g. to test it; bringup includes it |
+| `frontier_explorer slam_navigation.launch.py` | `odom_tf_republisher`, slam_toolbox, Nav2, twist_mux | On top of bringup: map and navigate at the same time |
+| `frontier_explorer explore.launch.py` | `frontier_explorer` | On top of that: explore the whole arena, then save the map |
+| `frontier_explorer navigation.launch.py` | `map_server` (saved map), AMCL, Nav2, `odom_tf_republisher`, twist_mux | On top of bringup: drive on the saved map, no more mapping |
+| `frontier_explorer mapping.launch.py` | lidar, `scan_timestamp_fixer`, `odom_tf_republisher`, slam_toolbox (no Nav2) | Map by driving with teleop yourself. Brings its own lidar: run bringup with `lidar:=false` |
 | `frontier_explorer nav2.launch.py` | Nav2 servers and lifecycle managers | Not by hand: `slam_navigation.launch.py` includes it |
-| `mixer_esp_driver cameras.launch.py` | two `v4l2_camera` nodes: `/camera0`, `/camera1` (`image_raw` + `image_raw/compressed` JPEG) | The camera feeds in the web panel |
-| `mixer_esp_driver base_teleop.launch.py` | `esp_driver_node`, `web_control` (`web:=false` to skip), optional keyboard teleop (`teleop:=true`) | Mixer, door, scale and the web panel |
 
 `silo_controller` has no launch file: the Pi runs `valve_controller` in Docker
-(see its `Dockerfile`). From the Jetson:
-`ros2 run silo_controller valve_cmd 2 calibrate`.
+(see its `Dockerfile`).
 
 | Node | Does |
 | --- | --- |
+| `esp_driver_node` | serial link to the ESP: `/loadcell/*`, `/mixer/motor_*`, `/mixer/shake`, `/door/*` |
+| `web_panel` | the web panel on port 8000; streams `/camera0` and `/camera1` as MJPEG |
 | `scan_timestamp_fixer` | `/scan_raw` -> `/scan`, restamped with the Jetson's clock so scans and TF match |
 | `odom_tf_republisher` | `/Team2/odom` -> `odom -> base_link` TF |
 | `frontier_explorer` | picks the best unexplored edge of `/map`, sends it to Nav2; at the end drives home, saves the map, reports done |
-| `esp_driver_node` | serial link to the ESP: `/loadcell/*`, `/mixer/motor_*`, `/mixer/shake`, `/door/*` |
-| `web_control` | the web panel on port 8000; streams `/camera0` and `/camera1` as MJPEG |
 | `valve_controller` | `/valve1..3/percent` -> servo angles, with saved open/closed calibration |
 
 Parameters: `frontier_explorer/config/` (`nav2_params.yaml`,
@@ -115,9 +119,62 @@ ROS settings on the Jetson and the robot: `ROS_DOMAIN_ID=2`,
 
 ## Run
 
-Run `sws` first in every terminal (`cd ~/imdl-main/ros2_ws && source install/setup.bash`).
+Run `sws` first in every terminal (`cd ~/imdl-main/ros2_ws && source install/setup.bash`),
+and launch from there: the ESP driver reads its calibration files from the
+current directory.
 
-### Test the lidar
+### Start the robot
+
+```bash
+ros2 launch robot_bringup bringup.launch.py
+```
+
+Then open the panel on `http://<jetson>:8000`. Leave out parts with
+`cameras:=false`, `lidar:=false` or `web:=false`.
+
+### Map the arena
+
+Put the robot on its start mark. With bringup running, one terminal each:
+
+```bash
+ros2 launch frontier_explorer slam_navigation.launch.py   # wait for "Managed nodes are active"
+ros2 launch frontier_explorer explore.launch.py           # the robot starts driving
+```
+
+The panel's top bar shows the progress ("Map: exploring", "Map saved"), or
+`ros2 topic echo /frontier_explorer/status`. Teleop on `/Team2/cmd_vel_teleop`
+overrides Nav2 through twist_mux; Nav2 resumes 0.5 s after the last key press:
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/Team2/cmd_vel_teleop
+```
+
+### Drive on the saved map
+
+Once a map is saved, later runs can skip mapping. Put the robot on the same
+start mark, then with bringup running:
+
+```bash
+ros2 launch frontier_explorer navigation.launch.py        # loads ~/maps/arena.yaml
+```
+
+AMCL localizes the robot on the map by matching the lidar against it. The map's
+(0, 0) is where mapping started, so from the start mark the robot already knows
+where it is. Started elsewhere: `initial_x:=1.2 initial_y:=0.4 initial_yaw:=1.57`
+(map frame), or set it in RViz with "2D Pose Estimate". Another map:
+`map:=/path/to/map.yaml`.
+
+Send it somewhere with RViz (2D Goal Pose) or from the command line:
+
+```bash
+ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+  "{pose: {header: {frame_id: map}, pose: {position: {x: 1.0, y: 0.5}, orientation: {w: 1.0}}}}"
+```
+
+Use `slam_navigation` + `explore` to map, `navigation` to drive on that map;
+never both at once (both publish `map -> odom`).
+
+### The lidar on its own
 
 ```bash
 ros2 launch frontier_explorer lidar.launch.py
@@ -128,47 +185,17 @@ Defaults: `serial_port:=/dev/ttyUSB0`, `serial_baudrate:=460800` (SLAMTEC C1),
 `frame_id:=base_link`. Override them if the lidar enumerates elsewhere or is a
 different model (A1/A2M8: 115200, A2M12/A3/S1: 256000).
 
-### Map the arena
+### Cameras
 
-Put the robot on its start mark, then one terminal each:
+Camera 1 in the panel (`/camera0`) is the C920 in USB port 2.2, camera 2
+(`/camera1`) the one in port 2.1. The launch uses the `/dev/v4l/by-path/` links
+for those ports, because `/dev/videoN` numbers change when a camera is
+replugged. Override with `camera0_device:=/dev/video0 camera1_device:=/dev/video2`.
+A camera can only be opened by one node, so stop any other `v4l2_camera_node`
+first. The panel streams at up to 10 fps per browser, and stops a stream while
+it is off-screen, the tab is hidden or the cameras are turned off there.
 
-```bash
-ros2 launch frontier_explorer lidar.launch.py fix_timestamps:=false
-ros2 launch frontier_explorer slam_navigation.launch.py   # wait for "Managed nodes are active"
-ros2 launch frontier_explorer explore.launch.py           # the robot starts driving
-ros2 topic echo /frontier_explorer/status                 # "done" = map saved
-```
-
-`slam_navigation.launch.py` runs its own scan timestamp fixer, hence
-`fix_timestamps:=false` on the lidar. Teleop on `/Team2/cmd_vel_teleop`
-overrides Nav2 through twist_mux; Nav2 resumes 0.5 s after the last key press:
-
-```bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/Team2/cmd_vel_teleop
-```
-
-### Mixer, door and web panel
-
-```bash
-ros2 launch mixer_esp_driver base_teleop.launch.py
-```
-
-The panel is on `http://<jetson>:8000`. The ESP is on `/dev/ttyCH341USB0`
-(`SERIAL_PORT` in `mixer_esp_driver/config.py`).
-
-Camera feeds in the panel:
-
-```bash
-ros2 launch mixer_esp_driver cameras.launch.py
-```
-
-Camera 0 is the C920 in USB port 2.2, camera 1 the one in port 2.1. The
-launch uses the `/dev/v4l/by-path/` links for those ports, because
-`/dev/videoN` numbers change when a camera is replugged. Override with
-`camera0_device:=/dev/video0 camera1_device:=/dev/video2`. A camera can only be
-opened by one node, so stop any other `v4l2_camera_node` first. The panel
-streams at up to 10 fps per browser and pauses while its tab is hidden or the
-cameras are turned off there.
+The ESP is on `/dev/ttyCH341USB0` (`SERIAL_PORT` in `mixer_esp_driver/config.py`).
 
 ### Silo valves (Raspberry Pi)
 
@@ -247,8 +274,8 @@ changing it, run `ros2 daemon stop`, and give `ros2 node list` a few seconds
 - Plug the dongle in before the robot starts its ROS app. If the robot booted
   without it, restart the app from its web page ("Restart application"), since
   the app only uses the wired interface that exists when it starts.
-- Nothing launches automatically. Start the ESP driver, the lidar and
-  navigation yourself, after the wired link is up.
+- Nothing launches automatically. Start `robot_bringup bringup.launch.py`
+  (and navigation if needed) yourself, after the wired link is up.
 - Run `sws` first and launch from `~/imdl-main/ros2_ws`. The ESP driver reads
   `loadcell_calibration.json` and `door_calibration.json` from the **current
   directory**; launched from `~` it used the wrong load-cell calibration and
@@ -267,5 +294,5 @@ Do not run `ros2 topic pub` on `/mixer/motor_*` or `/Team2/cmd_vel` while a
 device holds control; the panel publishes there too. It is protection against
 collisions between people, not security: there is still no login.
 
-Code: `mixer_esp_driver/control_lease.py` and `web_control.py`. Tests:
-`pytest ros2_ws/src/mixer_esp_driver/test` (needs `fastapi` and `httpx`).
+Code: `web_panel/control_lease.py` and `server.py`. Tests:
+`pytest ros2_ws/src/web_panel/test` (needs `fastapi` and `httpx`).

@@ -39,6 +39,13 @@ amcl:
     z_short: 0.02
     scan_topic: scan
     set_initial_pose: false
+    # navigation.launch.py sets set_initial_pose and these from its
+    # initial_x/y/yaw arguments (default: the start mark, map 0 0 0).
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
 
 bt_navigator:
   ros__parameters:

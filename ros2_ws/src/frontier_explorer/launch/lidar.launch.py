@@ -3,9 +3,8 @@
     ros2 launch frontier_explorer lidar.launch.py
     ros2 topic hz /scan
 
-scan_timestamp_fixer restamps each scan with this machine's clock. Pass
-fix_timestamps:=false when slam_navigation.launch.py runs too, since it starts
-its own fixer.
+scan_timestamp_fixer restamps each scan with this machine's clock, for SLAM.
+robot_bringup's bringup.launch.py includes this file.
 """
 
 from launch import LaunchDescription
