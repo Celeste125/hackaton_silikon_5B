@@ -1,95 +1,134 @@
 import cv2
-import joblib
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from skimage.measure import regionprops
-from skimage.segmentation import quickshift, find_boundaries
+import time
 
-MODEL_PATH = 'weights/random_forest.joblib'
-CLASSES = ['wheat', 'rapeseed', 'pea']
-COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
+COLORS = {'pea': (0, 255, 0), 'rapeseed': (255, 0, 0), 'wheat': (0, 0, 255)}
 
 
-def segment(img):
-    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-    segments = quickshift(img, kernel_size=3, max_dist=6, ratio=0.5)
-
-    feats, labels = [], []
-    for r in regionprops(segments):
-        ys, xs = r.coords.T
-        pixels = lab[ys, xs].astype(np.float32)
-        feats.append([
-            r.area, r.eccentricity, r.solidity,
-            r.major_axis_length, r.minor_axis_length,
-            *pixels.mean(axis=0), *pixels.std(axis=0),
-        ])
-        labels.append(r.label)
-    return np.array(feats), segments, np.array(labels)
+def crop(img):
+    h, w = img.shape[:2]
+    img = img[200: h - 200, 200: w - 450]
+    roi = np.zeros(img.shape[:2], np.uint8)
+    params = dict(radius=350, color=255, thickness=-1)
+    cv2.circle(roi, center=(350, 350), **params)
+    cv2.circle(roi, center=(1000, 350), **params)
+    return cv2.bitwise_and(img, img, mask=roi), roi
 
 
-def apply_overlay(img, segments, labels, pred, alpha=0.5, draw_edges=True):
-    lut = np.full(segments.max() + 1, -1, dtype=int)
-    lut[labels] = pred
-    class_map = lut[segments]
+def background_filter(img, roi):
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, lowerb=(0, 0, 50), upperb=(180, 70, 255))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(7, 7))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    return cv2.bitwise_and(mask, roi)
 
-    color_layer = img.copy()
-    for i, color in enumerate(COLORS):
-        color_layer[class_map == i] = color
 
-    painted = (class_map >= 0)[..., None]
-    blended = np.where(
-        painted, (img * (1 - alpha) + color_layer * alpha).astype(np.uint8), img
+def pea_filter(img, roi):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    circles = cv2.HoughCircles(gray,
+        cv2.HOUGH_GRADIENT, dp=1, minDist=5, param1=20, param2=20, minRadius=5, maxRadius=19
     )
-    if draw_edges:
-        blended[find_boundaries(segments) & painted[..., 0]] = (255, 255, 255)
-    return blended, class_map
+    mask = np.zeros(img.shape[:2], np.uint8)
+    if circles is not None:
+        for x, y, radius in np.round(circles[0]).astype(int):
+            cv2.circle(mask, center=(x, y), radius=radius, color=255, thickness=-1)
+    return cv2.bitwise_and(mask, roi)
 
 
-def add_legend(img, count, area):
-    output_img = img.copy()
-    cv2.rectangle(output_img, (0, 0), (350, 100), color=(0, 0, 0), thickness=-1)
-    for i, (grain_type, color) in enumerate(zip(CLASSES, COLORS)):
-        y = 30 + i * 32
-        cv2.rectangle(output_img, (10, y - 18), (34, y + 6), color, thickness=-1)
-        text = f'{grain_type}: {count[i]} bins, {area[i] * 100:.1f}%'
-        params = dict(
-            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(255, 255, 255), thickness=1, lineType=cv2.LINE_AA
-        )
-        cv2.putText(output_img, text, org=(44, y), **params)
-    return output_img
+def rapeseed_filter(img, roi):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, mask = cv2.threshold(gray, thresh=60, maxval=255, type=cv2.THRESH_BINARY_INV)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(3, 3))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    return cv2.bitwise_and(mask, roi)
 
 
-def train(img_path):
-    X, y = [], []
-    for label, grain_type in enumerate(CLASSES):
-        for i in range(3):
-            feats, _, _ = segment(cv2.imread(img_path + grain_type + '/' + grain_type + '_00' + str(i + 1) + '.jpg'))
-            X.append(feats)
-            y.append(np.full(len(feats), label))
+def wheat_filter(background, pea, rapeseed, roi):
+    not_wheat = cv2.bitwise_or(cv2.bitwise_or(pea, rapeseed), background)
+    return cv2.bitwise_and(cv2.bitwise_not(not_wheat), roi)
 
-    X, y = np.vstack(X), np.concatenate(y)
 
-    clf = RandomForestClassifier(
-        n_estimators=300, class_weight='balanced', random_state=42, n_jobs=-1
-    ).fit(X, y)
-    joblib.dump(
-        {'model': clf, 'classes': CLASSES}, MODEL_PATH, compress=3
+def measure_area(**masks):
+    areas = {grain_type: cv2.countNonZero(mask) for grain_type, mask in masks.items()}
+    total_area = max(sum(areas.values()), 1)
+    return {grain_type: 100 * area / total_area for grain_type, area in areas.items()}
+
+
+def measure_homogeneity(roi, cells_inline=50, **masks):
+    h, w = roi.shape
+    size = (w // cells_inline, h // cells_inline)
+    cells = np.stack([
+        cv2.resize(mask.astype(np.float32) / 255, size, interpolation=cv2.INTER_AREA)
+        for mask in masks.values()
+    ])
+    total = cells.sum(axis=0)
+    valid = total > 0.5
+    weights = total[valid]
+    cell_content = cells[:, valid] / weights
+    mean = (cell_content * weights).sum(axis=1) / weights.sum()
+    variance = (weights * (cell_content - mean[:, None]) ** 2).sum(axis=1) / weights.sum()
+    segregated = (mean * (1 - mean)).sum()
+    return 1 - variance.sum() / max(segregated, 1e-9)
+
+
+def apply_overlay(img, pea, rapeseed, wheat, alpha=0.3):
+    overlay = img.copy()
+    overlay[pea > 0] = COLORS['pea']
+    overlay[rapeseed > 0] = COLORS['rapeseed']
+    overlay[wheat > 0] = COLORS['wheat']
+    return cv2.addWeighted(overlay, alpha, img, 1 - alpha, gamma=0)
+
+
+def add_legend(img, fps, areas, mix_idx):
+    params = dict(
+        fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.6, color=(255, 255, 255), thickness=1
     )
+    cv2.putText(img, text=f'FPS: {fps:.1f}', org=(10, 20), **params)
+    cv2.putText(img, text=f'homogeneity: {mix_idx:.2f}/1', org=(10, 40), **params)
+    for i, (grain_type, area) in enumerate(areas.items()):
+        y = 60 + 20 * i
+        cv2.rectangle(img, (10, y - 14), (24, y), color=COLORS[grain_type], thickness=-1)
+        cv2.putText(img, text=f'{grain_type}: {area:.0f}%', org=(32, y), **params)
 
-img_path = 'images/boxes/'
 
-# train(img_path)
+def main():
+    cap  = cv2.VideoCapture('videos/clip_hd.mp4')
+    _, frame = cap.read()
+    frame, _ = crop(frame)
+    h, w = frame.shape[:2]
+    writer = cv2.VideoWriter('results/mixing.mp4',
+        fourcc=cv2.VideoWriter_fourcc(*'mp4v'), fps=12, frameSize=(w, h)
+    )
+    start = time.perf_counter()
+    while cap.isOpened():
+        _, frame = cap.read()
+        frame, roi = crop(frame)
+        background = background_filter(frame, roi)
 
-clf = joblib.load(MODEL_PATH)['model']
-input_img = cv2.imread(img_path + 'sorted.jpg')
-feats, segments, labels = segment(input_img)
-pred = clf.predict(feats)
+        pea = pea_filter(frame, roi=cv2.bitwise_and(roi, cv2.bitwise_not(background)))
+        rapeseed = rapeseed_filter(frame, roi)
+        wheat = wheat_filter(background, pea, rapeseed, roi=cv2.bitwise_and(roi, cv2.bitwise_not(background)))
 
-overlay, class_map = apply_overlay(input_img, segments, labels, pred)
-count = np.bincount(pred, minlength=3)
-area = np.bincount(pred, weights=feats[:, 0], minlength=3) / feats[:, 0].sum()
-overlay = add_legend(overlay, count, area)
-cv2.imwrite('results/sorted.png', overlay)
-cv2.imshow('', overlay)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+        masks = dict(pea=pea, rapeseed=rapeseed, wheat=wheat)
+        areas = measure_area(**masks)
+        mix_idx  = measure_homogeneity(roi, **masks)
+
+        output_frame = apply_overlay(frame, pea, rapeseed, wheat)
+
+        end = time.perf_counter()
+        fps = 1 / max(end - start, 1e-6)
+        start = end
+        add_legend(output_frame, fps, areas, mix_idx)
+        writer.write(output_frame)
+        cv2.imshow('', output_frame)
+        if cv2.waitKey(50) & 0xFF == 27:
+            break
+
+    cap.release()
+    writer.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == '__main__':
+    main()
