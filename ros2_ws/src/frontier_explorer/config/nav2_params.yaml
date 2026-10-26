@@ -374,7 +374,10 @@ local_costmap:
       width: 2
       height: 2
       resolution: 0.02
-      footprint: "[[0.19, 0.06], [0.15, 0.13], [0.07, 0.17], [-0.12, 0.16], [-0.17, 0.08], [-0.17, -0.08], [-0.12, -0.16], [0.07, -0.17], [0.15, -0.13], [0.19, -0.06]]"
+      # Create 3 (0.34 m round) under the feed container (0.50 m left-right,
+      # 0.30 m front-back), assumed centred: the base sets the front/back
+      # extent, the container the sides. Corners reach 0.31 m when spinning.
+      footprint: "[[0.17, 0.26], [0.17, -0.26], [-0.17, -0.26], [-0.17, 0.26]]"
       footprint_padding: 0.01
       plugins: [obstacle_layer, front_ultrasonic_layer, inflation_layer]
       obstacle_layer:
@@ -427,8 +430,13 @@ local_costmap:
         mark_threshold: 0.70
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        cost_scaling_factor: 7.5
-        inflation_radius: 0.28
+        # Cost spreads 0.55 m from walls and falls off slowly, so the planner
+        # keeps to the middle of a corridor instead of hugging the wall. It must
+        # exceed the footprint's corner reach (0.32 m with padding), or the
+        # planner leaves no room to turn. Cost only, not lethal: the robot can
+        # still pass gaps down to its own width.
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
       always_send_full_costmap: true
 
 global_costmap:
@@ -441,7 +449,10 @@ global_costmap:
       robot_base_frame: base_link
       resolution: 0.02
       track_unknown_space: false
-      footprint: "[[0.19, 0.06], [0.15, 0.13], [0.07, 0.17], [-0.12, 0.16], [-0.17, 0.08], [-0.17, -0.08], [-0.12, -0.16], [0.07, -0.17], [0.15, -0.13], [0.19, -0.06]]"
+      # Create 3 (0.34 m round) under the feed container (0.50 m left-right,
+      # 0.30 m front-back), assumed centred: the base sets the front/back
+      # extent, the container the sides. Corners reach 0.31 m when spinning.
+      footprint: "[[0.17, 0.26], [0.17, -0.26], [-0.17, -0.26], [-0.17, 0.26]]"
       footprint_padding: 0.01
       plugins: [static_layer, obstacle_layer, inflation_layer]
       static_layer:
@@ -477,8 +488,13 @@ global_costmap:
           obstacle_min_range: 0.0
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        cost_scaling_factor: 7.5
-        inflation_radius: 0.28
+        # Cost spreads 0.55 m from walls and falls off slowly, so the planner
+        # keeps to the middle of a corridor instead of hugging the wall. It must
+        # exceed the footprint's corner reach (0.32 m with padding), or the
+        # planner leaves no room to turn. Cost only, not lethal: the robot can
+        # still pass gaps down to its own width.
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
       always_send_full_costmap: true
 
 map_server:
@@ -524,9 +540,11 @@ behavior_server:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 15.0
-    behavior_plugins: [spin, wait]
+    behavior_plugins: [spin, backup, wait]
     spin:
       plugin: nav2_behaviors/Spin
+    backup:
+      plugin: nav2_behaviors/BackUp
     wait:
       plugin: nav2_behaviors/Wait
     global_frame: odom
@@ -586,7 +604,8 @@ collision_monitor:
       enabled: true
     SlowZone:
       type: polygon
-      points: [0.29, 0.09, 0.23, 0.20, 0.10, 0.27, -0.19, 0.25, -0.26, 0.12, -0.26, -0.12, -0.19, -0.25, 0.10, -0.27, 0.23, -0.20, 0.29, -0.09]
+      # The footprint plus 0.10 m all round.
+      points: [0.27, 0.36, 0.27, -0.36, -0.27, -0.36, -0.27, 0.36]
       action_type: slowdown
       max_points: 2
       slowdown_ratio: 0.60

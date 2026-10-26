@@ -179,18 +179,19 @@ def generate_launch_description():
             default_value='/Team2',
             description='Namespace of the Create3 topics (odom, cmd_vel, tf).',
         ),
-        # nav2_params.yaml uses 0.28 / 7.5 / 2.0. The footprint radius is about
-        # 0.20 m, so inflation_radius must stay above that.
+        # Same as nav2_params.yaml. The footprint's corners reach 0.32 m, so
+        # inflation_radius must stay above that. 0.23 / 10 / 1.0 left little
+        # cost past the footprint and the robot drove into walls.
         DeclareLaunchArgument(
-            'inflation_radius', default_value='0.23',
+            'inflation_radius', default_value='0.55',
             description='Distance (m) around obstacles with extra cost.',
         ),
         DeclareLaunchArgument(
-            'cost_scaling_factor', default_value='10.0',
+            'cost_scaling_factor', default_value='3.0',
             description='Higher = cost drops faster = robot may pass closer.',
         ),
         DeclareLaunchArgument(
-            'cost_travel_multiplier', default_value='1.0',
+            'cost_travel_multiplier', default_value='2.0',
             description='Lower = planned paths may run closer to walls.',
         ),
         DeclareLaunchArgument(

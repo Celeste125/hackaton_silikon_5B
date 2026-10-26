@@ -21,6 +21,10 @@
             <ClearEntireCostmap name="ClearLocalRecovery" service_name="local_costmap/clear_entirely_local_costmap"/>
             <ClearEntireCostmap name="ClearGlobalRecovery" service_name="global_costmap/clear_entirely_global_costmap"/>
           </Sequence>
+          <!-- Pressed against a wall, a spin fails its collision check; a
+               short reverse frees it first. The Create 3 stops reversing
+               after about 10 cm (no rear cliff sensors). -->
+          <BackUp backup_dist="0.08" backup_speed="0.05"/>
           <Spin spin_dist="0.52"/>
           <Wait wait_duration="1"/>
         </RoundRobin>

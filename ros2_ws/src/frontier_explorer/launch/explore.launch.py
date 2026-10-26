@@ -44,8 +44,8 @@ def generate_launch_description():
             'nav_timeout': LaunchConfiguration('nav_timeout'),
             'goal_blacklist_radius': 0.35,
             'goal_max_dist_cells': 10,
-            # The footprint is ~0.20 m, and the costmap inflation already keeps
-            # the robot off walls, so leave this to the costmap.
+            # The footprint is 0.34 x 0.52 m, and the costmap inflation already
+            # keeps the robot off walls, so leave this to the costmap.
             'min_wall_clearance_m': 0.0,
             # Nav2's Spin recovery is valid on a differential drive, unlike the
             # Ackermann rover this came from, so give Nav2 room to recover
