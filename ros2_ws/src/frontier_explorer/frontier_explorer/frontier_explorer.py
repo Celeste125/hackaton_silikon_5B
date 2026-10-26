@@ -56,6 +56,8 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import binary_dilation
+from scipy.ndimage import label as label_regions
 from std_msgs.msg import Empty, String
 from std_srvs.srv import Trigger
 from tf2_ros import TransformException
@@ -104,6 +106,14 @@ class FrontierExplorer(Node):
         # A frontier the robot can never see past (the inside of the cow box)
         # would otherwise keep it retrying forever.
         self.declare_parameter("max_blacklist_clears", 1)
+        # Unknown patches smaller than this (cells) count as free. A map still
+        # being built is speckled with single unknown cells between lidar
+        # rays; with 8-connected frontiers those joined into one huge frontier
+        # whose goal was wherever the robot already stood.
+        self.declare_parameter("min_unknown_region", 20)
+        # A goal closer than this to the robot cannot reveal anything new:
+        # blacklist it instead of sending it (Nav2 "reaches" it at once).
+        self.declare_parameter("min_goal_distance", 0.30)
         # Stuck detection: if the rover hasn't moved more than stuck_dist_m in
         # stuck_timeout_s seconds we cancel the goal and replan — this fires
         # before Nav2's own recovery (Spin etc.) which is wrong for Ackermann.
@@ -126,6 +136,8 @@ class FrontierExplorer(Node):
         self._goal_max_dist = self.get_parameter("goal_max_dist_cells").value
         self._done_ticks_threshold = self.get_parameter("done_ticks_threshold").value
         self._max_blacklist_clears = self.get_parameter("max_blacklist_clears").value
+        self._min_unknown_region = self.get_parameter("min_unknown_region").value
+        self._min_goal_dist = self.get_parameter("min_goal_distance").value
         self._blacklist_clears = 0
         self._stuck_dist_m = self.get_parameter("stuck_dist_m").value
         self._stuck_timeout_s = self.get_parameter("stuck_timeout_s").value
@@ -441,6 +453,10 @@ class FrontierExplorer(Node):
             return
 
         valid = [f for f in frontiers if not self._is_blacklisted(f[3], f[4])]
+        for f in valid:
+            if math.dist((rx, ry), (f[3], f[4])) < self._min_goal_dist:
+                self._blacklist((f[3], f[4]))
+        valid = [f for f in valid if not self._is_blacklisted(f[3], f[4])]
         if not valid:
             if self._blacklist_clears >= self._max_blacklist_clears:
                 self.get_logger().info(
@@ -520,12 +536,26 @@ class FrontierExplorer(Node):
 
         free = data == 0
         unknown = data == -1
+        # Speckle between lidar rays is not unexplored space.
+        unknown_labels, n_unknown = label_regions(unknown, structure=np.ones((3, 3)))
+        if n_unknown:
+            sizes = np.bincount(unknown_labels.ravel())
+            small = sizes < self._min_unknown_region
+            small[0] = False
+            speckle = small[unknown_labels]
+            free = free | speckle
+            unknown = unknown & ~speckle
 
         frontier_mask = np.zeros((h, w), dtype=bool)
         frontier_mask[1:, :] |= free[1:, :] & unknown[:-1, :]
         frontier_mask[:-1, :] |= free[:-1, :] & unknown[1:, :]
         frontier_mask[:, 1:] |= free[:, 1:] & unknown[:, :-1]
         frontier_mask[:, :-1] |= free[:, :-1] & unknown[:, 1:]
+        # Not next to a wall: a wall that is diagonal in the map touches only
+        # at corners, so the free cells along its inside see the unknown space
+        # behind it and would line every wall with frontiers that no driving
+        # can clear. A real frontier is an open edge, away from walls.
+        frontier_mask &= ~binary_dilation(data >= 65, structure=np.ones((3, 3)))
 
         if not frontier_mask.any():
             return []
@@ -538,7 +568,8 @@ class FrontierExplorer(Node):
 
         # Pre-build candidate mask: free cells at least min_wall_clearance_m from
         # every obstacle.  This excludes the Nav2 inflation layer automatically.
-        safe_free = free & (dist_cells >= min_clear_cells)
+        # Goals only on cells the map really has as free, not on speckle.
+        safe_free = (data == 0) & (dist_cells >= min_clear_cells)
 
         results = []
         for label in range(1, n_labels + 1):

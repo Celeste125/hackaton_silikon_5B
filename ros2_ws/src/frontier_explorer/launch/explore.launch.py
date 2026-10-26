@@ -54,6 +54,8 @@ def generate_launch_description():
             'stuck_timeout_s': 12.0,
             'done_ticks_threshold': 5,
             'max_blacklist_clears': 1,
+            'min_unknown_region': 20,
+            'min_goal_distance': 0.30,
             'nav2_startup_delay': LaunchConfiguration('startup_delay'),
             'map_dir': LaunchConfiguration('map_dir'),
             'map_name': LaunchConfiguration('map_name'),
