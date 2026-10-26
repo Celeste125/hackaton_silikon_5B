@@ -449,10 +449,14 @@ global_costmap:
       robot_base_frame: base_link
       resolution: 0.02
       track_unknown_space: false
-      # Create 3 (0.34 m round) under the feed container (0.50 m left-right,
-      # 0.30 m front-back), assumed centred: the base sets the front/back
-      # extent, the container the sides. Corners reach 0.31 m when spinning.
-      footprint: "[[0.17, 0.26], [0.17, -0.26], [-0.17, -0.26], [-0.17, 0.26]]"
+      # The planner (Smac 2D) treats the robot as a point that must stay out
+      # of the inscribed radius. With the real 0.34 x 0.52 m rectangle that
+      # is only 0.18 m, so paths ran 0.2-0.3 m from walls, and the corners
+      # (0.31 m out) hit the wall on the next turn in place. Planning on the
+      # circle around the whole robot keeps every path where it can turn.
+      # The local costmap keeps the real rectangle for the controller,
+      # collision monitor and recoveries.
+      robot_radius: 0.31
       footprint_padding: 0.01
       plugins: [static_layer, obstacle_layer, inflation_layer]
       static_layer:
@@ -540,11 +544,13 @@ behavior_server:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 15.0
-    behavior_plugins: [spin, backup, wait]
+    behavior_plugins: [spin, backup, drive_on_heading, wait]
     spin:
       plugin: nav2_behaviors/Spin
     backup:
       plugin: nav2_behaviors/BackUp
+    drive_on_heading:
+      plugin: nav2_behaviors/DriveOnHeading
     wait:
       plugin: nav2_behaviors/Wait
     global_frame: odom
