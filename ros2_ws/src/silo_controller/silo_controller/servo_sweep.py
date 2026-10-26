@@ -11,7 +11,7 @@ Press Ctrl+C at any time; outputs are switched off on exit.
 
 Do NOT run this while the valve controller is running (both use the PCA9685).
 
-Usage:
+Usage (on the Pi, needs smbus2; or ros2 run silo_controller servo_sweep):
   python3 servo_sweep.py <channel> [--start US] [--end US] [--step US] [--delay S] [--down]
 
 Examples:

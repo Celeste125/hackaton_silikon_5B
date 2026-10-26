@@ -2,186 +2,441 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c1f26">
 <title>Mixer control</title>
 <style>
+  /* Everything is inline and uses system fonts: the panel must work on the
+     arena Wi-Fi without internet. */
   :root {
-    --bg: #14161a; --panel: #1d2026; --line: #2c313a; --text: #e8eaed;
-    --muted: #8b93a1; --accent: #4f9dff; --danger: #e5484d; --ok: #3fb950;
+    --night-1: #0c1f26;
+    --night-2: #172042;
+    --glass: rgba(255, 255, 255, .065);
+    --glass-strong: rgba(255, 255, 255, .11);
+    --edge: rgba(255, 255, 255, .14);
+    --edge-soft: rgba(255, 255, 255, .07);
+    --text: #eaf2f4;
+    --muted: #a3b6bd;
+    --grain: #f4b740;       /* actions: the colour of the feed */
+    --grain-deep: #d9932a;
+    --on-grain: #2a1c05;
+    --live: #3dd6b5;        /* connected, in control, running */
+    --stop: #ff5d5d;
+    --stop-deep: #e03e4a;
+    --focus: #9be7ff;
+    --radius-lg: 22px;
+    --radius-md: 14px;
+    --radius-sm: 10px;
+    --ease: cubic-bezier(.2, .8, .2, 1);
   }
   * { box-sizing: border-box; }
+  /* The gradient sits on html: a body background would paint over the
+     liquid layer below. */
+  html { background: linear-gradient(160deg, var(--night-1) 0%, #102b35 45%, var(--night-2) 100%) fixed var(--night-1); }
   body {
-    margin: 0; padding: 16px; background: var(--bg); color: var(--text);
-    font: 16px/1.4 system-ui, -apple-system, sans-serif;
-    max-width: 720px; margin-inline: auto;
+    margin: 0; min-height: 100vh; color: var(--text);
+    font: 16px/1.45 ui-rounded, "SF Pro Rounded", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding: max(16px, env(safe-area-inset-top)) 16px calc(110px + env(safe-area-inset-bottom));
   }
-  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-  h1 { font-size: 20px; margin: 0; }
-  h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-  .status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
-  .dot.on { background: var(--ok); }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .row > * { flex: 1; }
+
+  /* The liquid: three slow, blurred blobs behind the glass. */
+  .liquid { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .liquid span { position: absolute; border-radius: 50%; filter: blur(80px); opacity: .5; }
+  .liquid .a { width: 55vmax; height: 55vmax; left: -15vmax; top: -20vmax; background: #23a596; animation: drift-a 38s var(--ease) infinite alternate; }
+  .liquid .b { width: 45vmax; height: 45vmax; right: -18vmax; top: 20vh; background: #5a4bd0; animation: drift-b 46s var(--ease) infinite alternate; }
+  .liquid .c { width: 35vmax; height: 35vmax; left: 20vw; bottom: -20vmax; background: #c9822a; opacity: .45; animation: drift-c 52s var(--ease) infinite alternate; }
+  @keyframes drift-a { to { transform: translate(12vmax, 10vmax) scale(1.1); } }
+  @keyframes drift-b { to { transform: translate(-10vmax, 14vmax) scale(.9); } }
+  @keyframes drift-c { to { transform: translate(-14vmax, -8vmax) scale(1.15); } }
+
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 2px 18px; flex-wrap: wrap; }
+  h1 { font-size: 26px; line-height: 1.1; margin: 0; font-weight: 700; letter-spacing: -.01em; }
+  h1 small { display: block; font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-top: 4px; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px;
+    background: var(--glass); border: 1px solid var(--edge); font-size: 14px; color: var(--muted);
+    backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+    white-space: nowrap;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--stop); box-shadow: 0 0 0 4px rgba(255, 93, 93, .18); flex: none; }
+  .dot.on { background: var(--live); box-shadow: 0 0 0 4px rgba(61, 214, 181, .2); }
+
+  .panel {
+    position: relative; border: 1px solid var(--edge-soft);
+    /* Tinted glass: light on top, dark underneath keeps text readable over the liquid. */
+    background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .02)), rgba(9, 20, 27, .5);
+    border-radius: var(--radius-lg); padding: 20px;
+    backdrop-filter: blur(24px) saturate(150%); -webkit-backdrop-filter: blur(24px) saturate(150%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 20px 50px -30px rgba(0, 0, 0, .6);
+  }
+  .grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 860px) {
+    .grid { grid-template-columns: 1fr 1fr; align-items: start; }
+  }
+  h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; }
+  .lede { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  h3 { font-size: 15px; margin: 0; font-weight: 600; }
+  .sub { border-top: 1px solid var(--edge-soft); margin-top: 18px; padding-top: 16px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
+
+  /* Control banner */
+  #ctl { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; border-color: var(--edge); }
+  #ctl .msg { flex: 1; min-width: 200px; padding-left: 6px; }
+  #ctl .msg strong { display: block; font-size: 17px; }
+  #ctl .msg span { color: var(--muted); font-size: 14px; }
+  #ctl::before {
+    content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 4px; border-radius: 0 4px 4px 0;
+    background: var(--muted);
+  }
+  #ctl.me::before { background: var(--live); }
+  #ctl.other::before { background: var(--stop); }
+
+  /* Buttons: every one shows that it was pressed. */
   button {
-    font: inherit; color: var(--text); background: #2a2f38; border: 1px solid var(--line);
-    border-radius: 8px; padding: 12px 14px; cursor: pointer; touch-action: manipulation;
+    font: inherit; font-weight: 600; color: var(--text); cursor: pointer;
+    background: var(--glass-strong); border: 1px solid var(--edge); border-radius: var(--radius-md);
+    padding: 12px 16px; min-height: 48px; touch-action: manipulation;
+    transition: transform .12s var(--ease), background-color .2s, border-color .2s, box-shadow .2s;
+    -webkit-tap-highlight-color: transparent;
   }
-  button:active { transform: translateY(1px); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
-  input[type=range] { width: 100%; accent-color: var(--accent); height: 32px; }
-  .motor { margin-bottom: 14px; }
-  .motor .label { display: flex; justify-content: space-between; margin-bottom: 2px; }
-  .motor .val { font-variant-numeric: tabular-nums; color: var(--muted); }
-  .weight { font-size: 40px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .weight small { font-size: 18px; color: var(--muted); font-weight: 400; }
-  .cells { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 4px; }
-  details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
-  details[open] summary { margin-bottom: 12px; }
-  .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
-  .valve { padding: 12px 0; border-top: 1px solid var(--line); }
-  .valve:first-child { border-top: 0; padding-top: 0; }
-  .valve .head { display: flex; justify-content: space-between; margin-bottom: 2px; }
-  .valve .val { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; }
+  @media (hover: hover) { button:hover { background: rgba(255, 255, 255, .16); } }
+  button:active, button.held { transform: scale(.96); box-shadow: inset 0 2px 10px rgba(0, 0, 0, .35); }
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+    outline: 3px solid var(--focus); outline-offset: 2px;
+  }
+  button.primary {
+    color: var(--on-grain); border-color: transparent;
+    background: linear-gradient(180deg, var(--grain), var(--grain-deep));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 0 8px 20px -10px rgba(244, 183, 64, .8);
+  }
+  @media (hover: hover) { button.primary:hover { background: linear-gradient(180deg, #ffc65a, var(--grain)); } }
+  button.primary:active { box-shadow: inset 0 3px 10px rgba(0, 0, 0, .3); }
+  button[aria-pressed="true"] {
+    background: rgba(244, 183, 64, .2); border-color: var(--grain); color: #ffe2a6;
+  }
+  button.running, button.running[aria-pressed="true"] {
+    color: #062a22; border-color: transparent;
+    background: linear-gradient(180deg, #62e6c8, var(--live));
+  }
+  button.quiet { background: rgba(244, 183, 64, .08); border-color: rgba(244, 183, 64, .55); color: #ffd27a; }
+  @media (hover: hover) { button.quiet:hover { background: rgba(244, 183, 64, .16); } }
+  button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+  .row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+  .row > * { flex: 1 1 0; min-width: 0; }
+  .row > .fit, .readout > .fit { flex: 0 0 auto; }
+  .seg { display: flex; gap: 6px; padding: 5px; border-radius: var(--radius-md); background: rgba(0, 0, 0, .22); border: 1px solid var(--edge-soft); }
+  .seg button { flex: 1; min-height: 42px; padding: 8px 10px; background: transparent; border-color: transparent; }
+  .seg button[aria-pressed="true"] { background: linear-gradient(180deg, var(--grain), var(--grain-deep)); border-color: transparent; color: var(--on-grain); }
+
+  /* Sliders */
+  .slider { margin-top: 14px; }
+  .slider .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .slider label { font-size: 14px; color: var(--muted); }
+  .slider output { font-variant-numeric: tabular-nums; font-weight: 700; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 36px; background: transparent; margin: 0;
+    --fill-from: 0%; --fill-to: 0%; --track: #0f1d24;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 10px; border-radius: 999px; border: 1px solid var(--edge-soft);
+    background: linear-gradient(90deg,
+      var(--track) var(--fill-from), var(--grain) var(--fill-from),
+      var(--grain) var(--fill-to), var(--track) var(--fill-to));
+  }
+  input[type=range]::-moz-range-track {
+    height: 10px; border-radius: 999px; border: 1px solid var(--edge-soft);
+    background: linear-gradient(90deg,
+      var(--track) var(--fill-from), var(--grain) var(--fill-from),
+      var(--grain) var(--fill-to), var(--track) var(--fill-to));
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 28px; height: 28px; margin-top: -10px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff, #dfe8ea); border: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .45); transition: transform .12s var(--ease);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 28px; height: 28px; border-radius: 50%; border: 0;
+    background: radial-gradient(circle at 35% 30%, #fff, #dfe8ea); box-shadow: 0 2px 8px rgba(0, 0, 0, .45);
+  }
+  input[type=range]:active::-webkit-slider-thumb { transform: scale(1.12); }
+  .scale { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  input[type=number], select {
+    font: inherit; color: var(--text); background: rgba(0, 0, 0, .28); border: 1px solid var(--edge);
+    border-radius: var(--radius-sm); padding: 11px 12px; width: 100%; min-width: 0; min-height: 48px;
+  }
   select {
-    font: inherit; color: var(--text); background: #111318; border: 1px solid var(--line);
-    border-radius: 8px; padding: 10px; width: 100%; min-width: 0;
+    appearance: none; -webkit-appearance: none; padding-right: 34px;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 18px) 21px, calc(100% - 13px) 21px; background-size: 5px 5px; background-repeat: no-repeat;
   }
-  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
-  button.on { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
-  input[type=number] {
-    font: inherit; color: var(--text); background: #111318; border: 1px solid var(--line);
-    border-radius: 8px; padding: 10px; width: 100%; min-width: 0;
+  select option { background: #172a33; color: var(--text); }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
+
+  /* Load */
+  .readout { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .weight { font-size: 56px; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; transition: opacity .3s; }
+  .weight small { font-size: 20px; font-weight: 600; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
+  .cells { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+  .cells:empty { display: none; }
+  .cell { background: rgba(0, 0, 0, .2); border-radius: var(--radius-sm); padding: 8px 10px; }
+  .cell span { display: block; font-size: 12px; color: var(--muted); }
+  .cell b { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; }
+
+  .valve { padding: 14px 0; border-top: 1px solid var(--edge-soft); }
+  .valve:first-child { border-top: 0; padding-top: 4px; }
+  .valve .head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .valve .state { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .valve .slider { margin-top: 6px; }
+
+  /* The dose meter fills like liquid. */
+  .dose { margin: 4px 0 14px; }
+  .dose[hidden] { display: none; }
+  .dose .line { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; margin-bottom: 6px; }
+  .dose .line span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tank { position: relative; height: 22px; border-radius: 999px; overflow: hidden; background: rgba(0, 0, 0, .3); border: 1px solid var(--edge-soft); }
+  .tank .fill {
+    position: absolute; inset: 0 auto 0 0; width: 0%;
+    background: linear-gradient(90deg, var(--grain-deep), var(--grain));
+    transition: width .5s var(--ease);
   }
-  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 320px; margin: 0 auto; }
-  .pad button { padding: 18px 0; font-size: 22px; user-select: none; -webkit-user-select: none; touch-action: none; }
-  .pad button.held { background: var(--accent); border-color: var(--accent); }
+  .tank .fill::after {
+    content: ""; position: absolute; right: -10px; top: -6px; bottom: -6px; width: 20px; border-radius: 50%;
+    background: var(--grain); animation: slosh 1.6s ease-in-out infinite;
+  }
+  .dose.done .fill { background: linear-gradient(90deg, #2bb497, var(--live)); }
+  .dose.done .fill::after { background: var(--live); animation: none; }
+  .dose.bad .fill { background: linear-gradient(90deg, var(--stop-deep), var(--stop)); }
+  .dose.bad .fill::after { display: none; }
+  @keyframes slosh { 50% { transform: scaleX(.6) translateX(-3px); } }
+
+  /* Mix */
+  .motor + .motor { margin-top: 8px; }
+  .presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  @media (max-width: 420px) { .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .presets button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 6px; }
+  .presets button small { font-weight: 500; font-size: 12px; color: var(--muted); }
+  .presets button[aria-pressed="true"] small { color: #ffe2a6; }
+  .running-note { color: var(--live); font-size: 14px; font-weight: 600; margin: 10px 0 0; min-height: 1.45em; }
+
+  /* Cameras */
+  .span-2 { grid-column: 1 / -1; }
+  .cam-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .cams { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 640px) { .cams { grid-template-columns: 1fr 1fr; } }
+  .cam { margin: 0; }
+  .cam .frame {
+    position: relative; aspect-ratio: 4 / 3; border-radius: var(--radius-md); overflow: hidden;
+    background: radial-gradient(circle at 50% 40%, #1a2f38, #0b161c); border: 1px solid var(--edge-soft);
+  }
+  .cam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cam .frame .msg {
+    position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px;
+    color: var(--muted); font-size: 14px;
+  }
+  .cam.live .frame .msg { display: none; }
+  .cam figcaption { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 14px; }
+  .cam figcaption span:last-child { color: var(--muted); }
+  .cam.live figcaption span:last-child { color: var(--live); }
+
+  /* Drive */
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 300px; margin: 0 auto; }
+  .pad button {
+    aspect-ratio: 1; font-size: 26px; padding: 0; user-select: none; -webkit-user-select: none; touch-action: none;
+    border-radius: 18px;
+  }
+  .pad button.held { background: linear-gradient(180deg, var(--grain), var(--grain-deep)); color: var(--on-grain); border-color: transparent; }
+  .pad .halt { color: var(--stop); font-size: 22px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 15px; padding: 6px 0; }
+  details[open] summary { margin-bottom: 8px; }
+
+  /* View only: dimmed and inert (no clicks, no keyboard focus). */
+  body.viewer [data-needs-control] { opacity: .42; filter: saturate(.6); }
+
+  /* STOP ALL floats so it is always one tap away. */
+  .stopbar {
+    position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    width: min(520px, calc(100% - 32px)); z-index: 10;
+  }
+  #stop {
+    width: 100%; min-height: 64px; font-size: 19px; font-weight: 800; color: #fff; border: 0; border-radius: 20px;
+    background: linear-gradient(180deg, var(--stop), var(--stop-deep));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 14px 34px -10px rgba(255, 70, 80, .75);
+  }
+  #stop small { display: block; font-size: 12px; font-weight: 600; opacity: .85; }
+  @media (pointer: coarse) { #stop .key { display: none; } }
+  #stop:active { transform: scale(.97); }
+
   #toast {
-    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
-    background: #000c; padding: 10px 16px; border-radius: 8px; font-size: 14px;
-    opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw;
+    position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translate(-50%, 8px);
+    background: rgba(12, 22, 28, .92); border: 1px solid var(--edge); color: var(--text);
+    padding: 12px 18px; border-radius: 14px; font-size: 15px; max-width: min(90vw, 520px); z-index: 11;
+    opacity: 0; transition: opacity .2s, transform .2s var(--ease); pointer-events: none;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   }
-  #toast.show { opacity: 1; }
-  #ctl { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-left: 4px solid var(--muted); }
-  #ctl.me { border-left-color: var(--ok); }
-  #ctl.other { border-left-color: var(--danger); }
-  #ctl .msg { flex: 1; min-width: 180px; }
-  #ctl .msg small { display: block; color: var(--muted); font-size: 13px; }
-  #ctl button { flex: none; }
-  body.viewer .needs-control { opacity: .4; pointer-events: none; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.error { border-color: rgba(255, 93, 93, .7); }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .panel, .pill { background: rgba(22, 38, 48, .92); }
+  }
 </style>
 </head>
 <body class="viewer">
-<header>
-  <h1>Mixer control</h1>
-  <div class="status"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
-</header>
+<div class="liquid" aria-hidden="true"><span class="a"></span><span class="b"></span><span class="c"></span></div>
 
-<section id="ctl">
-  <div class="msg"><span id="ctlMsg">Checking control…</span><small id="ctlSub"></small></div>
-  <button id="ctlBtn" class="primary" style="display:none"></button>
-</section>
+<div class="wrap">
+  <header>
+    <h1>Mixer control<small>Load, mix and unload the feed</small></h1>
+    <div class="pill" role="status" aria-live="polite"><span class="dot" id="dot"></span><span id="conn">Connecting…</span></div>
+  </header>
 
-<section>
-  <h2>Load cells</h2>
-  <div class="weight"><span id="weight">—</span> <small>kg</small></div>
-  <div class="cells" id="cells"></div>
-  <div class="row needs-control" style="margin-top: 12px">
-    <button id="tare">Tare (zero)</button>
-  </div>
-</section>
+  <section class="panel" id="ctl" aria-live="polite">
+    <div class="msg"><strong id="ctlMsg">Checking who is in control…</strong><span id="ctlSub"></span></div>
+    <button id="ctlBtn" class="primary fit" hidden></button>
+  </section>
 
-<section>
-  <h2>Valves (feeder)</h2>
-  <div id="valves" class="needs-control"></div>
-  <div id="doseStatus" class="hint" style="margin: 0 0 10px"></div>
-  <div class="row">
-    <button id="closeValves">Close all valves</button>
-    <button id="cancelDose">Cancel dose</button>
-  </div>
-  <p class="hint">Dose: opens the valve and closes it once that much weight has been added (needs live load cell data, aborts after 2 min).</p>
-</section>
+  <div class="grid">
+    <!-- Cameras -->
+    <section class="panel span-2" aria-labelledby="h-cams">
+      <div class="cam-head">
+        <div>
+          <h2 id="h-cams">Cameras</h2>
+          <p class="lede">Live view from both webcams. Watching needs no control.</p>
+        </div>
+        <button id="camToggle" class="fit" aria-pressed="true">Turn cameras off</button>
+      </div>
+      <div class="cams" id="cams"></div>
+    </section>
 
-<section>
-  <h2>Motors</h2>
-  <div id="motors" class="needs-control"></div>
-  <div class="row">
-    <button class="danger" id="stop">STOP ALL (space)</button>
-  </div>
-  <p class="hint">Stops automatically if this page closes or loses connection. STOP ALL works from any device, even without control.</p>
-</section>
+    <!-- Load -->
+    <section class="panel" aria-labelledby="h-load">
+      <h2 id="h-load">Load</h2>
+      <p class="lede">Weight in the container, and the three silo valves.</p>
+      <div class="readout">
+        <div class="weight"><span id="weight">—</span><small>kg</small></div>
+        <button id="tare" class="fit" data-needs-control>Zero the scale</button>
+      </div>
+      <div class="cells" id="cells" aria-label="Weight per load cell"></div>
 
-<section class="needs-control">
-  <h2>Shake (unjam feed)</h2>
-  <div class="row">
-    <button data-preset="40,40">Vibrate</button>
-    <button data-preset="150,150">Shake</button>
-    <button data-preset="400,400">Rock</button>
-    <button data-preset="400,120">Push out</button>
-  </div>
-  <div class="row" style="margin-top: 12px">
-    <span style="flex:none; width: 110px" id="shSpeedVal">100%</span>
-    <input type="range" id="shSpeed" min="0.1" max="1" step="0.05" value="1">
-  </div>
-  <div class="row">
-    <label class="field">Forward ms<input type="number" id="shFwd" min="0" max="10000" step="10" value="150" inputmode="numeric"></label>
-    <label class="field">Reverse ms<input type="number" id="shRev" min="0" max="10000" step="10" value="150" inputmode="numeric"></label>
-  </div>
-  <div class="row" id="shMotors" style="margin-top: 8px"></div>
-  <div class="row" style="margin-top: 12px">
-    <button class="primary" id="shBtn">Start shaking</button>
-  </div>
-  <p class="hint">Forward at the set speed for "Forward ms", then instantly reverse for "Reverse ms", no ramp, repeated. Short times vibrate, unequal times push the feed one way. Changes apply while it runs. Moving a motor slider or STOP ALL ends it.</p>
-</section>
+      <div class="sub">
+        <div class="dose" id="dose" hidden role="status" aria-live="polite">
+          <div class="line"><span id="doseTitle"></span><span id="doseNums"></span></div>
+          <div class="tank"><div class="fill" id="doseFill"></div></div>
+        </div>
+        <div id="valves" data-needs-control></div>
+        <div class="row" style="margin-top: 6px">
+          <button id="closeValves">Close all valves</button>
+          <button id="cancelDose">Cancel dose</button>
+        </div>
+        <p class="hint">Dose opens a valve and closes it once that much weight is added. It needs live scale data and gives up after 2 minutes. Closing and cancelling work from any device.</p>
+      </div>
+    </section>
 
-<section class="needs-control">
-  <h2>Drive base</h2>
-  <div class="pad" id="pad">
-    <button data-l="1" data-a="1">↖</button><button data-l="1" data-a="0">▲</button><button data-l="1" data-a="-1">↗</button>
-    <button data-l="0" data-a="1">◀</button><button class="danger" data-l="0" data-a="0">■</button><button data-l="0" data-a="-1">▶</button>
-    <button data-l="-1" data-a="-1">↙</button><button data-l="-1" data-a="0">▼</button><button data-l="-1" data-a="1">↘</button>
-  </div>
-  <div class="row" style="margin-top: 12px">
-    <span style="flex:none; width: 110px" id="linVal">0.15 m/s</span>
-    <input type="range" id="lin" min="0.05" max="0.3" step="0.05" value="0.15">
-  </div>
-  <div class="row">
-    <span style="flex:none; width: 110px" id="angVal">0.8 rad/s</span>
-    <input type="range" id="ang" min="0.2" max="1.5" step="0.1" value="0.8">
-  </div>
-  <p class="hint">Hold a button or W A S D / arrow keys to drive; release to stop. Reversing is limited by the Create 3 backup limit.</p>
-</section>
+    <!-- Mix -->
+    <section class="panel" aria-labelledby="h-mix">
+      <h2 id="h-mix">Mix</h2>
+      <p class="lede">Run the mixer motors, or shake them to free stuck feed.</p>
+      <div id="motors" data-needs-control></div>
 
-<section class="needs-control">
-  <h2>Door</h2>
-  <div class="row">
-    <button class="primary" id="open">Open</button>
-    <button class="primary" id="close">Close</button>
-  </div>
-  <input type="range" id="door" min="0" max="1" step="0.01" value="0" style="margin-top:12px">
-  <div class="row" style="justify-content: space-between; color: var(--muted); font-size: 13px">
-    <span style="flex:none">open 0.0</span><span id="doorVal" style="flex:none">—</span><span style="flex:none; text-align:right">1.0 closed</span>
-  </div>
-  <details style="margin-top: 14px">
-    <summary>Calibrate door ends</summary>
-    <div class="row">
-      <span style="flex:none; width: 90px" id="usVal">1500 µs</span>
-      <input type="range" id="us" min="500" max="2500" step="10" value="1500">
-    </div>
-    <div class="row" style="margin-top: 8px">
-      <button id="usMinus">−10</button><button id="usPlus">+10</button>
-    </div>
-    <div class="row" style="margin-top: 8px">
-      <button id="saveOpen">Save as OPEN</button>
-      <button id="saveClosed">Save as CLOSED</button>
-    </div>
-    <p class="hint">Move the slider (the servo follows) until the door is fully open, save it, then do the same for closed.</p>
-  </details>
-</section>
+      <div class="sub" data-needs-control>
+        <h3>Shake to unjam</h3>
+        <p class="hint" style="margin: 4px 0 12px">Full speed one way, then instantly the other, with no ramp in between.</p>
+        <div class="presets" role="group" aria-label="Shake presets">
+          <button data-preset="40,40" aria-pressed="false">Vibrate<small>40 / 40 ms</small></button>
+          <button data-preset="150,150" aria-pressed="true">Shake<small>150 / 150 ms</small></button>
+          <button data-preset="400,400" aria-pressed="false">Rock<small>400 / 400 ms</small></button>
+          <button data-preset="400,120" aria-pressed="false">Push out<small>400 / 120 ms</small></button>
+        </div>
+        <div class="slider">
+          <div class="top"><label for="shSpeed">Speed</label><output id="shSpeedVal" for="shSpeed">100%</output></div>
+          <input type="range" id="shSpeed" min="0.1" max="1" step="0.05" value="1">
+        </div>
+        <div class="row" style="margin-top: 10px">
+          <label class="field">Forward, ms<input type="number" id="shFwd" min="0" max="10000" step="10" value="150" inputmode="numeric"></label>
+          <label class="field">Reverse, ms<input type="number" id="shRev" min="0" max="10000" step="10" value="150" inputmode="numeric"></label>
+        </div>
+        <div class="row" id="shMotors" style="margin-top: 10px"></div>
+        <div class="row" style="margin-top: 14px">
+          <button class="primary" id="shBtn" aria-pressed="false">Start shaking</button>
+        </div>
+        <p class="running-note" id="shNote" aria-live="polite"></p>
+        <p class="hint" style="margin-top: 2px">Unequal times push the feed one way. Changes apply while it runs. Moving a motor slider or STOP ALL ends it.</p>
+      </div>
+    </section>
 
-<div id="toast"></div>
+    <!-- Unload -->
+    <section class="panel" aria-labelledby="h-unload" data-needs-control>
+      <h2 id="h-unload">Unload</h2>
+      <p class="lede">The side door the feed falls out of.</p>
+      <div class="seg" role="group" aria-label="Door">
+        <button id="open" aria-pressed="false">Open door</button>
+        <button id="close" aria-pressed="false">Close door</button>
+      </div>
+      <div class="slider">
+        <div class="top"><label for="door">Door position</label><output id="doorVal" for="door">—</output></div>
+        <input type="range" id="door" min="0" max="1" step="0.01" value="0">
+        <div class="scale" aria-hidden="true"><span>Open</span><span>Closed</span></div>
+      </div>
+      <details class="sub">
+        <summary>Set the door's open and closed ends</summary>
+        <div class="slider">
+          <div class="top"><label for="us">Servo pulse</label><output id="usVal" for="us">1500 µs</output></div>
+          <input type="range" id="us" min="500" max="2500" step="10" value="1500">
+        </div>
+        <div class="row" style="margin-top: 8px">
+          <button id="usMinus" aria-label="Pulse minus 10 microseconds">−10 µs</button>
+          <button id="usPlus" aria-label="Pulse plus 10 microseconds">+10 µs</button>
+        </div>
+        <div class="row" style="margin-top: 10px">
+          <button id="saveOpen">Save as open</button>
+          <button id="saveClosed">Save as closed</button>
+        </div>
+        <p class="hint">The servo follows the slider. Move it until the door is fully open and save, then do the same for closed.</p>
+      </details>
+    </section>
+
+    <!-- Drive -->
+    <section class="panel" aria-labelledby="h-drive" data-needs-control>
+      <h2 id="h-drive">Drive</h2>
+      <p class="lede">Hold a button, or W A S D / the arrow keys. Let go to stop.</p>
+      <div class="pad" id="pad" role="group" aria-label="Drive the base">
+        <button data-l="1" data-a="1" aria-label="Forward left">↖</button>
+        <button data-l="1" data-a="0" aria-label="Forward">▲</button>
+        <button data-l="1" data-a="-1" aria-label="Forward right">↗</button>
+        <button data-l="0" data-a="1" aria-label="Turn left">◀</button>
+        <button data-l="0" data-a="0" class="halt" aria-label="Stop the base">■</button>
+        <button data-l="0" data-a="-1" aria-label="Turn right">▶</button>
+        <button data-l="-1" data-a="-1" aria-label="Back left">↙</button>
+        <button data-l="-1" data-a="0" aria-label="Back">▼</button>
+        <button data-l="-1" data-a="1" aria-label="Back right">↘</button>
+      </div>
+      <div class="slider">
+        <div class="top"><label for="lin">Drive speed</label><output id="linVal" for="lin"></output></div>
+        <input type="range" id="lin" min="0.05" max="0.3" step="0.05" value="0.15">
+      </div>
+      <div class="slider">
+        <div class="top"><label for="ang">Turn speed</label><output id="angVal" for="ang"></output></div>
+        <input type="range" id="ang" min="0.2" max="1.5" step="0.1" value="0.8">
+      </div>
+      <p class="hint">Reversing is limited by the Create 3's own backup limit.</p>
+    </section>
+  </div>
+</div>
+
+<div class="stopbar">
+  <button id="stop" aria-keyshortcuts="Escape">STOP ALL<small>Motors, base and valves<span class="key">. Shortcut: Esc</span></small></button>
+</div>
+<div id="toast" role="status" aria-live="assertive"></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -190,24 +445,26 @@ let speeds = [];
 
 // One id per tab. Only the tab that holds control may command the robot.
 const CLIENT_ID = (() => {
-  let id = sessionStorage.getItem('clientId');
+  let id = null;
+  try { id = sessionStorage.getItem('clientId'); } catch (e) { /* private mode */ }
   if (!id) {
     id = (window.crypto && crypto.randomUUID)
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2) + Date.now().toString(36);
-    sessionStorage.setItem('clientId', id);
+    try { sessionStorage.setItem('clientId', id); } catch (e) { /* keep it in memory */ }
   }
   return id;
 })();
 const HEADERS = {'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID};
 let haveControl = false;
 
-function toast(msg) {
+function toast(msg, isError = false) {
   const t = $('toast');
   t.textContent = msg;
+  t.classList.toggle('error', isError);
   t.classList.add('show');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
+  toast.timer = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
 async function post(path, body) {
@@ -225,17 +482,29 @@ async function post(path, body) {
   return res.json();
 }
 
-async function action(path, body) {
+async function action(path, body, okText) {
   try {
     const r = await post(path, body);
-    if (r.message !== undefined) toast(r.message || (r.ok ? 'OK' : 'Failed'));
+    if (r.message !== undefined) toast(r.message || (r.ok ? 'Done' : 'Failed'), !r.ok);
+    else if (okText) toast(okText);
     return r;
   } catch (e) {
-    toast(String(e));
+    toast(String(e.message || e), true);
   }
 }
 
+// Range fill: from the minimum, or from the centre for bipolar sliders.
+function paintRange(el) {
+  const min = +el.min, max = +el.max, v = +el.value;
+  const pos = ((v - min) / (max - min)) * 100;
+  const zero = el.dataset.bipolar ? ((0 - min) / (max - min)) * 100 : 0;
+  el.style.setProperty('--fill-from', `${Math.min(pos, zero)}%`);
+  el.style.setProperty('--fill-to', `${Math.max(pos, zero)}%`);
+}
+document.addEventListener('input', (e) => { if (e.target.type === 'range') paintRange(e.target); });
+
 // ---- motors ----
+const pct = (v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`;
 function buildMotors(n) {
   numMotors = n;
   speeds = new Array(n).fill(0);
@@ -244,30 +513,45 @@ function buildMotors(n) {
     const d = document.createElement('div');
     d.className = 'motor';
     d.innerHTML = `
-      <div class="label"><span>Motor ${i}</span><span class="val" id="mv${i}">0.00</span></div>
-      <input type="range" id="m${i}" min="-1" max="1" step="0.05" value="0">
-      <div class="row"><button data-m="${i}" data-v="-0.3">◀ 30%</button><button data-m="${i}" data-v="0">0</button><button data-m="${i}" data-v="0.3">30% ▶</button></div>`;
+      <div class="slider">
+        <div class="top"><label for="m${i}">Motor ${i + 1}</label><output id="mv${i}" for="m${i}">0%</output></div>
+        <input type="range" id="m${i}" min="-1" max="1" step="0.05" value="0" data-bipolar="1">
+        <div class="scale" aria-hidden="true"><span>Reverse</span><span>Stop</span><span>Forward</span></div>
+      </div>
+      <div class="row" style="margin-top: 6px">
+        <button data-m="${i}" data-v="-0.3">Reverse 30%</button>
+        <button data-m="${i}" data-v="0">Stop</button>
+        <button data-m="${i}" data-v="0.3">Forward 30%</button>
+      </div>`;
     $('motors').appendChild(d);
     $(`m${i}`).addEventListener('input', (e) => setSpeed(i, parseFloat(e.target.value)));
+    paintRange($(`m${i}`));
   }
   $('motors').querySelectorAll('button').forEach((b) =>
     b.addEventListener('click', () => setSpeed(+b.dataset.m, parseFloat(b.dataset.v))));
   buildShakeMotors(n);
 }
 
+function showSpeed(i, v) {
+  $(`m${i}`).value = v;
+  $(`mv${i}`).textContent = pct(v);
+  paintRange($(`m${i}`));
+}
+
 function setSpeed(i, v) {
   if (shaking) stopShake();
   speeds[i] = v;
-  $(`m${i}`).value = v;
-  $(`mv${i}`).textContent = v.toFixed(2);
+  showSpeed(i, v);
   sendMotors();
 }
 
 function stopAll() {
   setShaking(false);
-  for (let i = 0; i < numMotors; i++) setSpeed(i, 0);
+  for (let i = 0; i < numMotors; i++) { speeds[i] = 0; showSpeed(i, 0); }
   setDrive(0, 0);
-  post('/api/stop').catch(() => toast('STOP failed: server unreachable'));  // works without control
+  post('/api/stop')  // works without control
+    .then(() => toast('Stopped: motors, base and valves'))
+    .catch(() => toast('STOP failed: the panel server is unreachable', true));
 }
 
 function sendMotors() {
@@ -277,7 +561,7 @@ function sendMotors() {
 
 $('stop').addEventListener('click', stopAll);
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); stopAll(); }
+  if (e.code === 'Escape') { e.preventDefault(); stopAll(); }
 });
 setInterval(sendMotors, 300);  // heartbeat: the server stops the motors without it
 
@@ -288,8 +572,8 @@ function buildShakeMotors(n) {
   for (let i = 0; i < n; i++) {
     const l = document.createElement('label');
     l.className = 'field';
-    l.innerHTML = `Motor ${i}<select id="shm${i}">
-      <option value="1">on</option><option value="-1">on, opposite</option><option value="0">off</option></select>`;
+    l.innerHTML = `Motor ${i + 1}<select id="shm${i}">
+      <option value="1">Shake</option><option value="-1">Shake, opposite way</option><option value="0">Off</option></select>`;
     $('shMotors').appendChild(l);
     $(`shm${i}`).addEventListener('change', sendShake);
   }
@@ -304,20 +588,18 @@ function shakeParams() {
 function sendShake() {
   if (!shaking || !haveControl) return;
   const p = shakeParams();
-  if (p.fwd_ms + p.rev_ms < 20) { toast('Forward + reverse must be at least 20 ms'); return; }
-  post('/api/shake', p).catch((e) => toast(String(e)));
+  if (p.fwd_ms + p.rev_ms < 20) { toast('Forward plus reverse must be at least 20 ms', true); return; }
+  post('/api/shake', p).catch((e) => toast(String(e.message || e), true));
 }
 function setShaking(on) {
   shaking = on;
-  $('shBtn').textContent = on ? 'Stop shaking' : 'Start shaking';
-  $('shBtn').className = on ? 'on' : 'primary';
+  const b = $('shBtn');
+  b.textContent = on ? 'Stop shaking' : 'Start shaking';
+  b.className = on ? 'running' : 'primary';
+  b.setAttribute('aria-pressed', String(on));
 }
 function startShake() {
-  for (let i = 0; i < numMotors; i++) {
-    speeds[i] = 0;
-    $(`m${i}`).value = 0;
-    $(`mv${i}`).textContent = '0.00';
-  }
+  for (let i = 0; i < numMotors; i++) { speeds[i] = 0; showSpeed(i, 0); }
   setShaking(true);
   sendShake();
 }
@@ -325,20 +607,36 @@ function stopShake() {
   setShaking(false);
   sendMotors();  // plain zero speeds end the pattern on the server
 }
+function markPreset() {
+  const key = `${$('shFwd').value},${$('shRev').value}`;
+  document.querySelectorAll('button[data-preset]').forEach((b) =>
+    b.setAttribute('aria-pressed', String(b.dataset.preset === key)));
+}
 $('shBtn').addEventListener('click', () => (shaking ? stopShake() : startShake()));
 document.querySelectorAll('button[data-preset]').forEach((b) =>
   b.addEventListener('click', () => {
     const [f, r] = b.dataset.preset.split(',');
     $('shFwd').value = f;
     $('shRev').value = r;
+    markPreset();
     sendShake();
   }));
 $('shSpeed').addEventListener('input', () => {
   $('shSpeedVal').textContent = `${Math.round(parseFloat($('shSpeed').value) * 100)}%`;
   sendShake();
 });
-for (const id of ['shFwd', 'shRev']) $(id).addEventListener('change', sendShake);
+for (const id of ['shFwd', 'shRev']) {
+  $(id).addEventListener('input', markPreset);
+  $(id).addEventListener('change', sendShake);
+}
+paintRange($('shSpeed'));
 setInterval(sendShake, 300);  // heartbeat: the server stops the pattern without it
+
+function showShake(s) {
+  const sh = s.shake;
+  $('shNote').textContent = sh
+    ? `Shaking: ${Math.round(sh.fwd_ms)} ms forward, ${Math.round(sh.rev_ms)} ms reverse` : '';
+}
 
 // ---- drive base ----
 let drive = {l: 0, a: 0};
@@ -355,15 +653,27 @@ function setDrive(l, a) {
     b.classList.toggle('held', (l !== 0 || a !== 0) && +b.dataset.l === l && +b.dataset.a === a));
   sendDrive();
 }
-$('lin').addEventListener('input', () => { $('linVal').textContent = `${speedLin().toFixed(2)} m/s`; sendDrive(); });
-$('ang').addEventListener('input', () => { $('angVal').textContent = `${speedAng().toFixed(1)} rad/s`; sendDrive(); });
-$('linVal').textContent = `${speedLin().toFixed(2)} m/s`;
-$('angVal').textContent = `${speedAng().toFixed(1)} rad/s`;
+function showDriveSpeeds() {
+  $('linVal').textContent = `${speedLin().toFixed(2)} m/s`;
+  $('angVal').textContent = `${speedAng().toFixed(1)} rad/s`;
+}
+$('lin').addEventListener('input', () => { showDriveSpeeds(); sendDrive(); });
+$('ang').addEventListener('input', () => { showDriveSpeeds(); sendDrive(); });
+showDriveSpeeds();
+paintRange($('lin'));
+paintRange($('ang'));
 $('pad').querySelectorAll('button').forEach((b) => {
   b.addEventListener('pointerdown', (e) => { e.preventDefault(); b.setPointerCapture(e.pointerId); setDrive(+b.dataset.l, +b.dataset.a); });
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
     b.addEventListener(ev, () => { if (drive.l || drive.a) setDrive(0, 0); });
   }
+  // Keyboard users: Enter or Space on a pad button drives while it is held.
+  b.addEventListener('keydown', (e) => {
+    if ((e.code === 'Enter' || e.code === 'Space') && !e.repeat) { e.preventDefault(); setDrive(+b.dataset.l, +b.dataset.a); }
+  });
+  b.addEventListener('keyup', (e) => {
+    if (e.code === 'Enter' || e.code === 'Space') setDrive(0, 0);
+  });
 });
 const KEYS = {
   KeyW: [1, 0], ArrowUp: [1, 0], KeyS: [-1, 0], ArrowDown: [-1, 0],
@@ -375,9 +685,9 @@ function keyDrive() {
   for (const k of heldKeys) { l += KEYS[k][0]; a += KEYS[k][1]; }
   setDrive(Math.sign(l), Math.sign(a));
 }
+const typing = (el) => el.closest && el.closest('input, select, textarea');
 document.addEventListener('keydown', (e) => {
-  if (!haveControl) return;
-  if (!(e.code in KEYS) || e.target.tagName === 'INPUT' && e.target.type === 'number') return;
+  if (!haveControl || !(e.code in KEYS) || typing(e.target)) return;
   e.preventDefault();
   if (!heldKeys.has(e.code)) { heldKeys.add(e.code); keyDrive(); }
 });
@@ -388,31 +698,38 @@ window.addEventListener('blur', () => { heldKeys.clear(); setDrive(0, 0); });
 setInterval(sendDrive, 200);  // heartbeat: the server stops the base without it
 
 // ---- door ----
-function setDoor(p) {
+function showDoor(p) {
   $('door').value = p;
-  $('doorVal').textContent = p.toFixed(2);
+  $('doorVal').textContent = p <= 0.005 ? 'Open' : p >= 0.995 ? 'Closed' : `${Math.round(p * 100)}% closed`;
+  paintRange($('door'));
+  $('open').setAttribute('aria-pressed', String(p <= 0.005));
+  $('close').setAttribute('aria-pressed', String(p >= 0.995));
+}
+function setDoor(p) {
+  showDoor(p);
   action('/api/door', {position: p});
 }
 $('open').addEventListener('click', () => setDoor(0));
 $('close').addEventListener('click', () => setDoor(1));
-$('door').addEventListener('input', (e) => {
-  $('doorVal').textContent = parseFloat(e.target.value).toFixed(2);
-});
+$('door').addEventListener('input', (e) => showDoor(parseFloat(e.target.value)));
 $('door').addEventListener('change', (e) => setDoor(parseFloat(e.target.value)));
+paintRange($('door'));
 
 let usTimer;
 function setUs(us) {
   us = Math.max(500, Math.min(2500, us));
   $('us').value = us;
   $('usVal').textContent = `${us} µs`;
+  paintRange($('us'));
   clearTimeout(usTimer);
   usTimer = setTimeout(() => action('/api/door/raw_us', {us}), 80);
 }
-$('us').addEventListener('input', (e) => setUs(parseInt(e.target.value)));
-$('usMinus').addEventListener('click', () => setUs(parseInt($('us').value) - 10));
-$('usPlus').addEventListener('click', () => setUs(parseInt($('us').value) + 10));
+$('us').addEventListener('input', (e) => setUs(parseInt(e.target.value, 10)));
+$('usMinus').addEventListener('click', () => setUs(parseInt($('us').value, 10) - 10));
+$('usPlus').addEventListener('click', () => setUs(parseInt($('us').value, 10) + 10));
 $('saveOpen').addEventListener('click', () => action('/api/door/save_open'));
 $('saveClosed').addEventListener('click', () => action('/api/door/save_closed'));
+paintRange($('us'));
 
 // ---- load cells ----
 $('tare').addEventListener('click', () => action('/api/tare'));
@@ -425,18 +742,23 @@ function buildValves() {
     const d = document.createElement('div');
     d.className = 'valve';
     d.innerHTML = `
-      <div class="head"><span>Valve ${v}</span><span class="val" id="vv${v}">—</span></div>
-      <input type="range" id="v${v}" min="0" max="100" step="5" value="0">
+      <div class="head"><h3>Silo ${v}</h3><span class="state" id="vv${v}">Not commanded yet</span></div>
+      <div class="slider">
+        <label class="sr-only" for="v${v}">Silo ${v} valve opening</label>
+        <input type="range" id="v${v}" min="0" max="100" step="5" value="0">
+      </div>
       <div class="row">
         <button data-v="${v}" data-p="0">Close</button>
-        <button data-v="${v}" data-p="100">Open</button>
+        <button data-v="${v}" data-p="100">Open fully</button>
       </div>
       <div class="row" style="margin-top: 8px">
+        <label class="sr-only" for="dk${v}">Kilograms to add from silo ${v}</label>
         <input type="number" id="dk${v}" min="0.01" step="0.1" placeholder="kg to add" inputmode="decimal">
-        <button class="primary" data-dose="${v}">Dose</button>
+        <button class="quiet" data-dose="${v}">Dose</button>
       </div>`;
     $('valves').appendChild(d);
     $(`v${v}`).addEventListener('change', (e) => setValve(v, parseFloat(e.target.value)));
+    paintRange($(`v${v}`));
   }
   $('valves').querySelectorAll('button[data-p]').forEach((b) =>
     b.addEventListener('click', () => setValve(+b.dataset.v, parseFloat(b.dataset.p))));
@@ -444,87 +766,160 @@ function buildValves() {
     b.addEventListener('click', () => {
       const v = +b.dataset.dose;
       const kg = parseFloat($(`dk${v}`).value);
-      if (!(kg > 0)) { toast('Enter how many kg to add'); return; }
+      if (!(kg > 0)) { toast(`Enter how many kg to add from silo ${v}`, true); $(`dk${v}`).focus(); return; }
       action(`/api/valves/${v}/dose`, {target_kg: kg, percent: 100});
     }));
 }
 function setValve(v, p) {
   $(`v${v}`).value = p;
+  paintRange($(`v${v}`));
   action(`/api/valves/${v}`, {percent: p});
 }
-$('closeValves').addEventListener('click', () => action('/api/valves/close_all'));
-$('cancelDose').addEventListener('click', () => action('/api/dose/cancel'));
+$('closeValves').addEventListener('click', () => action('/api/valves/close_all', undefined, 'All valves closed'));
+$('cancelDose').addEventListener('click', () => action('/api/dose/cancel', undefined, 'Dose cancelled'));
 buildValves();
 
 function showValves(s) {
   for (const v of VALVES) {
     const info = s.valves && s.valves[v];
     if (!info) continue;
-    const pct = info.percent;
-    if (document.activeElement !== $(`v${v}`) && pct !== null) $(`v${v}`).value = pct;
-    const ang = info.angle !== null ? ` · ${info.angle.toFixed(0)}°` : '';
-    $(`vv${v}`).textContent = pct === null ? 'not commanded yet' : `${pct.toFixed(0)}% open${ang}`;
+    const p = info.percent;
+    if (document.activeElement !== $(`v${v}`) && p !== null) { $(`v${v}`).value = p; paintRange($(`v${v}`)); }
+    const ang = info.angle !== null ? `, servo at ${info.angle.toFixed(0)}°` : '';
+    $(`vv${v}`).textContent = p === null ? 'Not commanded yet' : p === 0 ? `Closed${ang}` : `${p.toFixed(0)}% open${ang}`;
   }
   const d = s.dose;
-  $('doseStatus').textContent = d
-    ? `Valve ${d.valve}: ${d.added.toFixed(3)} / ${d.target.toFixed(3)} kg, ${d.status}` : '';
+  const box = $('dose');
+  box.hidden = !d;
+  if (!d) return;
+  const frac = d.target > 0 ? Math.max(0, Math.min(1, d.added / d.target)) : 0;
+  const status = d.status === 'running' ? 'dosing' : d.status;
+  $('doseTitle').textContent = `Silo ${d.valve}: ${status}`;
+  $('doseNums').textContent = `${d.added.toFixed(2)} of ${d.target.toFixed(2)} kg`;
+  $('doseFill').style.width = `${frac * 100}%`;
+  box.classList.toggle('done', d.status === 'done');
+  box.classList.toggle('bad', d.status !== 'done' && d.status !== 'running');
 }
+
+// ---- cameras ----
+// Each feed is an MJPEG stream in an <img>. Streams stop while the tab is
+// hidden or the cameras are turned off, so an idle phone uses no Wi-Fi.
+let camsOn = true;
+let camCount = 0;
+function buildCams(list) {
+  camCount = list.length;
+  $('cams').innerHTML = list.map((c, i) => `
+    <figure class="cam" id="cam${i}">
+      <div class="frame">
+        <img id="camImg${i}" alt="Camera ${i + 1} live view">
+        <div class="msg" id="camMsg${i}">Connecting…</div>
+      </div>
+      <figcaption><span>Camera ${i + 1}</span><span id="camState${i}">Waiting for images</span></figcaption>
+    </figure>`).join('');
+  for (let i = 0; i < camCount; i++) {
+    const img = $(`camImg${i}`);
+    // A dropped stream (server restart, Wi-Fi gap) reconnects by itself.
+    img.addEventListener('error', () => {
+      if (!streaming()) return;
+      setTimeout(() => { if (streaming()) img.src = `/api/camera/${i}.mjpg?t=${Date.now()}`; }, 2000);
+    });
+  }
+  applyCams();
+}
+const streaming = () => camsOn && !document.hidden;
+function applyCams() {
+  for (let i = 0; i < camCount; i++) {
+    const img = $(`camImg${i}`);
+    if (streaming()) {
+      if (!img.getAttribute('src')) img.src = `/api/camera/${i}.mjpg?t=${Date.now()}`;
+    } else {
+      img.removeAttribute('src');  // closes the stream
+      $(`cam${i}`).classList.remove('live');
+      $(`camMsg${i}`).textContent = camsOn ? 'Paused while this tab is hidden' : 'Cameras are off';
+    }
+  }
+  const b = $('camToggle');
+  b.textContent = camsOn ? 'Turn cameras off' : 'Turn cameras on';
+  b.setAttribute('aria-pressed', String(camsOn));
+}
+function showCams(s) {
+  const list = s.cameras || [];
+  if (list.length !== camCount) buildCams(list);
+  list.forEach((c, i) => {
+    const live = streaming() && c.age_s !== null && c.age_s < 2;
+    $(`cam${i}`).classList.toggle('live', live);
+    $(`camState${i}`).textContent = c.age_s === null ? 'No images yet'
+      : c.age_s < 2 ? 'Live' : `Last image ${Math.round(c.age_s)} s ago`;
+    if (streaming() && !live) {
+      $(`camMsg${i}`).textContent = c.age_s === null
+        ? `No images on ${c.topic}. Start the cameras: ros2 launch mixer_esp_driver cameras.launch.py`
+        : 'The camera stopped sending images';
+    }
+  });
+}
+$('camToggle').addEventListener('click', () => { camsOn = !camsOn; applyCams(); });
+document.addEventListener('visibilitychange', applyCams);
 
 // ---- control lease ----
 // Only one device at a time commands the robot; the rest only watch. The server
 // zeroes the motors and the base whenever control changes hands.
 function resetControls() {
   setShaking(false);
-  for (let i = 0; i < numMotors; i++) {
-    speeds[i] = 0;
-    $(`m${i}`).value = 0;
-    $(`mv${i}`).textContent = '0.00';
-  }
+  for (let i = 0; i < numMotors; i++) { speeds[i] = 0; showSpeed(i, 0); }
   drive = {l: 0, a: 0};
   $('pad').querySelectorAll('button').forEach((b) => b.classList.remove('held'));
   heldKeys.clear();
 }
 
+function setViewOnly(viewer) {
+  document.body.classList.toggle('viewer', viewer);
+  // inert: no clicks and no keyboard focus while another device is in control.
+  document.querySelectorAll('[data-needs-control]').forEach((el) => { el.inert = viewer; });
+}
+
 function showControl(c) {
   const had = haveControl;
   haveControl = !!c.you;
-  document.body.classList.toggle('viewer', !haveControl);
+  setViewOnly(!haveControl);
   $('ctl').classList.toggle('me', haveControl);
   $('ctl').classList.toggle('other', !haveControl && !!c.held);
-  if (had && !haveControl) toast(`Control was taken over by ${c.holder || 'another device'}`);
+  if (had && !haveControl) toast(`${c.holder || 'Another device'} took control`, true);
   if (had !== haveControl) resetControls();
+  const b = $('ctlBtn');
   if (haveControl) {
     $('ctlMsg').textContent = 'You are in control';
-    $('ctlSub').textContent = 'Other devices can watch but not command. Release when you are done.';
-    $('ctlBtn').textContent = 'Release control';
-    $('ctlBtn').className = '';
+    $('ctlSub').textContent = 'Other devices can watch but not command. Release control when you are done.';
+    b.textContent = 'Release control';
+    b.className = 'fit';
   } else {
-    $('ctlMsg').textContent = c.held
-      ? `View only: ${c.holder} is in control` : 'View only: nobody is in control';
-    $('ctlSub').textContent = 'STOP ALL, close valves and cancel dose still work from here.';
-    $('ctlBtn').textContent = 'Take control';
-    $('ctlBtn').className = 'primary';
+    $('ctlMsg').textContent = c.held ? `View only: ${c.holder} is in control` : 'View only: nobody is in control';
+    $('ctlSub').textContent = 'STOP ALL, closing the valves and cancelling a dose still work from here.';
+    b.textContent = 'Take control';
+    b.className = 'primary fit';
   }
-  $('ctlBtn').style.display = '';
+  b.hidden = false;
 }
 
 $('ctlBtn').addEventListener('click', async () => {
+  const b = $('ctlBtn');
+  b.disabled = true;
   try {
     if (haveControl) {
       await post('/api/control/release');
+      poll();
     } else {
       let r = await post('/api/control/claim', {force: false});
       if (!r.ok) {
         const who = r.control.holder || 'another device';
-        if (!confirm(`${who} is in control. Take over? Their motors and drive will stop.`)) return;
+        if (!confirm(`${who} is in control. Take over? Their motors and driving will stop.`)) return;
         r = await post('/api/control/claim', {force: true});
       }
       showControl(r.control);
-      return;
     }
-    poll();
   } catch (e) {
-    toast(String(e));
+    toast(String(e.message || e), true);
+  } finally {
+    b.disabled = false;
   }
 });
 
@@ -540,22 +935,22 @@ async function poll() {
     if (s.num_motors !== numMotors) buildMotors(s.num_motors);
     if (s.control) showControl(s.control);
     showValves(s);
+    showShake(s);
+    showCams(s);
     const fresh = s.weight !== null && s.weight_age_s < 2;
     $('weight').textContent = s.weight === null ? '—' : s.weight.toFixed(3);
-    $('weight').style.opacity = fresh ? 1 : 0.4;
-    $('cells').textContent = s.cells.length
-      ? 'cells: ' + s.cells.map((c) => c.toFixed(3)).join('  ') + ' kg' : '';
-    if (s.door && s.door.mode === 'position' && document.activeElement !== $('door')) {
-      $('door').value = s.door.value;
-      $('doorVal').textContent = s.door.value.toFixed(2);
-    }
+    $('weight').parentElement.style.opacity = fresh ? 1 : 0.45;
+    $('cells').innerHTML = s.cells.map((c, i) =>
+      `<div class="cell"><span>Cell ${i + 1}</span><b>${c.toFixed(3)}</b></div>`).join('');
+    if (s.door && s.door.mode === 'position' && document.activeElement !== $('door')) showDoor(s.door.value);
     $('dot').classList.toggle('on', fresh);
-    $('conn').textContent = fresh ? 'ESP data live' : 'no load cell data';
+    $('conn').textContent = fresh ? 'Scale live' : s.weight === null ? 'No scale data' : 'Scale data stale';
   } catch (e) {
     $('dot').classList.remove('on');
-    $('conn').textContent = 'server unreachable';
+    $('conn').textContent = 'Panel server unreachable';
   }
 }
+setViewOnly(true);
 setInterval(poll, 500);
 poll();
 </script>

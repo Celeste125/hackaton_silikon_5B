@@ -3,17 +3,17 @@
 Send commands to the valve controller.  (Run on the Jetson.)
 
 Usage:
-  python3 valve_cmd.py <valve> <0-100>       open the valve that many percent (0 = closed)
-  python3 valve_cmd.py <valve> open          open the valve
-  python3 valve_cmd.py <valve> close         close the valve
-  python3 valve_cmd.py <valve> jog <deg>     move by a small step, e.g. jog 5 / jog -2
-  python3 valve_cmd.py <valve> goto <deg>    move to an angle (default limits -60..240)
-  python3 valve_cmd.py <valve> set-closed    save current position as CLOSED
-  python3 valve_cmd.py <valve> set-open      save current position as OPEN
-  python3 valve_cmd.py <valve> calibrate     interactive mode (recommended)
+  ros2 run silo_controller valve_cmd <valve> <0-100>       open the valve that many percent (0 = closed)
+  ros2 run silo_controller valve_cmd <valve> open          open the valve
+  ros2 run silo_controller valve_cmd <valve> close         close the valve
+  ros2 run silo_controller valve_cmd <valve> jog <deg>     move by a small step, e.g. jog 5 / jog -2
+  ros2 run silo_controller valve_cmd <valve> goto <deg>    move to an angle (default limits -60..240)
+  ros2 run silo_controller valve_cmd <valve> set-closed    save current position as CLOSED
+  ros2 run silo_controller valve_cmd <valve> set-open      save current position as OPEN
+  ros2 run silo_controller valve_cmd <valve> calibrate     interactive mode (recommended)
 
 Example:
-  python3 valve_cmd.py 2 calibrate
+  ros2 run silo_controller valve_cmd 2 calibrate
 """
 
 import sys

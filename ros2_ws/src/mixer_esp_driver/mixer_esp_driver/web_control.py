@@ -8,7 +8,9 @@ It is only a front end for the topics of esp_driver_node, so start that first:
   /loadcell/weight, /loadcell/cells, /loadcell/tare
   /Team2/cmd_vel (geometry_msgs/Twist, Create 3 base, parameter cmd_vel_topic)
   /valve1..3/percent (published), /valve1..3/angle (feedback). The valves are
-  driven by raspberry/valve_controller.py, which must be running.
+  driven by silo_controller/valve_controller.py on the Pi, which must be running.
+  /camera0, /camera1 image_raw/compressed (JPEG, parameter camera_topics), from
+  cameras.launch.py. Streamed to the page as MJPEG at /api/camera/<n>.mjpg.
 
 Needs: pip install fastapi uvicorn
 
@@ -22,6 +24,7 @@ explicitly. STOP ALL, close all valves and cancel dose work from any device.
 Every request carries an X-Client-Id header that the page generates per tab.
 """
 
+import asyncio
 import threading
 import time
 from pathlib import Path
@@ -29,11 +32,13 @@ from pathlib import Path
 import rclpy
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from rclpy.executors import ExternalShutdownException
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Float32, Float32MultiArray
 from std_srvs.srv import Trigger
 
@@ -53,6 +58,9 @@ DRIVE_TIMEOUT_S = 0.5
 VALVES = (1, 2, 3)
 DOSE_TIMEOUT_S = 120.0  # a dose that has not reached its weight by then is aborted
 WEIGHT_MAX_AGE_S = 1.0  # no fresh load cell reading -> abort the dose
+CAMERA_TOPICS = ['/camera0/image_raw/compressed', '/camera1/image_raw/compressed']
+CAMERA_STREAM_FPS = 10.0  # per browser; caps Wi-Fi use, the cameras run at 15
+CAMERA_STALE_S = 2.0
 
 
 class WebControlNode(Node):
@@ -81,6 +89,15 @@ class WebControlNode(Node):
         self.dose = None  # {'valve', 'target', 'start', 'percent', 'deadline', 'status'}
         self.create_subscription(Float32, 'loadcell/weight', self._on_weight, 10)
         self.create_subscription(Float32MultiArray, 'loadcell/cells', self._on_cells, 10)
+        # Latest JPEG per camera: (frame number, bytes, monotonic time). Written
+        # by the ROS thread, read by the web streams; a tuple swap is atomic.
+        self.declare_parameter('camera_topics', CAMERA_TOPICS)
+        self.camera_topics = list(self.get_parameter('camera_topics').value)
+        self.camera_frames = [None] * len(self.camera_topics)
+        for i, topic in enumerate(self.camera_topics):
+            self.create_subscription(
+                CompressedImage, topic, lambda m, i=i: self._on_camera(i, m),
+                qos_profile_sensor_data)
         self.trigger_clients = {
             name: self.create_client(Trigger, name)
             for name in ('loadcell/tare', 'door/save_open', 'door/save_closed')
@@ -108,6 +125,15 @@ class WebControlNode(Node):
         with self.lock:
             self.weight = float(msg.data)
             self.last_weight_t = time.monotonic()
+
+    def _on_camera(self, i, msg):
+        if 'jpeg' not in msg.format and 'jpg' not in msg.format:
+            self.get_logger().warn(
+                f'{self.camera_topics[i]}: format "{msg.format}" is not JPEG, not streamed',
+                throttle_duration_sec=30.0)
+            return
+        prev = self.camera_frames[i]
+        self.camera_frames[i] = ((prev[0] + 1) if prev else 1, bytes(msg.data), time.monotonic())
 
     def _on_cells(self, msg):
         with self.lock:
@@ -282,6 +308,10 @@ class WebControlNode(Node):
                 'weight_age_s': now - self.last_weight_t if self.weight is not None else None,
                 'cells': list(self.cells),
                 'door': self.door,
+                'cameras': [
+                    {'topic': t, 'age_s': (now - f[2]) if f else None}
+                    for t, f in zip(self.camera_topics, self.camera_frames)
+                ],
                 'motors': list(self.motors),
                 'shake': dict(self.shake) if self.shake else None,
                 'num_motors': len(self.motors),
@@ -355,6 +385,37 @@ def create_app(ros):
         if cid:
             ros.lease.touch(cid)  # the holder's poll keeps its control alive while idle
         return {**ros.state(), 'control': ros.lease.snapshot(cid or None)}
+
+    def camera_or_404(n):
+        if not 0 <= n < len(ros.camera_frames):
+            raise HTTPException(404, 'no such camera')
+
+    @app.get('/api/camera/{n}.jpg')
+    def camera_snapshot(n: int):
+        camera_or_404(n)
+        frame = ros.camera_frames[n]
+        if frame is None:
+            raise HTTPException(503, f'no image yet on {ros.camera_topics[n]}')
+        return Response(frame[1], media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
+
+    @app.get('/api/camera/{n}.mjpg')
+    async def camera_stream(n: int, request: Request):
+        """multipart MJPEG: an <img> shows it as live video. Watching needs no control."""
+        camera_or_404(n)
+
+        async def frames():
+            sent = None
+            while not await request.is_disconnected():
+                frame = ros.camera_frames[n]
+                if frame is not None and frame[0] != sent:
+                    sent = frame[0]
+                    yield (b'--frame\r\nContent-Type: image/jpeg\r\nContent-Length: '
+                           + str(len(frame[1])).encode() + b'\r\n\r\n' + frame[1] + b'\r\n')
+                await asyncio.sleep(1.0 / CAMERA_STREAM_FPS)
+
+        return StreamingResponse(
+            frames(), media_type='multipart/x-mixed-replace; boundary=frame',
+            headers={'Cache-Control': 'no-store'})
 
     @app.post('/api/control/claim')
     def control_claim(body: ClaimBody, request: Request):

@@ -3,7 +3,9 @@
 Start slam_navigation.launch.py first and wait for "Managed nodes are active";
 this adds the explorer, which repeatedly picks the best frontier between known
 free space and unknown space and sends it to Nav2 as a navigate_to_pose goal.
-It stops on its own once no actionable frontier is left.
+It stops on its own once no actionable frontier is left, drives back to the
+start, saves the map to <map_dir>/<map_name>.yaml (default ~/maps/arena) and
+sets /frontier_explorer/status to "done".
 
 The robot drives itself the moment this starts. Teleop still outranks it:
 twist_mux gives <ns>/cmd_vel_teleop priority over everything Nav2 sends, so a
@@ -52,6 +54,8 @@ def generate_launch_description():
             'stuck_timeout_s': 12.0,
             'done_ticks_threshold': 5,
             'nav2_startup_delay': LaunchConfiguration('startup_delay'),
+            'map_dir': LaunchConfiguration('map_dir'),
+            'map_name': LaunchConfiguration('map_name'),
         }],
         # Vestigial on this platform (the startup wiggle is commented out), but
         # pointed through twist_mux rather than at the robot, just in case.
@@ -78,6 +82,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'startup_delay', default_value='5.0',
             description='Wait for Nav2 costmaps before the first goal (s).',
+        ),
+        DeclareLaunchArgument(
+            'map_dir', default_value='~/maps',
+            description='Where the finished map is saved.',
+        ),
+        DeclareLaunchArgument(
+            'map_name', default_value='arena',
+            description='Map file name: <map_dir>/<map_name>.yaml/.pgm/.posegraph.',
         ),
         explorer,
     ])

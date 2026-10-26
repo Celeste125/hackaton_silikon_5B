@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>silo_controller</name>
+  <version>0.1.0</version>
+  <description>Silo valve servos on the Raspberry Pi (PCA9685), and tools to command them.</description>
+  <maintainer email="todo@todo.todo">Team 2</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <!-- valve_controller and servo_sweep also need smbus2 (pip), only on the Pi. -->
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

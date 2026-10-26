@@ -8,7 +8,9 @@ Pins are configured in the ESP firmware: mixer_esp32/src/config.h
 # ESP32-S3/C3 with native USB: /dev/ttyACM0. A /dev/serial/by-id/... path
 # never changes when other USB devices are plugged in. In Docker, pass it
 # with --device.
-SERIAL_PORT = '/dev/ttyUSB0'
+# On the Jetson the ESP's CH340 shows up as /dev/ttyCH341USB0 (vendor CH341
+# driver); /dev/ttyUSB0 is the lidar.
+SERIAL_PORT = '/dev/ttyCH341USB0'
 BAUD = 115200  # must match SERIAL_BAUD in the firmware
 
 # Must match the firmware (CELLS / MOTORS in config.h).
