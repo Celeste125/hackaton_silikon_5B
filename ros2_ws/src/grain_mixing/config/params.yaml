@@ -1,27 +1,29 @@
-# Floats must be written with a decimal point (15.0, not 15).
+# Floats must be written with a decimal point (20.0, not 20).
 grain_analyzer:
   ros__parameters:
+    # processing resolution relative to the cropped frame (1.0 = full, 0.5 = 4x fewer pixels)
+    scale: 0.5
+    # analyse every Nth frame (2 = skip every second frame)
+    process_every: 1
     # crop window (pixels removed from each side of the input frame)
     crop_top: 200
     crop_bottom: 200
     crop_left: 200
     crop_right: 450
-    # the two circular mixer views: x1, y1, x2, y2 (in the cropped frame)
+    # the two circular mixer views: x1, y1, x2, y2 (cropped frame, at scale 1.0)
     circle_centers: [350, 350, 1000, 350]
     circle_radius: 350
     # machine parts (HSV, OpenCV scale: H 0-180, S/V 0-255)
     bg_lower: [0, 0, 50]
     bg_upper: [180, 70, 255]
-    # peas
-    hough_param1: 15.0
-    hough_param2: 15.0
+    # peas (values at scale 1.0; param2 is lowered automatically when scale < 1)
+    hough_param1: 20.0
+    hough_param2: 20.0
     pea_min_radius: 5
-    pea_max_radius: 18
-    pea_max_gradient: 10.0
+    pea_max_radius: 19
     # rapeseed
     rapeseed_threshold: 60
-    # homogeneity grid
-    cell_size: 50
-    # visualisation
+    # homogeneity grid cell size (at scale 1.0)
+    cell_size: 100
+    # overlay opacity
     overlay_alpha: 0.3
-    output_scale: 0.5

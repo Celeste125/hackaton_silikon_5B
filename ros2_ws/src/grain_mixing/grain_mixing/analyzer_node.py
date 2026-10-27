@@ -38,6 +38,13 @@ def bgr_to_image(bgr, header):
     return msg
 
 
+def plain(value):
+    """ROS array parameters arrive as array.array; the pipeline wants plain lists."""
+    if hasattr(value, '__iter__') and not isinstance(value, str):
+        return list(value)
+    return value
+
+
 class GrainAnalyzer(Node):
     def __init__(self):
         super().__init__('grain_analyzer')
@@ -47,10 +54,12 @@ class GrainAnalyzer(Node):
         values = {}
         for f in fields(defaults):
             self.declare_parameter(f.name, getattr(defaults, f.name))
-            value = self.get_parameter(f.name).value
-            values[f.name] = list(value) if isinstance(value, (list, tuple)) or hasattr(value, 'tolist') else value
+            values[f.name] = plain(self.get_parameter(f.name).value)
         self.params = PipelineParams(**values)
         self.pipeline = GrainPipeline(self.params)
+
+        self.declare_parameter('process_every', 1)      # 2 = analyse every second frame
+        self.process_every = max(1, self.get_parameter('process_every').value)
         self.add_on_set_parameters_callback(self._on_params)
 
         self.sub = self.create_subscription(Image, 'image_raw', self._on_image, SENSOR_QOS)
@@ -60,20 +69,29 @@ class GrainAnalyzer(Node):
         self.pub_homogeneity = self.create_publisher(Float32, '~/homogeneity', 10)
         self.pub_area = {g: self.create_publisher(Float32, f'~/area/{g}', 10) for g in GRAIN_TYPES}
 
+        self.frame_count = 0
         self.last_time = time.perf_counter()
         self.get_logger().info('grain_analyzer ready, waiting for frames on "image_raw"')
 
     def _on_params(self, params):
-        changes = {p.name: (list(p.value) if hasattr(p.value, 'tolist') or isinstance(p.value, (list, tuple)) else p.value)
-                   for p in params if hasattr(self.params, p.name)}
+        changes = {p.name: plain(p.value) for p in params}
+        if 'process_every' in changes:
+            self.process_every = max(1, int(changes.pop('process_every')))
+        changes = {k: v for k, v in changes.items() if hasattr(self.params, k)}
+        if not 0 < changes.get('scale', self.params.scale) <= 1:
+            return SetParametersResult(successful=False, reason='scale must be in (0, 1]')
         self.params = replace(self.params, **changes)
-        self.pipeline = GrainPipeline(self.params)
+        self.pipeline = GrainPipeline(self.params)      # rebuilds kernels, Hough settings and the roi
         return SetParametersResult(successful=True)
 
-    def _publish_float(self, pub, value):
+    @staticmethod
+    def _publish_float(pub, value):
         pub.publish(Float32(data=float(value)))
 
     def _on_image(self, msg):
+        self.frame_count += 1
+        if self.frame_count % self.process_every:
+            return
         try:
             result = self.pipeline.process(image_to_bgr(msg))
         except ValueError as e:
@@ -84,7 +102,8 @@ class GrainAnalyzer(Node):
         fps = 1 / max(now - self.last_time, 1e-6)
         self.last_time = now
 
-        add_legend(result.overlay, fps, result.total_area, result.areas, result.homogeneity)
+        # as in the standalone program, the legend is drawn on the raw frame
+        add_legend(result.raw, fps, result.total_area, result.areas, result.homogeneity)
 
         self._publish_float(self.pub_coverage, result.total_area)
         self._publish_float(self.pub_homogeneity, result.homogeneity)
