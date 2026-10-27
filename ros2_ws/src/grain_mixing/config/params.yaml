@@ -25,3 +25,7 @@ grain_analyzer:
     # visualisation
     overlay_alpha: 0.3
     output_scale: 0.5
+    # keep the CPU free for other tasks (Jetson): analyse at most max_rate frames
+    # per second, use at most cv_threads OpenCV threads
+    max_rate: 2.0
+    cv_threads: 1

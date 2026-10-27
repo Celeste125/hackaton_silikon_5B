@@ -1,12 +1,14 @@
 import cv2
-import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Image
 
-SENSOR_QOS = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
-                        history=HistoryPolicy.KEEP_LAST, depth=1)
+from .analyzer_node import bgr_to_image
+
+# reliable: large frames are re-sent when a packet is lost (best-effort lost ~70%)
+IMAGE_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
+                       history=HistoryPolicy.KEEP_LAST, depth=1)
 
 
 class VideoSource(Node):
@@ -27,7 +29,7 @@ class VideoSource(Node):
 
         self.loop = self.get_parameter('loop').value
         self.frame_id = self.get_parameter('frame_id').value
-        self.pub = self.create_publisher(Image, 'image_raw', SENSOR_QOS)
+        self.pub = self.create_publisher(Image, 'image_raw', IMAGE_QOS)
         self.timer = self.create_timer(1.0 / self.get_parameter('rate').value, self._tick)
         self.get_logger().info(f'publishing {path}')
 
@@ -40,14 +42,10 @@ class VideoSource(Node):
             self.get_logger().info('end of video')
             self.timer.cancel()
             return
-        msg = Image()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self.frame_id
-        msg.height, msg.width = frame.shape[:2]
-        msg.encoding = 'bgr8'
-        msg.is_bigendian = 0
-        msg.step = msg.width * 3
-        msg.data = np.ascontiguousarray(frame).tobytes()
+        header = Image().header
+        header.stamp = self.get_clock().now().to_msg()
+        header.frame_id = self.frame_id
+        msg = bgr_to_image(frame, header)
         self.pub.publish(msg)
 
 
