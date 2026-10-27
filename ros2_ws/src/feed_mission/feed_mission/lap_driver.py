@@ -32,6 +32,11 @@ to the line, it carries on; otherwise Nav2 takes it to the end of the side
 back onto a line from far away is what made it spin and zig-zag next to the
 box.
 
+Mixing while feeding: once the container is down to mix_below_kg (median of
+the last second, so a bump does not trigger it), the mixer runs at mix_speed
+until the laps end; it pushes the last of the feed towards the door. Not in a
+dry run. mix_below_kg 0: never.
+
 Position watchdog: once a second it checks how much of the lidar lands on
 the walls of the map (/map). Under min_fit for fit_pause_s it pauses
 ("position lost"): the lap lines follow the robot's believed position, so a
@@ -49,6 +54,7 @@ door, along) report what it is doing.
 import json
 import math
 import time
+from statistics import median
 
 import numpy as np
 import rclpy
@@ -153,7 +159,8 @@ def side_contact(points, half_len, half_w, margin=0.015):
     if len(points) == 0:
         return False
     x, y = np.abs(points[:, 0]), np.abs(points[:, 1])
-    return bool(np.any((x <= half_len) & (y >= half_w - 0.02) & (y < half_w + margin)))
+    # only just outside the body: inside it is the robot itself (its door)
+    return bool(np.any((x <= half_len) & (y >= half_w) & (y < half_w + margin)))
 
 
 def blocked_ahead(points, half_len, half_w, stop_distance):
@@ -177,7 +184,8 @@ def _yaw(q):
 
 
 class LapDriver(Node):
-    def __init__(self):
+    def __init__(self, tf=None):
+        """tf: a shared tf2 Buffer (all feed_mission nodes in one process), else its own."""
         super().__init__('lap_driver')
         p = self.declare_parameter
         p('poses_file', pose_store.DEFAULT_FILE)
@@ -189,6 +197,9 @@ class LapDriver(Node):
         p('door_margin', 0.05)         # m, door opens this far inside each end of a face
         p('door_x', 0.0)               # m, door position ahead of the robot's centre
         p('dry_run', False)            # drive the laps, keep the door closed
+        p('mix_below_kg', 0.5)         # mixer on once the container is down to this (0: never)
+        p('mix_speed', 0.5)            # -1..1 for both mixer motors
+        p('num_motors', 2)
         p('speed', 0.15)               # m/s on the straights
         p('turn_speed', 0.6)           # rad/s max on the spot
         p('stop_distance', 0.15)       # m free space needed in front
@@ -209,14 +220,22 @@ class LapDriver(Node):
         p('base_frame', 'base_link')
         self.g = lambda n: self.get_parameter(n).value
 
-        self.tf = Buffer()
-        self.tf_listener = TransformListener(self.tf, self)
+        self.tf = tf
+        if tf is None:
+            self.tf = Buffer()
+            self.tf_listener = TransformListener(self.tf, self)
         self.cmd_pub = self.create_publisher(Twist, self.g('cmd_vel_topic'), 10)
         self.door_pub = self.create_publisher(Float32, 'door/position', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.status_pub = self.create_publisher(String, 'lap/status', latched)
         self.progress_pub = self.create_publisher(String, 'lap/progress', latched)
         self.create_subscription(LaserScan, '/scan', self._on_scan, qos_profile_sensor_data)
+        self.weights = []        # (monotonic time, kg) of the last second or so
+        self.mixing = False
+        self.create_subscription(Float32, 'loadcell/weight', self._on_weight, 10)
+        self.motor_pubs = [self.create_publisher(Float32, f'mixer/motor_{i}', 10)
+                           for i in range(int(self.g('num_motors')))]
+        self.create_timer(0.1, self._mix)  # the ESP stops a motor after 1 s without a command
         self.create_service(Trigger, 'lap/start', self._on_start)
         self.create_service(Trigger, 'lap/stop', self._on_stop)
         self.nav = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -259,6 +278,28 @@ class LapDriver(Node):
 
     def _on_scan(self, msg):
         self.scan = msg
+
+    def _on_weight(self, msg):
+        now = time.monotonic()
+        self.weights = [w for w in self.weights if now - w[0] < 1.0] + [(now, float(msg.data))]
+
+    def _mix(self):
+        """Keep the mixer running once the container is low, while laps run."""
+        if self.state not in ACTIVE or self.g('dry_run') or self.g('mix_below_kg') <= 0:
+            if self.mixing:
+                self._mixer(0.0)
+                self.mixing = False
+            return
+        if not self.mixing and self.weights \
+                and median(w for _, w in self.weights) <= self.g('mix_below_kg'):
+            self.mixing = True
+            self.get_logger().info(f'lap: {self.weights[-1][1]:.2f} kg left, mixer on')
+        if self.mixing:
+            self._mixer(float(self.g('mix_speed')))
+
+    def _mixer(self, speed):
+        for pub in self.motor_pubs:
+            pub.publish(Float32(data=speed))
 
     def _on_map(self, msg):
         info = msg.info
@@ -662,6 +703,7 @@ class LapDriver(Node):
             'door_planned': self.door_wanted and running,
             'dry_run': bool(self.g('dry_run')),
             'fit': None if self.fit is None else round(self.fit, 2),
+            'mixing': self.mixing,
         })))
 
     def _finish(self, state):
@@ -675,6 +717,9 @@ class LapDriver(Node):
         self.paused = False
         self.lost = False
         self.lost_since = None
+        if self.mixing:
+            self._mixer(0.0)
+            self.mixing = False
         self.state = state
         self.blocked_since = None
         if was_driving:

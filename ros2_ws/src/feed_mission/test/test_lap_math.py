@@ -91,5 +91,6 @@ def test_rejoin_uses_nav2_when_pushed_off_or_past_the_corner():
 def test_side_contact_only_right_beside_the_body():
     hl, hw = 0.17, 0.26
     assert side_contact(np.array([[0.0, -0.268]]), hl, hw)        # 8 mm off the right side
+    assert not side_contact(np.array([[0.0, -0.245]]), hl, hw)    # inside the body: its own door
     assert not side_contact(np.array([[0.0, -0.32]]), hl, hw)     # 6 cm away
     assert not side_contact(np.array([[0.30, -0.265]]), hl, hw)   # ahead of the corner, not beside

@@ -27,6 +27,7 @@ setup(
             'lap_driver = feed_mission.lap_driver:main',
             'relocalizer = feed_mission.relocalize:main',
             'mission = feed_mission.mission:main',
+            'feed_mission = feed_mission.all_nodes:main',
         ],
     },
 )

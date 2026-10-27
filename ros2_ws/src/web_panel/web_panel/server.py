@@ -11,8 +11,11 @@ It is only a front end for topics of other nodes, mostly esp_driver_node:
   /Team2/cmd_vel (geometry_msgs/Twist; parameters teleop_topic, cmd_vel_topic)
   /valve1..3/percent (published), /valve1..3/angle (feedback). The valves are
   driven by silo_controller/valve_controller.py on the Pi, which must be running.
-  /camera0, /camera1 image_raw/compressed (JPEG, parameter camera_topics), from
-  cameras.launch.py. Streamed to the page as MJPEG at /api/camera/<n>.mjpg.
+  Cameras: with camera_devices set (bringup's default), read straight from the
+  webcams as their own JPEG frames (cameras.py, about 1% CPU each) and only
+  republished on camera_topics while something subscribes there. Without it,
+  the camera_topics of v4l2_camera nodes (cameras.launch.py). Streamed to the
+  page as MJPEG at /api/camera/<n>.mjpg.
   /Team2/battery_state (battery), /Team2/hazard_detection (bump, cliff, stall;
   needs irobot_create_msgs), /frontier_explorer/status (mapping progress).
   Setup tab: the robot's pose (TF map -> base_link) is saved under a name
@@ -54,6 +57,7 @@ from std_srvs.srv import Trigger
 from action_msgs.srv import CancelGoal
 from tf2_ros import Buffer, TransformException, TransformListener
 
+from web_panel import cameras
 from web_panel.control_lease import ControlLease
 
 try:  # taught poses, the map view and laps need feed_mission; the rest works without it
@@ -129,8 +133,15 @@ class WebControlNode(Node):
         # by the ROS thread, read by the web streams; a tuple swap is atomic.
         self.declare_parameter('camera_topics', CAMERA_TOPICS)
         self.camera_topics = list(self.get_parameter('camera_topics').value)
+        self.declare_parameter('camera_devices', [''])
+        self.declare_parameter('camera_width', 640)
+        self.declare_parameter('camera_height', 480)
+        devices = [d for d in self.get_parameter('camera_devices').value if d]
         self.camera_frames = [None] * len(self.camera_topics)
-        for i, topic in enumerate(self.camera_topics):
+        self.direct_cameras = []
+        if devices:
+            self._start_direct_cameras(devices)
+        for i, topic in enumerate(self.camera_topics if not devices else []):
             self.create_subscription(
                 CompressedImage, topic, lambda m, i=i: self._on_camera(i, m),
                 qos_profile_sensor_data)
@@ -280,6 +291,37 @@ class WebControlNode(Node):
     def _on_explorer_status(self, msg):
         with self.lock:
             self.explorer_status = msg.data
+
+    def _start_direct_cameras(self, devices):
+        self.camera_topics = [self.camera_topics[i] if i < len(self.camera_topics)
+                              else f'/camera{i}/image_raw/compressed' for i in range(len(devices))]
+        self.camera_frames = [None] * len(devices)
+        self.camera_pubs = [self.create_publisher(CompressedImage, t, qos_profile_sensor_data)
+                            for t in self.camera_topics]
+        self.camera_pub_t = [0.0] * len(devices)
+        w = int(self.get_parameter('camera_width').value)
+        h = int(self.get_parameter('camera_height').value)
+        for i, dev in enumerate(devices):
+            cam = cameras.DirectCamera(dev, lambda jpeg, i=i: self._on_direct_frame(i, jpeg),
+                                       width=w, height=h, log=self.get_logger().info)
+            cam.start()
+            self.direct_cameras.append(cam)
+        self.get_logger().info(f'cameras read directly: {", ".join(devices)}')
+
+    def _on_direct_frame(self, i, jpeg):
+        prev = self.camera_frames[i]
+        now = time.monotonic()
+        self.camera_frames[i] = ((prev[0] + 1) if prev else 1, jpeg, now)
+        # For bags and other tools, as before; free while nobody listens.
+        pub = self.camera_pubs[i]
+        if pub.get_subscription_count() > 0 and now - self.camera_pub_t[i] >= 1.0 / CAMERA_STREAM_FPS:
+            self.camera_pub_t[i] = now
+            msg = CompressedImage()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = f'camera{i}'
+            msg.format = 'jpeg'
+            msg.data = jpeg
+            pub.publish(msg)
 
     def _on_camera(self, i, msg):
         if 'jpeg' not in msg.format and 'jpg' not in msg.format:
@@ -719,6 +761,11 @@ def create_app(ros):
     @app.post('/api/relocalize', dependencies=[Depends(require_control)])
     def relocalize():
         """Find the robot on the map from the lidar and correct AMCL (takes ~10 s)."""
+        # It needs the robot standing still, and its search would hold up the
+        # lap driver and mission, which share its process.
+        busy = ros.activity()
+        if busy:
+            return {'ok': False, 'message': f'Not while the robot is busy ({busy}): stop it first'}
         ok, msg = ros.call('relocalize', timeout=40.0)
         return {'ok': ok, 'message': msg}
 

@@ -123,7 +123,8 @@ def _param(name, value):
 
 
 class Mission(Node):
-    def __init__(self):
+    def __init__(self, tf=None):
+        """tf: a shared tf2 Buffer (all feed_mission nodes in one process), else its own."""
         super().__init__('mission')
         p = self.declare_parameter
         p('poses_file', pose_store.DEFAULT_FILE)
@@ -163,8 +164,10 @@ class Mission(Node):
         self.shake_pub = self.create_publisher(Float32MultiArray, 'mixer/shake', 10)
         self.door_pub = self.create_publisher(Float32, 'door/position', 10)
         self.cmd_pub = self.create_publisher(Twist, self.g('cmd_vel_topic'), 10)
-        self.tf = Buffer()
-        self.tf_listener = TransformListener(self.tf, self)
+        self.tf = tf
+        if tf is None:
+            self.tf = Buffer()
+            self.tf_listener = TransformListener(self.tf, self)
 
         self.weights = []  # (monotonic time, kg)
         self.create_subscription(Float32, 'loadcell/weight', self._on_weight, 10, callback_group=cb)
@@ -612,7 +615,8 @@ class Mission(Node):
     def _step_feed(self):
         dry = bool(self.g('dry_run'))
         settings = pose_store.load_feed(self.g('poses_file'))
-        allowed = ('feed', 'gap', 'end_gap', 'door_open', 'door_margin', 'door_x', 'speed')
+        allowed = ('feed', 'gap', 'end_gap', 'door_open', 'door_margin', 'door_x', 'speed',
+                   'mix_below_kg', 'mix_speed')
         values = {k: (float(v) if k != 'feed' else str(v)) for k, v in settings.items() if k in allowed}
         values.update(laps=1, dry_run=dry)
         self._set_lap_params(values)

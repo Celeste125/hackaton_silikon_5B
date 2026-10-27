@@ -142,14 +142,17 @@ def _yaw(q):
 
 
 class Relocalizer(Node):
-    def __init__(self):
+    def __init__(self, tf=None):
+        """tf: a shared tf2 Buffer (all feed_mission nodes in one process), else its own."""
         super().__init__('relocalizer')
         self.declare_parameter('scans', 3)              # scans merged for one search
         self.declare_parameter('max_motion', 0.02)      # m (and 0.02 rad) allowed meanwhile
         self.declare_parameter('min_fit', 0.75)
         self.declare_parameter('min_margin', 0.15)
-        self.tf = Buffer()
-        self.tf_listener = TransformListener(self.tf, self)
+        self.tf = tf
+        if tf is None:
+            self.tf = Buffer()
+            self.tf_listener = TransformListener(self.tf, self)
         cb = ReentrantCallbackGroup()  # the service waits for scans while others arrive
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.map = None

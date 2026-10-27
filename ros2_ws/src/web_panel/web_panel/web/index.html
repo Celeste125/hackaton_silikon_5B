@@ -754,6 +754,14 @@
               <div class="top"><label for="fdSpeed">Speed</label><output id="fdSpeedVal" for="fdSpeed"></output></div>
               <input type="range" id="fdSpeed" min="0.05" max="0.25" step="0.01" value="0.15">
             </div>
+            <div class="slider">
+              <div class="top"><label for="fdMixBelow">Start the mixer when this much is left</label><output id="fdMixBelowVal" for="fdMixBelow"></output></div>
+              <input type="range" id="fdMixBelow" min="0" max="2" step="0.05" value="0.5">
+            </div>
+            <div class="slider">
+              <div class="top"><label for="fdMixSpeed">Mixer speed while feeding</label><output id="fdMixSpeedVal" for="fdMixSpeed"></output></div>
+              <input type="range" id="fdMixSpeed" min="0.1" max="1" step="0.05" value="0.5">
+            </div>
             <details class="sub">
               <summary>Door timing</summary>
               <div class="slider">
@@ -2018,7 +2026,7 @@ function showMapCards(s) {
   }
   const lp = s.feed && s.feed.progress;
   if (lp && LAP_RUNNING.includes(lp.state)) {
-    cards.push(`<div class="map-card">Laps<b>${lp.lap ? `lap ${lp.lap} of ${lp.laps}` : 'starting'}</b>${lp.text || ''} · door ${lp.door ? 'open' : 'closed'}</div>`);
+    cards.push(`<div class="map-card">Laps<b>${lp.lap ? `lap ${lp.lap} of ${lp.laps}` : 'starting'}</b>${lp.text || ''} · door ${lp.door ? 'open' : 'closed'}${lp.mixing ? ' · mixer on' : ''}</div>`);
   }
   if (driving) cards.push(`<div class="map-card">Nav2<b>${nav.goal.state === 'undocking' ? 'undocking first' : 'driving to the goal'}</b>${nav.goal.x.toFixed(2)}, ${nav.goal.y.toFixed(2)}</div>`);
   const fit = s.feed && s.feed.fit;
@@ -2035,6 +2043,8 @@ const FEED_SLIDERS = [
   ['speed', 'fdSpeed', (v) => `${v.toFixed(2)} m/s`],
   ['door_margin', 'fdMargin', (v) => `${Math.round(v * 100)} cm`],
   ['door_x', 'fdDoorX', (v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)} cm`],
+  ['mix_below_kg', 'fdMixBelow', (v) => (v <= 0 ? 'never' : `${v.toFixed(2)} kg`)],
+  ['mix_speed', 'fdMixSpeed', (v) => `${Math.round(v * 100)}%`],
 ];
 let feedFace = 'long';
 let feedLoaded = false;
@@ -2173,6 +2183,7 @@ function showFeed(s) {
     : running && p.lap ? `Lap ${p.lap} of ${p.laps}${p.dry_run ? ' (dry run)' : ''}` : (RUN_TEXT[p.state] || p.text);
   $('fdRunText').textContent = text;
   let sub = running ? p.text : (p && p.state === 'failed' ? p.text : '');
+  if (running && p.mixing) sub += ' · mixer on';
   if (running && f.run_start_kg !== null && f.run_start_kg !== undefined && s.weight !== null) {
     sub += ` · ${(f.run_start_kg - s.weight).toFixed(2)} kg out so far`;
   }
