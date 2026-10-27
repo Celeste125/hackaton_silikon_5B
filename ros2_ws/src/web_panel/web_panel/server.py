@@ -59,8 +59,10 @@ from web_panel.control_lease import ControlLease
 try:  # taught poses, the map view and laps need feed_mission; the rest works without it
     from feed_mission import poses as pose_store
     from web_panel import feed as feed_mod
+    from web_panel import mission_api
 except ImportError:
-    pose_store = feed_mod = None
+    pose_store = feed_mod = mission_api = None
+from web_panel import nav_api
 
 try:  # Create 3 hazards are optional: without the messages they are not shown
     from irobot_create_msgs.msg import HazardDetection, HazardDetectionVector
@@ -178,6 +180,8 @@ class WebControlNode(Node):
         self.create_timer(0.1, self._publish_drive)
         self.feed = feed_mod.Feed(self, self.tf, self.poses_file, self.current_weight) \
             if feed_mod else None
+        self.mission = mission_api.MissionApi(self, self.poses_file) if mission_api else None
+        self.nav = nav_api.NavApi(self)
 
     def current_weight(self):
         """kg, or None without a fresh reading."""
@@ -399,6 +403,8 @@ class WebControlNode(Node):
         self.stop_outputs()
         self.close_all_valves()
         self.cmd_vel_pub.publish(Twist())  # straight to the base, whoever drives
+        if self.mission is not None:
+            self.mission.stop(wait=False)  # the mission node closes valves, door, mixer
         if self.nav_cancel.service_is_ready():
             # zero goal id and stamp: cancel every Nav2 goal
             self.nav_cancel.call_async(CancelGoal.Request())
@@ -468,6 +474,8 @@ class WebControlNode(Node):
         state['pose'] = self.robot_pose()
         state['poses'] = self.saved_poses()
         state['feed'] = self.feed.state() if self.feed else None
+        state['mission'] = self.mission.state() if self.mission else None
+        state['nav'] = self.nav.state()
         return state
 
 
@@ -690,6 +698,9 @@ def create_app(ros):
     if ros.feed is not None:
         feed_mod.add_routes(app, ros, ros.feed, require_control, client_id, Depends,
                             HTTPException, Request)
+    if ros.mission is not None:
+        mission_api.add_routes(app, ros.mission, require_control, client_id, Depends, Request)
+    nav_api.add_routes(app, ros.nav, require_control, client_id, Depends, Request)
 
     @app.post('/api/tare', dependencies=[Depends(require_control)])
     def tare():

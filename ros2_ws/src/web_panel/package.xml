@@ -16,6 +16,7 @@
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>action_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <!-- Optional: the Setup tab (taught poses) and laps are off without it. -->
   <exec_depend>feed_mission</exec_depend>

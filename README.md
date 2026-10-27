@@ -56,7 +56,7 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 | `frontier_explorer mapping.launch.py` | lidar, `scan_timestamp_fixer`, `odom_tf_republisher`, slam_toolbox (no Nav2) | Map by driving with teleop yourself. Brings its own lidar: run bringup with `lidar:=false` |
 | `frontier_explorer rviz.launch.py` | RViz with `rviz/navigation.rviz`: map, costmaps, scan, footprint, TF, plans, goal, AMCL | Watch mapping or navigation (needs a display) |
 | `frontier_explorer nav2.launch.py` | Nav2 servers and lifecycle managers | Not by hand: `slam_navigation.launch.py` includes it |
-| `feed_mission mission.launch.py` | `lap_driver`, `relocalizer` | On top of navigation: teaching poses, laps around the cow box |
+| `feed_mission mission.launch.py` | `mission`, `lap_driver`, `relocalizer` | On top of navigation: teaching poses, laps, the whole run |
 
 `silo_controller` has no launch file: the Pi runs `valve_controller` in Docker
 (see its `Dockerfile`).
@@ -71,6 +71,7 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 | `valve_controller` | `/valve1..3/percent` -> servo angles, with saved open/closed calibration |
 | `lap_driver` | feeding laps around the cow box: turn on the spot, drive straight, door open beside the box. `/lap/start`, `/lap/stop`, `/lap/status`, `/lap/progress`; drives `/Team2/cmd_vel_lap` (twist_mux, priority 50) |
 | `relocalizer` | `/relocalize`: finds the robot on the map from the lidar and corrects AMCL (`/initialpose`) |
+| `mission` | the whole run: position, undock, load from the silos by weight, mix, feed, dock. `/mission/start`, `/mission/stop`, `/mission/progress` |
 
 Parameters: `frontier_explorer/config/` (`nav2_params.yaml`,
 `slam_toolbox_params.yaml`, `twist_mux.yaml`) and
@@ -202,7 +203,8 @@ Then drive the robot with the panel to each spot and press **Save here**:
 | Pose | Where |
 | --- | --- |
 | Silo 1, 2, 3 | parked under each pipe |
-| Start | where it waits before and after a run |
+| Start | in front of the dock, facing it, about 0.5 m out: where Dock can take over |
+| Docked | on the dock (save it while docked) |
 
 They go to `~/maps/arena_poses.yaml`, in the map frame: teach them again after
 remapping.
@@ -256,6 +258,62 @@ to it, steered back onto the corner-to-corner line in the map frame, so
 odometry drift does not add up. It waits while anything is within
 `stop_distance` (0.15 m) in front and gives up after 20 s. Teleop overrides it
 at any time.
+
+### The map view
+
+**Map** next to the cameras (and full screen with ⤢, which adds the weight,
+the mission or lap step, battery and dock as cards). It shows the map, the
+lidar, the robot with its door, its track over the last minute, Nav2's path,
+the silos, Start/Docked, the cow box and the planned lap. Tools, one at a time
+like RViz's toolbar:
+
+| Tool | Does |
+| --- | --- |
+| Move | drag to pan, wheel or pinch to zoom (always works) |
+| Set position | like *2D Pose Estimate*: press where the robot is, drag towards its heading |
+| Send goal | like *Nav2 Goal*: press the goal, drag towards the heading. *Cancel goal* stops it |
+| Edit box | drag the cow box, a corner to resize, the round knob or ⟲ ⟳ to turn it |
+
+*Find robot* runs the automatic scan match (`/relocalize`). The top bar's
+*Position* chip says how many lidar points land on the map's walls: under
+about 40% the robot does not know where it is.
+
+### The dock
+
+The Create 3 docks and undocks by itself (`/Team2/dock`, `/Team2/undock`); the
+panel has **Dock** / **Undock** under the drive pad and shows whether it is on
+the dock or sees it. Dock works from about a metre in front of the dock, facing
+it. Check that the container clears everything around the dock.
+
+The dock also fixes the localization: the robot docks to within about a
+centimetre every time. Save **Docked** once while it is docked; from then on
+**Position from dock** (Setup) sets AMCL to exactly that pose, and the mission
+does it at the start of every run.
+
+### The whole run: Mission tab
+
+| Step | What it does |
+| --- | --- |
+| Find position | on the dock: position from the Docked pose; elsewhere `/relocalize` |
+| Undock | if it is docked |
+| Load from the silos | for each silo with a share: Nav2 to the silo pose, let the scale settle, open the valve until the weight has risen by the share, close it. Flow stops: one shake, then it fails |
+| Mix | the mixer for the set time and speed |
+| Feed the cows | laps with the Feed tab settings, one at a time, until the weight is below the set kg (or the lap limit) |
+| Back to the dock | Nav2 to Start, then Dock |
+
+The recipe is a total in kg and a share per silo (40 / 40 / 20 % of 2 kg is
+0.8 / 0.8 / 0.4 kg); with the same feed in every silo it runs the same way.
+Tap a step to leave it out, e.g. only *Feed the cows* to test the laps.
+*Dry run* (the default) drives everything with the valves and the door
+closed. Stop, or STOP ALL, closes the valves and the door and stops the
+mixer, the laps and Nav2.
+
+```bash
+ros2 param set /mission steps "['fill', 'mix']"
+ros2 param set /mission dry_run true
+ros2 service call /mission/start std_srvs/srv/Trigger
+ros2 topic echo /mission/progress
+```
 
 ### The lidar on its own
 

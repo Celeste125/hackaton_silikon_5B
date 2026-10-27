@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'lap_driver = feed_mission.lap_driver:main',
             'relocalizer = feed_mission.relocalize:main',
+            'mission = feed_mission.mission:main',
         ],
     },
 )

@@ -3,20 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0c1f26">
+<meta name="theme-color" content="#0a0d12">
 <title>Feed mixer</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23f4b740'/%3E%3Cpath d='M9 17c2-5 9-6 12-2s-1 8-5 7' fill='none' stroke='%232a1c05' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
   /* Everything is inline and uses system fonts: the panel must work on the
      arena Wi-Fi without internet. */
   :root {
-    --night-1: #0c1f26;
-    --night-2: #172042;
-    --glass-strong: rgba(255, 255, 255, .11);
-    --edge: rgba(255, 255, 255, .14);
-    --edge-soft: rgba(255, 255, 255, .07);
-    --text: #eaf2f4;
-    --muted: #a3b6bd;
+    --night-1: #0a0d12;
+    --night-2: #0e1319;
+    --glass-strong: rgba(255, 255, 255, .075);
+    --edge: rgba(255, 255, 255, .11);
+    --edge-soft: rgba(255, 255, 255, .06);
+    --text: #e9eef3;
+    --muted: #93a0ad;
     --grain: #f4b740;       /* actions: the colour of the feed */
     --grain-deep: #d9932a;
     --on-grain: #2a1c05;
@@ -24,7 +24,7 @@
     --stop: #ff5d5d;
     --stop-deep: #e03e4a;
     --focus: #9be7ff;
-    --track: #0f1d24;
+    --track: #0b1016;
     --radius-lg: 20px;
     --radius-md: 14px;
     --radius-sm: 10px;
@@ -34,7 +34,13 @@
   * { box-sizing: border-box; }
   /* The gradient sits on html: a body background would paint over the
      liquid layer below. */
-  html { background: linear-gradient(160deg, var(--night-1) 0%, #102b35 45%, var(--night-2) 100%) fixed var(--night-1); }
+  html {
+    background:
+      radial-gradient(1100px 700px at 8% -12%, rgba(244, 183, 64, .085), transparent 62%),
+      radial-gradient(900px 650px at 104% -4%, rgba(61, 214, 181, .065), transparent 60%),
+      radial-gradient(1300px 900px at 50% 125%, rgba(96, 116, 170, .09), transparent 62%),
+      linear-gradient(180deg, #0c1016 0%, var(--night-1) 100%) fixed var(--night-1);
+  }
   body {
     margin: 0; color: var(--text);
     font: 16px/1.45 ui-rounded, "SF Pro Rounded", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -43,19 +49,20 @@
   [hidden] { display: none !important; }
 
   .liquid { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
-  .liquid span { position: absolute; border-radius: 50%; filter: blur(80px); opacity: .5; }
-  .liquid .a { width: 55vmax; height: 55vmax; left: -15vmax; top: -20vmax; background: #23a596; animation: drift-a 38s var(--ease) infinite alternate; }
-  .liquid .b { width: 45vmax; height: 45vmax; right: -18vmax; top: 20vh; background: #5a4bd0; animation: drift-b 46s var(--ease) infinite alternate; }
-  .liquid .c { width: 35vmax; height: 35vmax; left: 20vw; bottom: -20vmax; background: #c9822a; opacity: .45; animation: drift-c 52s var(--ease) infinite alternate; }
+  /* Slow, faint light behind the glass: depth without colour noise. */
+  .liquid span { position: absolute; border-radius: 50%; filter: blur(110px); opacity: .16; }
+  .liquid .a { width: 50vmax; height: 50vmax; left: -18vmax; top: -24vmax; background: #2c7f73; animation: drift-a 60s var(--ease) infinite alternate; }
+  .liquid .b { width: 44vmax; height: 44vmax; right: -20vmax; top: 24vh; background: #3a4a86; animation: drift-b 70s var(--ease) infinite alternate; }
+  .liquid .c { width: 36vmax; height: 36vmax; left: 24vw; bottom: -24vmax; background: #9a6a24; opacity: .13; animation: drift-c 80s var(--ease) infinite alternate; }
   @keyframes drift-a { to { transform: translate(12vmax, 10vmax) scale(1.1); } }
   @keyframes drift-b { to { transform: translate(-10vmax, 14vmax) scale(.9); } }
   @keyframes drift-c { to { transform: translate(-14vmax, -8vmax) scale(1.15); } }
 
   .glass {
     border: 1px solid var(--edge-soft); border-radius: var(--radius-lg);
-    background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .02)), rgba(9, 20, 27, .5);
-    backdrop-filter: blur(24px) saturate(150%); -webkit-backdrop-filter: blur(24px) saturate(150%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 20px 50px -30px rgba(0, 0, 0, .6);
+    background: linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .012)), rgba(13, 18, 24, .74);
+    backdrop-filter: blur(22px) saturate(130%); -webkit-backdrop-filter: blur(22px) saturate(130%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 24px 60px -34px rgba(0, 0, 0, .75);
   }
 
   /* ---- App shell ------------------------------------------------------ */
@@ -299,17 +306,66 @@
   .lapstatus.bad { color: var(--stop); }
 
   /* ---- Map view --------------------------------------------------------- */
-  .map-wrap { position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, #0b1a21, #050c10); }
+  .map-wrap { position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, #0d141b, #06090d); }
   .map-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
   .map-wrap canvas.dragging { cursor: grabbing; }
   .map-wrap canvas.editing { cursor: move; }
   .map-hud { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-  .map-hud button { min-height: 34px; padding: 4px 12px; font-size: 13px; border-radius: 999px; background: rgba(5, 12, 16, .62); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .map-hud button, .map-editbar button { min-height: 34px; padding: 4px 12px; font-size: 13px; border-radius: 999px; background: rgba(6, 9, 13, .7); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .map-hud button.danger { color: #ffd0d0; border-color: rgba(255, 93, 93, .6); }
+  .map-tools { position: absolute; top: 10px; left: 10px; display: flex; gap: 3px; padding: 4px; border-radius: 999px; background: rgba(6, 9, 13, .7); border: 1px solid var(--edge-soft); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .map-tools button { min-height: 32px; padding: 4px 12px; font-size: 13px; border-radius: 999px; background: transparent; border-color: transparent; color: var(--muted); }
+  .map-tools button[aria-pressed="true"] { background: linear-gradient(180deg, var(--grain), var(--grain-deep)); color: var(--on-grain); }
+  .map-hint { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); max-width: calc(100% - 20px); padding: 6px 14px; border-radius: 999px; background: rgba(6, 9, 13, .82); border: 1px solid rgba(155, 231, 255, .35); font-size: 13px; text-align: center; pointer-events: none; }
+  .map-editbar { position: absolute; left: 50%; bottom: 50px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 5px; border-radius: 999px; background: rgba(6, 9, 13, .8); border: 1px solid rgba(244, 183, 64, .4); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .map-editbar span { font-size: 12px; color: var(--muted); padding: 0 6px; white-space: nowrap; }
+  .map-editbar button.primary { background: linear-gradient(180deg, var(--grain), var(--grain-deep)); }
+  .map-cards { position: absolute; right: 12px; bottom: 12px; display: none; flex-direction: column; gap: 8px; width: 270px; }
+  .map-wrap.full .map-cards, .map-wrap:fullscreen .map-cards { display: flex; }
+  .map-wrap.full { position: fixed; inset: 0; z-index: 40; }
+  .map-card { padding: 10px 12px; border-radius: 14px; background: rgba(8, 12, 17, .8); border: 1px solid var(--edge-soft); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); font-size: 13px; color: var(--muted); }
+  .map-card b { display: block; color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .map-card .big { display: block; font-size: 26px; font-weight: 700; color: var(--text); letter-spacing: -.01em; }
+  @media (max-width: 899px) {
+    .map-hud { top: 54px; }
+    .map-hint { top: 98px; }
+    .map-tools button { padding: 4px 9px; }
+    .map-editbar span { display: none; }
+  }
   .map-legend { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 6px 12px; border-radius: 999px; background: rgba(5, 12, 16, .62); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 12px; color: var(--muted); }
   .map-legend i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
   .map-empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); font-size: 14px; pointer-events: none; }
   .map-empty code { color: var(--text); }
   #feedMapHost { position: relative; aspect-ratio: 4 / 3; border-radius: var(--radius-md); overflow: hidden; margin-bottom: 14px; border: 1px solid var(--edge-soft); }
+
+  /* ---- Dock bar --------------------------------------------------------- */
+  .dockbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+  .dockbar .grow { flex: 1; min-width: 0; font-size: 14px; }
+  .dockbar small { display: block; color: var(--muted); font-size: 12px; }
+  .dockbar button { min-height: 40px; padding: 6px 16px; }
+
+  /* ---- Mission tab ------------------------------------------------------ */
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; }
+  .steps button { min-height: 38px; padding: 6px 14px; border-radius: 999px; font-size: 14px; }
+  .steps button[aria-pressed="false"] { color: var(--muted); background: transparent; border-style: dashed; }
+  .silo-share .top output small { color: var(--muted); font-weight: 600; margin-left: 6px; }
+  .timeline { list-style: none; margin: 14px 0 0; padding: 0; }
+  .timeline li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; padding: 9px 0; border-top: 1px solid var(--edge-soft); }
+  .timeline li:first-child { border-top: 0; }
+  .timeline .ico { width: 16px; height: 16px; margin-top: 3px; border-radius: 50%; border: 2px solid var(--muted); box-sizing: border-box; }
+  .timeline .running .ico { border-color: var(--live); box-shadow: 0 0 0 4px rgba(61, 214, 181, .18); animation: pulse 1.4s ease-in-out infinite; }
+  .timeline .done .ico { background: var(--live); border-color: var(--live); }
+  .timeline .failed .ico { background: var(--stop); border-color: var(--stop); }
+  .timeline .skipped .ico, .timeline .stopped .ico { border-style: dashed; }
+  .timeline b { font-weight: 600; }
+  .timeline .pending b, .timeline .skipped b { color: var(--muted); }
+  .timeline small { display: block; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .timeline .failed small { color: #ffb3b3; }
+  .fillbars { display: grid; gap: 6px; margin-top: 6px; }
+  .fillbar { display: grid; grid-template-columns: 52px minmax(0, 1fr) 92px; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .fillbar .tank { height: 10px; }
+  .fillbar span:last-child { text-align: right; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(61, 214, 181, .06); } }
 
   /* ---- Feed tab --------------------------------------------------------- */
   .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
@@ -382,7 +438,7 @@
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .glass { background: rgba(22, 38, 48, .94); }
+    .glass { background: rgba(16, 22, 29, .96); }
   }
 </style>
 </head>
@@ -413,6 +469,7 @@
         <b id="batPct">—</b><span class="sr-only" id="batSr"></span>
       </span>
       <span class="chip" role="status" aria-live="polite"><span class="dot" id="dot"></span><span id="conn">Connecting…</span></span>
+      <span class="chip" id="fitChip" hidden><span class="dot idle" id="fitDot"></span><span id="fitText"></span></span>
       <span class="chip" id="mapChip" hidden><span class="dot idle" id="mapDot"></span><span id="mapText"></span></span>
       <span class="chip ctl" id="ctl" aria-live="polite">
         <span class="dot idle" id="ctlDot"></span><span id="ctlMsg">Checking control…</span>
@@ -435,14 +492,31 @@
           <div class="map-wrap" id="mapWrap" hidden>
             <canvas id="mapCanvas" aria-label="Map of the arena with the robot, the cow box and the planned lap" role="img"></canvas>
             <div class="map-empty" id="mapEmpty">Loading the map…</div>
-            <div class="map-hud">
-              <button id="mapEdit" aria-pressed="false" data-needs-control title="Drag the cow box on the map">Edit box</button>
-              <button id="mapFollow" aria-pressed="false">Follow robot</button>
-              <button id="mapFit">Fit</button>
+            <div class="map-tools" role="group" aria-label="Map tool" data-needs-control>
+              <button data-tool="pan" aria-pressed="true" title="Drag to move the map, wheel or pinch to zoom">Move</button>
+              <button data-tool="pose" aria-pressed="false" title="Like RViz 2D Pose Estimate: press where the robot is, drag towards its heading">Set position</button>
+              <button data-tool="goal" aria-pressed="false" title="Like RViz Nav2 Goal: press the goal, drag towards the heading">Send goal</button>
+              <button data-tool="edit" aria-pressed="false" title="Move, resize and turn the cow box">Edit box</button>
             </div>
+            <div class="map-hud">
+              <button id="mapFind" data-needs-control title="Match the lidar against the whole map and correct the position">Find robot</button>
+              <button id="mapCancel" class="danger" hidden>Cancel goal</button>
+              <button id="mapFollow" aria-pressed="false">Follow</button>
+              <button id="mapFit" title="Show the whole map">Fit</button>
+              <button id="mapFull" aria-pressed="false" aria-label="Full screen map" title="Full screen: the map with the run's status">⤢</button>
+            </div>
+            <div class="map-hint" id="mapHint" hidden></div>
+            <div class="map-editbar" id="mapEditBar" hidden data-needs-control>
+              <button id="meRotL" aria-label="Turn the box 1 degree left">⟲ 1°</button>
+              <button id="meRotR" aria-label="Turn the box 1 degree right">⟳ 1°</button>
+              <span id="meInfo">drag the box, a corner, or the round knob</span>
+              <button class="primary" id="meDone">Done</button>
+            </div>
+            <div class="map-cards" id="mapCards" aria-live="polite"></div>
             <div class="map-legend" aria-hidden="true">
               <span><i style="background:#3dd6b5"></i>lap</span>
-              <span><i style="background:#f4b740"></i>door open</span>
+              <span><i style="background:#f4b740"></i>door</span>
+              <span><i style="background:#9be7ff"></i>Nav2 path</span>
               <span><i style="background:#ff6b6b"></i>lidar</span>
               <span id="mapScale"></span>
             </div>
@@ -488,6 +562,12 @@
           <p class="hint">Hold a button or W A S D. Let go to stop.</p>
         </div>
       </div>
+      <div class="dockbar glass" role="status" aria-live="polite">
+        <span class="dot idle" id="dockDot"></span>
+        <div class="grow"><b id="dockText">Dock: no status</b><small id="dockSub"></small></div>
+        <button id="undockBtn" data-needs-control>Undock</button>
+        <button id="dockBtn" data-needs-control>Dock</button>
+      </div>
     </section>
 
     <!-- Right: the job, one stage at a time (phone: Load / Mix / Unload tabs) -->
@@ -498,13 +578,51 @@
         <button id="tare" class="fit" data-needs-control>Zero</button>
       </div>
       <div class="tabs" role="tablist" aria-label="Stage">
+        <button role="tab" id="tab-mission" aria-controls="pane-mission" data-tab="mission">Mission<span class="badge" id="missionBadge" hidden></span></button>
         <button role="tab" id="tab-load" aria-controls="pane-load" data-tab="load">Load</button>
         <button role="tab" id="tab-mix" aria-controls="pane-mix" data-tab="mix">Mix<span class="badge" id="mixBadge" hidden></span></button>
-        <button role="tab" id="tab-unload" aria-controls="pane-unload" data-tab="unload">Unload</button>
         <button role="tab" id="tab-feed" aria-controls="pane-feed" data-tab="feed">Feed<span class="badge" id="feedBadge" hidden></span></button>
         <button role="tab" id="tab-setup" aria-controls="pane-setup" data-tab="setup">Setup</button>
       </div>
       <div class="panes">
+        <!-- Mission: the whole run in one go -->
+        <div class="pane" role="tabpanel" id="pane-mission" aria-labelledby="tab-mission">
+          <section aria-labelledby="msRecipeH">
+            <div class="card-head"><h3 id="msRecipeH">Recipe</h3><span class="meta" id="msRecipeSum"></span></div>
+            <label class="field">Total to load, kg
+              <input type="number" id="msTotal" min="0" max="20" step="0.1" value="1.0" inputmode="decimal"></label>
+            <div id="msSilos"></div>
+          </section>
+          <section class="sub" aria-labelledby="msStepsH">
+            <div class="card-head"><h3 id="msStepsH">Steps</h3><span class="meta">tap to leave one out</span></div>
+            <div class="steps" id="msSteps" role="group" aria-label="Steps of the mission"></div>
+            <div class="slider">
+              <div class="top"><label for="msMix">Mixing time</label><output id="msMixVal" for="msMix"></output></div>
+              <input type="range" id="msMix" min="0" max="300" step="5" value="60">
+            </div>
+            <div class="slider">
+              <div class="top"><label for="msMixSpeed">Mixer speed</label><output id="msMixSpeedVal" for="msMixSpeed"></output></div>
+              <input type="range" id="msMixSpeed" min="0.1" max="1" step="0.05" value="0.6">
+            </div>
+            <div class="row" style="margin-top: 10px">
+              <label class="field">Laps at most<input type="number" id="msLaps" min="1" max="50" step="1" value="6" inputmode="numeric"></label>
+              <label class="field">Stop feeding below, kg<input type="number" id="msEmpty" min="0" max="5" step="0.01" value="0.05" inputmode="decimal"></label>
+            </div>
+            <p class="hint">Feeding drives laps with the Feed tab's settings (door opening, gaps, speed), one at a time, until the container is down to that weight. Docking needs Start (in front of the dock) and Docked saved in Setup.</p>
+          </section>
+          <section class="sub" aria-labelledby="msRunH">
+            <div class="card-head"><h3 id="msRunH">Run</h3><span class="meta" id="msRunMeta"></span></div>
+            <div class="row" data-needs-control>
+              <button id="msDry" aria-pressed="true" title="Drive everything with the valves and the door kept closed">Dry run: valves and door stay closed</button>
+            </div>
+            <div class="row" style="margin-top: 8px">
+              <button class="primary" id="msStart" data-needs-control>Start mission</button>
+              <button id="msStop">Stop mission</button>
+            </div>
+            <ol class="timeline" id="msTimeline" aria-live="polite"></ol>
+          </section>
+        </div>
+
         <!-- Load -->
         <div class="pane" role="tabpanel" id="pane-load" aria-labelledby="tab-load">
           <div class="dose" id="dose" hidden role="status" aria-live="polite">
@@ -546,35 +664,6 @@
             <p class="running-note" id="shNote" aria-live="polite"></p>
             <p class="hint" style="margin-top: 2px">Unequal times push the feed one way. Changes apply while it runs. A motor slider or STOP ALL ends it.</p>
           </div>
-        </div>
-
-        <!-- Unload -->
-        <div class="pane" role="tabpanel" id="pane-unload" aria-labelledby="tab-unload" data-needs-control>
-          <div class="seg" role="group" aria-label="Door">
-            <button id="open" aria-pressed="false">Open door</button>
-            <button id="close" aria-pressed="false">Close door</button>
-          </div>
-          <div class="slider">
-            <div class="top"><label for="door">Door position</label><output id="doorVal" for="door">—</output></div>
-            <input type="range" id="door" min="0" max="1" step="0.01" value="0">
-            <div class="scale" aria-hidden="true"><span>Open</span><span>Closed</span></div>
-          </div>
-          <details class="sub">
-            <summary>Set the door's open and closed ends</summary>
-            <div class="slider">
-              <div class="top"><label for="us">Servo pulse</label><output id="usVal" for="us">1500 µs</output></div>
-              <input type="range" id="us" min="500" max="2500" step="10" value="1500">
-            </div>
-            <div class="row" style="margin-top: 8px">
-              <button id="usMinus" aria-label="Pulse minus 10 microseconds">−10 µs</button>
-              <button id="usPlus" aria-label="Pulse plus 10 microseconds">+10 µs</button>
-            </div>
-            <div class="row" style="margin-top: 8px">
-              <button id="saveOpen">Save as open</button>
-              <button id="saveClosed">Save as closed</button>
-            </div>
-            <p class="hint">The servo follows the slider. Move it until the door is fully open and save, then do the same for closed.</p>
-          </details>
         </div>
 
         <!-- Feed: laps around the cow box, door open beside it -->
@@ -635,6 +724,19 @@
             <ul class="warnlist" id="fdWarn"></ul>
           </section>
 
+          <details class="sub" data-needs-control>
+            <summary>Door by hand</summary>
+            <div class="seg" role="group" aria-label="Door" style="margin-top: 10px">
+              <button id="open" aria-pressed="false">Open door</button>
+              <button id="close" aria-pressed="false">Close door</button>
+            </div>
+            <div class="slider">
+              <div class="top"><label for="door">Door position</label><output id="doorVal" for="door">—</output></div>
+              <input type="range" id="door" min="0" max="1" step="0.01" value="0">
+              <div class="scale" aria-hidden="true"><span>Open</span><span>Closed</span></div>
+            </div>
+          </details>
+
           <section class="sub" aria-labelledby="fdRunH">
             <div class="card-head"><h3 id="fdRunH">Run</h3></div>
             <div class="row" data-needs-control>
@@ -662,9 +764,26 @@
           <div class="row">
             <div class="here" role="status" aria-live="polite"><span class="dot idle" id="poseDot"></span><span id="poseText">Waiting for the robot's position…</span></div>
             <button class="fit" id="reloc" data-needs-control>Find robot on map</button>
+            <button class="fit" id="locDock" data-needs-control title="On the dock: put the robot exactly at the saved Docked pose">Position from dock</button>
           </div>
           <p class="hint">Drive the robot to each spot (Drive), then press Save. The pose is the robot's position and heading on the saved map, so navigation must be running. If the position looks wrong (in RViz the scan does not sit on the walls), stand still and press Find robot on map first: every saved pose is only as good as that position.</p>
           <div id="poseList" data-needs-control></div>
+          <details class="sub" data-needs-control>
+            <summary>Door: set its open and closed ends</summary>
+            <div class="slider">
+              <div class="top"><label for="us">Servo pulse</label><output id="usVal" for="us">1500 µs</output></div>
+              <input type="range" id="us" min="500" max="2500" step="10" value="1500">
+            </div>
+            <div class="row" style="margin-top: 8px">
+              <button id="usMinus" aria-label="Pulse minus 10 microseconds">−10 µs</button>
+              <button id="usPlus" aria-label="Pulse plus 10 microseconds">+10 µs</button>
+            </div>
+            <div class="row" style="margin-top: 8px">
+              <button id="saveOpen">Save as open</button>
+              <button id="saveClosed">Save as closed</button>
+            </div>
+            <p class="hint">The servo follows the slider. Move it until the door is fully open and save, then do the same for closed.</p>
+          </details>
         </div>
       </div>
     </section>
@@ -674,12 +793,12 @@
   <nav class="nav glass" role="tablist" aria-label="View">
     <button role="tab" data-view-btn="drive" aria-controls="view-drive">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>Drive</button>
+    <button role="tab" data-view-btn="mission" aria-controls="view-tools">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4v16"/><path d="M5 5h11l-2 4 2 4H5"/></svg>Mission</button>
     <button role="tab" data-view-btn="load" aria-controls="view-tools">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 3h10l-2 7H9z"/><path d="M12 10v5"/><path d="M5 21h14l-2-6H7z"/></svg>Load</button>
     <button role="tab" data-view-btn="mix" aria-controls="view-tools">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 4v4h-4"/></svg>Mix</button>
-    <button role="tab" data-view-btn="unload" aria-controls="view-tools">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="11" rx="2"/><path d="M12 15v6M9 18l3 3 3-3"/></svg>Unload</button>
     <button role="tab" data-view-btn="feed" aria-controls="view-tools">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="8" y="9" width="8" height="6" rx="1"/><path d="M4 5h16v14H4z" stroke-dasharray="3 2.4"/></svg>Feed</button>
     <button role="tab" data-view-btn="setup" aria-controls="view-tools">
@@ -760,8 +879,8 @@ function paintRange(el) {
 document.addEventListener('input', (e) => { if (e.target.type === 'range') paintRange(e.target); });
 
 // ---- layout: stage tabs (desktop) and views (phone) ----
-const TOOLS = ['load', 'mix', 'unload', 'feed', 'setup'];
-let tool = TOOLS.includes(store.get('tool')) ? store.get('tool') : 'load';
+const TOOLS = ['mission', 'load', 'mix', 'feed', 'setup'];
+let tool = TOOLS.includes(store.get('tool')) ? store.get('tool') : 'mission';
 let view = ['drive', ...TOOLS].includes(store.get('view')) ? store.get('view') : 'drive';
 
 function showTool(t, focus = false) {
@@ -1123,7 +1242,8 @@ function showValves(s) {
 const POSE_GROUPS = [
   ['Silos', 'Park under each pipe, facing the way you will approach it.',
     [['silo1', 'Silo 1'], ['silo2', 'Silo 2'], ['silo3', 'Silo 3']]],
-  ['Start', 'Where the robot waits before and after a run.', [['start', 'Start']]],
+  ['Dock', 'Start: in front of the dock, facing it, where Dock can take over (about 0.5 m out). Docked: on the dock, saved once while docked; from then on "Position from dock" and the mission set the position from it.',
+    [['start', 'Start (in front of the dock)'], ['docked', 'Docked']]],
 ];
 const deg = (rad) => Math.round(rad * 180 / Math.PI);
 function buildPoses() {
@@ -1189,22 +1309,29 @@ const M = {
   grid: null, loading: false, scan: [], scanAge: null, plan: null, state: null,
   view: null, follow: false, edit: false, drag: null, pointers: new Map(), dragBox: null,
   touched: false,  // panned or zoomed by hand: stop refitting on resize
+  tool: 'pan', trail: [], dash: 0, animating: false,
 };
+const TRAIL_MS = 60000;  // the robot's track fades out over a minute
 const ROBOT = {hl: 0.17, hw: 0.26};
 const COL = {
-  free: [20, 39, 48], wall: [168, 203, 214], grid: 'rgba(255,255,255,0.045)', lap: '#3dd6b5',
+  free: [24, 33, 42], wall: [176, 196, 212], grid: 'rgba(255,255,255,0.045)', lap: '#3dd6b5',
   door: '#f4b740', box: '#f4b740', scan: '#ff6b6b', robot: '#3dd6b5', bad: '#ff5d5d', text: '#eaf2f4',
+  plan: '#9be7ff',
 };
 
 function mapVisible() {
   if (document.hidden) return false;
+  if ($('mapWrap').classList.contains('full')) return true;
   if (phone.matches) return view === 'feed' || (view === 'drive' && stageMode === 'map');
   return stageMode === 'map';
 }
 function placeMap() {
   const onPhoneFeed = phone.matches && view === 'feed';
   $('feedMapHost').hidden = !onPhoneFeed;
-  const host = onPhoneFeed ? $('feedMapHost') : $('screen');
+  // Pseudo full screen (no Fullscreen API) must live on the page itself: the
+  // glass panels' blur would otherwise keep a fixed element inside them.
+  const host = $('mapWrap').classList.contains('full') ? document.body
+    : onPhoneFeed ? $('feedMapHost') : $('screen');
   if ($('mapWrap').parentElement !== host) host.appendChild($('mapWrap'));
   $('mapWrap').hidden = !mapVisible();
   resizeMap();
@@ -1246,22 +1373,23 @@ async function loadMap() {
     if (!res.ok) { M.grid = null; drawMap(); return; }
     const m = await res.json();
     const raw = atob(m.data);
-    const off = document.createElement('canvas');
-    off.width = m.width;
-    off.height = m.height;
-    const g = off.getContext('2d');
-    const img = g.createImageData(m.width, m.height);
+    // Two layers: the known floor, and the walls on their own so they can glow.
+    const layer = () => { const c = document.createElement('canvas'); c.width = m.width; c.height = m.height; return c; };
+    const floor = layer(), walls = layer();
+    const fi = floor.getContext('2d').createImageData(m.width, m.height);
+    const wi = walls.getContext('2d').createImageData(m.width, m.height);
     for (let r = 0; r < m.height; r++) {
       for (let c = 0; c < m.width; c++) {
         const v = raw.charCodeAt(r * m.width + c);
         if (v === 255) continue;  // unknown stays transparent
         const k = ((m.height - 1 - r) * m.width + c) * 4;
-        const rgb = v >= 65 ? COL.wall : COL.free;
+        const img = v >= 65 ? wi : fi, rgb = v >= 65 ? COL.wall : COL.free;
         img.data[k] = rgb[0]; img.data[k + 1] = rgb[1]; img.data[k + 2] = rgb[2]; img.data[k + 3] = 255;
       }
     }
-    g.putImageData(img, 0, 0);
-    M.grid = {...m, img: off};
+    floor.getContext('2d').putImageData(fi, 0, 0);
+    walls.getContext('2d').putImageData(wi, 0, 0);
+    M.grid = {...m, floor, walls};
     if (!M.view || !M.touched) fitMap();
     drawMap();
   } catch (e) { /* retried on the next poll */ } finally { M.loading = false; }
@@ -1295,17 +1423,7 @@ function fitMap() {
 $('mapFit').addEventListener('click', () => { M.follow = false; markFollow(); fitMap(); });
 function markFollow() { $('mapFollow').setAttribute('aria-pressed', String(M.follow)); }
 $('mapFollow').addEventListener('click', () => { M.follow = !M.follow; markFollow(); drawMap(); });
-function setEdit(on) {
-  M.edit = on;
-  for (const id of ['mapEdit', 'fdEdit']) $(id).setAttribute('aria-pressed', String(on));
-  $('fdEdit').textContent = on ? 'Done editing' : 'Edit on map';
-  if (on) {
-    if (!phone.matches && stageMode !== 'map') setStage('map');
-    toast('Drag the box to move it, a corner to resize, the round knob to rotate (Shift: 5° steps)');
-  }
-  drawMap();
-}
-$('mapEdit').addEventListener('click', () => setEdit(!M.edit));
+
 
 // The box being dragged, else the saved one.
 const curBox = () => M.dragBox || (M.state && M.state.feed && M.state.feed.box) || null;
@@ -1320,6 +1438,10 @@ function insideBox(b, x, y) {
 
 let mapDrawPending = false;
 function drawMap() {
+  if (needsAnimation()) {
+    if (!M.animating) { M.animating = true; requestAnimationFrame(animate); }
+    return;
+  }
   if (mapDrawPending) return;
   mapDrawPending = true;
   requestAnimationFrame(() => { mapDrawPending = false; renderMap(); });
@@ -1328,6 +1450,26 @@ function path(c, pts, close) {
   c.beginPath();
   pts.forEach(([x, y], i) => { const [px, py] = toScreen(x, y); if (i) c.lineTo(px, py); else c.moveTo(px, py); });
   if (close) c.closePath();
+}
+function needsAnimation() {
+  const st = M.state || {};
+  const prog = st.feed && st.feed.progress, nav = st.nav, mis = st.mission && st.mission.progress;
+  const lapRunning = prog && ['approach', 'turn', 'straight', 'blocked'].includes(prog.state);
+  const navDriving = nav && nav.goal && ['sent', 'driving'].includes(nav.goal.state);
+  return mapVisible() && (lapRunning || navDriving || (mis && mis.state === 'running') || !!M.drag);
+}
+function animate(ts) {
+  if (!needsAnimation()) { M.animating = false; return; }
+  M.dash = ts / 45;
+  renderMap();
+  requestAnimationFrame(animate);
+}
+function arrowHead(c, x, y, ang, k) {
+  c.beginPath();
+  c.moveTo(x - k * Math.cos(ang - 0.55), y - k * Math.sin(ang - 0.55));
+  c.lineTo(x, y);
+  c.lineTo(x - k * Math.cos(ang + 0.55), y - k * Math.sin(ang + 0.55));
+  c.stroke();
 }
 function renderMap() {
   const c = mctx, W = mapCanvas.width, H = mapCanvas.height, d = dprNow();
@@ -1344,27 +1486,32 @@ function renderMap() {
   const st = M.state || {};
   const pose = st.pose;
   if (M.follow && pose) { M.view.cx = pose.x; M.view.cy = pose.y; }
-  const s = M.view.s, g = M.grid;
+  const s = M.view.s, g = M.grid, dash = M.dash || 0;
 
-  // map
+  // map: floor, a fine grid on it, then the walls with a soft glow
   c.imageSmoothingEnabled = false;
   const [mx, my] = toScreen(g.origin[0], g.origin[1] + g.height * g.resolution);
-  c.drawImage(g.img, mx, my, g.width * g.resolution * s, g.height * g.resolution * s);
-
-  // 0.5 m grid
+  const mw = g.width * g.resolution * s, mh = g.height * g.resolution * s;
+  c.drawImage(g.floor, mx, my, mw, mh);
   c.strokeStyle = COL.grid;
   c.lineWidth = 1;
   const [x0, y1] = toWorld(0, 0), [x1, y0] = toWorld(W, H);
+  const stepM = s * 0.5 > 26 * d ? 0.5 : 1.0;
   c.beginPath();
-  for (let x = Math.ceil(x0 / 0.5) * 0.5; x < x1; x += 0.5) { const [px] = toScreen(x, 0); c.moveTo(px, 0); c.lineTo(px, H); }
-  for (let y = Math.ceil(y0 / 0.5) * 0.5; y < y1; y += 0.5) { const [, py] = toScreen(0, y); c.moveTo(0, py); c.lineTo(W, py); }
+  for (let x = Math.ceil(x0 / stepM) * stepM; x < x1; x += stepM) { const [px] = toScreen(x, 0); c.moveTo(px, 0); c.lineTo(px, H); }
+  for (let y = Math.ceil(y0 / stepM) * stepM; y < y1; y += stepM) { const [, py] = toScreen(0, y); c.moveTo(0, py); c.lineTo(W, py); }
   c.stroke();
+  c.save();
+  c.shadowColor = 'rgba(150,195,230,0.55)';
+  c.shadowBlur = 9 * d;
+  c.drawImage(g.walls, mx, my, mw, mh);
+  c.restore();
 
   // cow box
   const box = curBox();
   if (box) {
     path(c, boxCorners(box), true);
-    c.fillStyle = 'rgba(244,183,64,0.13)';
+    c.fillStyle = 'rgba(244,183,64,0.12)';
     c.fill();
     c.setLineDash(M.dragBox ? [6 * d, 4 * d] : []);
     c.strokeStyle = COL.box;
@@ -1372,9 +1519,8 @@ function renderMap() {
     c.stroke();
     c.setLineDash([]);
   }
-  const boxEditor = box && M.edit;
 
-  // lap plan
+  // lap plan: dashed sides marching in the driving direction
   const plan = M.plan;
   const prog = st.feed && st.feed.progress;
   const running = prog && ['approach', 'turn', 'straight', 'blocked'].includes(prog.state);
@@ -1382,35 +1528,30 @@ function renderMap() {
     const bad = new Set((plan.problems || []).filter((p) => p.kind === 'side').map((p) => p.index));
     plan.sides.forEach((sd, i) => {
       const current = running && prog.side === i;
-      path(c, [sd.from, sd.to]);
-      c.strokeStyle = bad.has(i) ? COL.bad : COL.lap;
-      c.globalAlpha = current ? 1 : 0.55;
-      c.lineWidth = (current ? 3.5 : 2) * d;
-      c.setLineDash(current ? [] : [7 * d, 6 * d]);
-      c.stroke();
-      c.setLineDash([]);
-      c.globalAlpha = 1;
-      // direction chevron in the middle of the side
-      const mxw = (sd.from[0] + sd.to[0]) / 2, myw = (sd.from[1] + sd.to[1]) / 2;
-      const [px, py] = toScreen(mxw, myw), [qx, qy] = toScreen(sd.to[0], sd.to[1]);
-      const ang = Math.atan2(qy - py, qx - px), k = 7 * d;
-      c.beginPath();
-      c.moveTo(px - k * Math.cos(ang - 0.6), py - k * Math.sin(ang - 0.6));
-      c.lineTo(px, py);
-      c.lineTo(px - k * Math.cos(ang + 0.6), py - k * Math.sin(ang + 0.6));
-      c.strokeStyle = COL.lap;
-      c.lineWidth = 2 * d;
-      c.stroke();
       if (sd.door) {
         path(c, sd.door);
         c.strokeStyle = COL.door;
         c.lineCap = 'round';
-        c.lineWidth = 7 * d;
-        c.globalAlpha = feedSettings().dry_run ? 0.35 : 0.9;
+        c.lineWidth = 8 * d;
+        c.globalAlpha = feedSettings().dry_run ? 0.3 : 0.85;
         c.stroke();
         c.globalAlpha = 1;
         c.lineCap = 'butt';
       }
+      path(c, [sd.from, sd.to]);
+      c.strokeStyle = bad.has(i) ? COL.bad : COL.lap;
+      c.globalAlpha = current ? 1 : 0.6;
+      c.lineWidth = (current ? 3.5 : 2) * d;
+      c.setLineDash([8 * d, 7 * d]);
+      c.lineDashOffset = -dash * d * (current ? 1.6 : 0.6);
+      c.stroke();
+      c.setLineDash([]);
+      c.globalAlpha = 1;
+      const [px, py] = toScreen((sd.from[0] + sd.to[0]) / 2, (sd.from[1] + sd.to[1]) / 2);
+      const [qx, qy] = toScreen(sd.to[0], sd.to[1]);
+      c.strokeStyle = COL.lap;
+      c.lineWidth = 2 * d;
+      arrowHead(c, px, py, Math.atan2(qy - py, qx - px), 7 * d);
     });
     const badCorners = new Set((plan.problems || []).filter((p) => p.kind === 'corner').map((p) => p.index));
     plan.corners.forEach(([x, y], i) => {
@@ -1422,6 +1563,34 @@ function renderMap() {
     });
   }
 
+  // where the robot has been
+  if (M.trail.length > 1) {
+    const now = performance.now();
+    c.lineCap = 'round';
+    for (let i = 1; i < M.trail.length; i++) {
+      const [ax, ay, ta] = M.trail[i - 1], [bx, by] = M.trail[i];
+      const age = (now - ta) / TRAIL_MS;
+      path(c, [[ax, ay], [bx, by]]);
+      c.strokeStyle = `rgba(155,231,255,${Math.max(0, 0.55 * (1 - age))})`;
+      c.lineWidth = 3 * d;
+      c.stroke();
+    }
+    c.lineCap = 'butt';
+  }
+
+  // Nav2's path and goal
+  const nav = st.nav || {};
+  if (nav.plan && nav.plan.length > 1) {
+    path(c, nav.plan);
+    c.strokeStyle = COL.plan;
+    c.lineWidth = 2.5 * d;
+    c.setLineDash([10 * d, 8 * d]);
+    c.lineDashOffset = -dash * d * 1.4;
+    c.stroke();
+    c.setLineDash([]);
+  }
+  if (nav.goal && ['sent', 'driving'].includes(nav.goal.state)) drawPoseArrow(c, nav.goal, COL.plan, true);
+
   // taught poses
   const poses = st.poses || {};
   for (const [key, p] of Object.entries(poses)) {
@@ -1429,60 +1598,131 @@ function renderMap() {
     const isSilo = key.startsWith('silo');
     c.beginPath();
     c.arc(px, py, 9 * d, 0, Math.PI * 2);
-    c.fillStyle = isSilo ? 'rgba(244,183,64,0.9)' : 'rgba(155,231,255,0.9)';
+    c.fillStyle = isSilo ? 'rgba(244,183,64,0.92)' : 'rgba(155,231,255,0.92)';
     c.fill();
-    c.fillStyle = '#10161a';
+    c.fillStyle = '#0c1116';
     c.font = `700 ${10 * d}px system-ui, sans-serif`;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText(isSilo ? key.slice(4) : 'S', px, py + 0.5 * d);
+    c.fillText(isSilo ? key.slice(4) : key === 'docked' ? 'D' : 'S', px, py + 0.5 * d);
   }
 
   // lidar
   c.fillStyle = COL.scan;
-  const r = Math.max(1.2, 1.6 * d);
+  const r = Math.max(1.4, 1.8 * d);
   for (const [x, y] of M.scan) {
     const [px, py] = toScreen(x, y);
     c.fillRect(px - r / 2, py - r / 2, r, r);
   }
 
   // robot
-  if (pose) {
-    const cs = Math.cos(pose.yaw), sn = Math.sin(pose.yaw);
-    const at = (lx, ly) => [pose.x + lx * cs - ly * sn, pose.y + lx * sn + ly * cs];
-    c.save();
-    c.shadowColor = 'rgba(61,214,181,0.55)';
-    c.shadowBlur = 14 * d;
-    path(c, [at(ROBOT.hl, ROBOT.hw), at(ROBOT.hl, -ROBOT.hw), at(-ROBOT.hl, -ROBOT.hw), at(-ROBOT.hl, ROBOT.hw)], true);
-    c.fillStyle = 'rgba(61,214,181,0.20)';
-    c.fill();
-    c.restore();
-    c.strokeStyle = COL.robot;
-    c.lineWidth = 2 * d;
-    c.stroke();
-    // heading
-    path(c, [at(ROBOT.hl - 0.02, 0.09), at(ROBOT.hl + 0.07, 0), at(ROBOT.hl - 0.02, -0.09)], true);
-    c.fillStyle = COL.robot;
-    c.fill();
-    // the door, on the right side
-    const dx = feedSettings().door_x;
-    path(c, [at(dx - 0.11, -ROBOT.hw), at(dx + 0.11, -ROBOT.hw)]);
-    const open = prog && prog.door, planned = prog && prog.door_planned;
-    c.strokeStyle = open ? COL.door : planned ? 'rgba(244,183,64,0.55)' : 'rgba(234,242,244,0.55)';
-    c.lineCap = 'round';
-    c.lineWidth = (open ? 6 : 4) * d;
-    c.stroke();
-    c.lineCap = 'butt';
+  if (pose) drawRobot(c, pose, prog);
+
+  // the arrow being aimed (Set position, Send goal)
+  if (M.drag && M.drag.type === 'aim') {
+    const [ax, ay] = M.drag.start, [bx, by] = M.drag.end;
+    const yaw = Math.hypot(bx - ax, by - ay) > 0.05 ? Math.atan2(by - ay, bx - ax) : (pose ? pose.yaw : 0);
+    drawPoseArrow(c, {x: ax, y: ay, yaw}, M.tool === 'goal' ? COL.door : COL.plan, M.tool === 'goal');
   }
 
-  if (boxEditor) drawBoxEditor(c, box);
+  if (box && M.edit) drawBoxEditor(c, box);
 
-  // scale bar
   const meters = [0.25, 0.5, 1, 2].find((m) => m * s >= 60 * d) || 2;
   $('mapScale').textContent = `▬ ${meters < 1 ? `${meters * 100} cm` : `${meters} m`}`;
 }
+function drawPoseArrow(c, p, color, flag) {
+  const d = dprNow();
+  const [px, py] = toScreen(p.x, p.y);
+  const [qx, qy] = toScreen(p.x + 0.35 * Math.cos(p.yaw), p.y + 0.35 * Math.sin(p.yaw));
+  c.beginPath();
+  c.arc(px, py, 6 * d, 0, Math.PI * 2);
+  c.fillStyle = color;
+  c.globalAlpha = 0.25;
+  c.fill();
+  c.globalAlpha = 1;
+  c.strokeStyle = color;
+  c.lineWidth = 3 * d;
+  c.beginPath(); c.moveTo(px, py); c.lineTo(qx, qy); c.stroke();
+  arrowHead(c, qx, qy, Math.atan2(qy - py, qx - px), 10 * d);
+  if (flag) {
+    c.beginPath(); c.moveTo(px, py); c.lineTo(px, py - 22 * d); c.lineWidth = 2 * d; c.stroke();
+    c.beginPath(); c.moveTo(px, py - 22 * d); c.lineTo(px + 12 * d, py - 17 * d); c.lineTo(px, py - 12 * d); c.closePath();
+    c.fillStyle = color; c.fill();
+  }
+}
+function drawRobot(c, pose, prog) {
+  const d = dprNow();
+  const cs = Math.cos(pose.yaw), sn = Math.sin(pose.yaw);
+  const at = (lx, ly) => [pose.x + lx * cs - ly * sn, pose.y + lx * sn + ly * cs];
+  // what it looks at: a faint cone ahead
+  path(c, [at(ROBOT.hl, 0.18), at(ROBOT.hl + 0.75, 0.42), at(ROBOT.hl + 0.75, -0.42), at(ROBOT.hl, -0.18)], true);
+  const [gx0, gy0] = toScreen(...at(ROBOT.hl, 0)), [gx1, gy1] = toScreen(...at(ROBOT.hl + 0.75, 0));
+  const grad = c.createLinearGradient(gx0, gy0, gx1, gy1);
+  grad.addColorStop(0, 'rgba(61,214,181,0.20)');
+  grad.addColorStop(1, 'rgba(61,214,181,0)');
+  c.fillStyle = grad;
+  c.fill();
+  // body: the container's outline over the round base
+  c.save();
+  c.shadowColor = 'rgba(61,214,181,0.6)';
+  c.shadowBlur = 16 * d;
+  path(c, [at(ROBOT.hl, ROBOT.hw), at(ROBOT.hl, -ROBOT.hw), at(-ROBOT.hl, -ROBOT.hw), at(-ROBOT.hl, ROBOT.hw)], true);
+  c.fillStyle = 'rgba(18,48,46,0.92)';
+  c.fill();
+  c.restore();
+  c.strokeStyle = COL.robot;
+  c.lineWidth = 2 * d;
+  c.stroke();
+  const [cx, cy] = toScreen(pose.x, pose.y);
+  c.beginPath();
+  c.arc(cx, cy, 0.17 * M.view.s, 0, Math.PI * 2);
+  c.strokeStyle = 'rgba(61,214,181,0.45)';
+  c.lineWidth = 1.5 * d;
+  c.stroke();
+  // heading
+  path(c, [at(ROBOT.hl - 0.05, 0.1), at(ROBOT.hl + 0.06, 0), at(ROBOT.hl - 0.05, -0.1)], true);
+  c.fillStyle = COL.robot;
+  c.fill();
+  // the door, on the right side
+  const dx = feedSettings().door_x;
+  path(c, [at(dx - 0.11, -ROBOT.hw), at(dx + 0.11, -ROBOT.hw)]);
+  const open = prog && prog.door, planned = prog && prog.door_planned;
+  c.strokeStyle = open ? COL.door : planned ? 'rgba(244,183,64,0.55)' : 'rgba(233,238,243,0.6)';
+  c.lineCap = 'round';
+  c.lineWidth = (open ? 7 : 4) * d;
+  c.stroke();
+  c.lineCap = 'butt';
+}
 
-// pan, zoom, pinch; in Edit box: move, resize from a corner, rotate
+// Map tools, one at a time like RViz's toolbar:
+//   Move          drag pans, wheel or pinch zooms (always, whatever the tool)
+//   Set position  press where the robot is, drag towards its heading -> AMCL
+//   Send goal     press the goal, drag towards the heading -> Nav2
+//   Edit box      move the box, resize from a corner, turn with the knob
+const TOOL_HINT = {
+  pose: 'Press where the robot really is, drag towards where it faces, let go.',
+  goal: 'Press where it should go, drag towards the heading it should end with, let go.',
+};
+function setTool(t) {
+  M.tool = t;
+  M.edit = t === 'edit';
+  document.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
+  $('fdEdit').setAttribute('aria-pressed', String(M.edit));
+  $('fdEdit').textContent = M.edit ? 'Done editing' : 'Edit on map';
+  $('mapEditBar').hidden = !M.edit;
+  $('mapHint').hidden = !TOOL_HINT[t];
+  $('mapHint').textContent = TOOL_HINT[t] || '';
+  if (t !== 'pan' && !phone.matches && stageMode !== 'map') setStage('map');
+  mapCanvas.style.cursor = t === 'pose' || t === 'goal' ? 'crosshair' : '';
+  drawMap();
+}
+function setEdit(on) { setTool(on ? 'edit' : 'pan'); }
+document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () =>
+  setTool(M.tool === b.dataset.tool && b.dataset.tool !== 'pan' ? 'pan' : b.dataset.tool)));
+$('meDone').addEventListener('click', () => setTool('pan'));
+$('meRotL').addEventListener('click', () => rotate(1));
+$('meRotR').addEventListener('click', () => rotate(-1));
+
 const HANDLE_PX = 14;    // grab distance around a handle, CSS px
 const KNOB_PX = 34;      // rotate knob distance outside the box, CSS px
 function boxFrame(b) { return [Math.cos(b.yaw), Math.sin(b.yaw)]; }
@@ -1535,10 +1775,15 @@ mapCanvas.addEventListener('pointerdown', (e) => {
   const d = dprNow(), px = e.offsetX * d, py = e.offsetY * d;
   M.pointers.set(e.pointerId, [px, py]);
   if (M.pointers.size === 2) { M.drag = {type: 'pinch'}; return; }
+  const [wx, wy] = toWorld(px, py);
+  if ((M.tool === 'pose' || M.tool === 'goal') && haveControl) {
+    M.drag = {type: 'aim', start: [wx, wy], end: [wx, wy]};
+    drawMap();
+    return;
+  }
   const hit = haveControl ? hitBox(px, py) : null;
   if (hit) {
     const b = {...curBox()};
-    const [wx, wy] = toWorld(px, py);
     M.drag = {type: hit.kind, i: hit.i, start: [wx, wy], box0: b,
       ang0: Math.atan2(wy - b.cy, wx - b.cx)};
   } else {
@@ -1549,8 +1794,10 @@ mapCanvas.addEventListener('pointerdown', (e) => {
 mapCanvas.addEventListener('pointermove', (e) => {
   const d = dprNow(), p = [e.offsetX * d, e.offsetY * d];
   if (!M.drag || !M.pointers.has(e.pointerId)) {
-    const hit = M.edit && haveControl && M.view ? hitBox(p[0], p[1]) : null;
-    mapCanvas.style.cursor = hit ? HIT_CURSOR[hit.kind] : '';
+    if (M.tool === 'edit') {
+      const hit = haveControl && M.view ? hitBox(p[0], p[1]) : null;
+      mapCanvas.style.cursor = hit ? HIT_CURSOR[hit.kind] : '';
+    }
     return;
   }
   const prev = M.pointers.get(e.pointerId);
@@ -1569,13 +1816,15 @@ mapCanvas.addEventListener('pointermove', (e) => {
     D.last = p;
     M.touched = true;
     if (M.follow) { M.follow = false; markFollow(); }
+  } else if (D.type === 'aim') {
+    D.end = toWorld(p[0], p[1]);
   } else {
     const [wx, wy] = toWorld(p[0], p[1]);
     const b0 = D.box0;
     if (D.type === 'move') {
       M.dragBox = {...b0, cx: b0.cx + wx - D.start[0], cy: b0.cy + wy - D.start[1]};
     } else if (D.type === 'rotate') {
-      let yaw = b0.yaw + Math.atan2(wy - b0.cy, wx - b0.cx) - D.ang0;
+      const yaw = b0.yaw + Math.atan2(wy - b0.cy, wx - b0.cx) - D.ang0;
       const step = (e.shiftKey ? 5 : 0.5) * Math.PI / 180;
       M.dragBox = {...b0, yaw: Math.round(yaw / step) * step};
     } else if (D.type === 'corner') {
@@ -1596,11 +1845,23 @@ async function endDrag(e) {
   mapCanvas.classList.remove('dragging');
   const D = M.drag;
   M.drag = M.pointers.size ? M.drag : null;
-  if (D && ['move', 'rotate', 'corner'].includes(D.type) && M.dragBox) {
+  if (D && D.type === 'aim') {
+    const [ax, ay] = D.start, [bx, by] = D.end;
+    const pose = M.state && M.state.pose;
+    let yaw = Math.hypot(bx - ax, by - ay) > 0.05 ? Math.atan2(by - ay, bx - ax) : null;
+    if (yaw === null) {  // a tap: keep the heading it has (position) or face the goal (goal)
+      yaw = M.tool === 'goal' && pose ? Math.atan2(ay - pose.y, ax - pose.x) : (pose ? pose.yaw : 0);
+    }
+    const tool = M.tool;
+    setTool('pan');
+    await action(tool === 'goal' ? '/api/goal' : '/api/initialpose', {x: ax, y: ay, yaw});
+    poll();
+  } else if (D && ['move', 'rotate', 'corner'].includes(D.type) && M.dragBox) {
     const b = M.dragBox;
     await putBox(b);
     M.dragBox = null;
   }
+  drawMap();
 }
 mapCanvas.addEventListener('pointerup', endDrag);
 mapCanvas.addEventListener('pointercancel', endDrag);
@@ -1632,6 +1893,59 @@ function drawBoxEditor(c, b) {
   c.fill();
   c.fillStyle = '#ffe2a6'; c.textAlign = 'center'; c.textBaseline = 'middle';
   c.fillText(label, cx, cy + 0.5 * d);
+}
+
+// full screen: the map with the run's status on top of it
+function isFull() { return document.fullscreenElement === $('mapWrap') || $('mapWrap').classList.contains('full'); }
+$('mapFull').addEventListener('click', async () => {
+  const w = $('mapWrap');
+  if (document.fullscreenElement) await document.exitFullscreen();
+  else if (w.classList.contains('full')) w.classList.remove('full');
+  else if (w.requestFullscreen) { try { await w.requestFullscreen(); } catch (e) { w.classList.add('full'); } }
+  else w.classList.add('full');  // phones without the Fullscreen API
+  $('mapFull').setAttribute('aria-pressed', String(isFull()));
+  placeMap();
+});
+document.addEventListener('fullscreenchange', () => {
+  $('mapFull').setAttribute('aria-pressed', String(isFull()));
+  setTimeout(resizeMap, 50);
+});
+$('mapFind').addEventListener('click', async () => {
+  const b = $('mapFind');
+  b.disabled = true;
+  b.textContent = 'Searching…';
+  try { await action('/api/relocalize'); poll(); } finally { b.disabled = false; b.textContent = 'Find robot'; }
+});
+$('mapCancel').addEventListener('click', () => action('/api/goal/cancel'));
+
+function updateTrail(pose) {
+  const now = performance.now();
+  M.trail = M.trail.filter((p) => now - p[2] < TRAIL_MS);
+  if (!pose) return;
+  const last = M.trail[M.trail.length - 1];
+  if (!last || Math.hypot(pose.x - last[0], pose.y - last[1]) > 0.02) M.trail.push([pose.x, pose.y, now]);
+}
+function showMapCards(s) {
+  const nav = s.nav || {};
+  const driving = nav.goal && ['sent', 'driving'].includes(nav.goal.state);
+  $('mapCancel').hidden = !driving;
+  if (!isFull()) return;
+  const cards = [];
+  cards.push(`<div class="map-card">Weight<span class="big">${s.weight === null ? '—' : `${s.weight.toFixed(2)} kg`}</span></div>`);
+  const mp = s.mission && s.mission.progress;
+  if (mp && mp.state === 'running') {
+    const cur = (mp.steps || []).find((x) => x.state === 'running');
+    cards.push(`<div class="map-card">Mission${mp.dry_run ? ' · dry run' : ''}<b>${cur ? (STEP_LABEL[cur.name] || cur.name) : 'starting'}</b>${cur ? cur.detail : ''}</div>`);
+  }
+  const lp = s.feed && s.feed.progress;
+  if (lp && ['approach', 'turn', 'straight', 'blocked'].includes(lp.state)) {
+    cards.push(`<div class="map-card">Laps<b>${lp.lap ? `lap ${lp.lap} of ${lp.laps}` : 'starting'}</b>${lp.text || ''} · door ${lp.door ? 'open' : 'closed'}</div>`);
+  }
+  if (driving) cards.push(`<div class="map-card">Nav2<b>driving to the goal</b>${nav.goal.x.toFixed(2)}, ${nav.goal.y.toFixed(2)}</div>`);
+  const fit = s.feed && s.feed.fit;
+  const bat = s.battery && s.battery.percent !== null ? `${Math.round(s.battery.percent)}%` : '—';
+  cards.push(`<div class="map-card">Battery ${bat} · position ${fit === null || fit === undefined ? '—' : `${Math.round(fit * 100)}%`}<b>${$('dockText').textContent}</b></div>`);
+  $('mapCards').innerHTML = cards.join('');
 }
 
 // ---- feed tab ----
@@ -1804,6 +2118,149 @@ function showRuns(runs) {
       <td>${Math.round(r.door_open * 100)}%</td><td>${r.speed.toFixed(2)}</td><td>${r.laps}</td>
       <td>${kg(r.dispensed_kg)}</td><td>${r.kg_per_m === null || r.kg_per_m === undefined ? '—' : r.kg_per_m.toFixed(3)}</td></tr>`).join('')}
     </tbody></table>`;
+}
+
+// ---- mission ----
+const STEP_LABEL = {
+  localize: 'Find position', undock: 'Undock', fill: 'Load from the silos',
+  mix: 'Mix', feed: 'Feed the cows', dock: 'Back to the dock',
+};
+const STEP_ORDER = ['localize', 'undock', 'fill', 'mix', 'feed', 'dock'];
+let msSteps = new Set(STEP_ORDER);
+let msLoaded = false;
+function buildMission() {
+  $('msSilos').innerHTML = [1, 2, 3].map((n) => `
+    <div class="slider silo-share">
+      <div class="top"><label for="msS${n}">Silo ${n}</label><output id="msS${n}Val" for="msS${n}"></output></div>
+      <input type="range" id="msS${n}" min="0" max="100" step="5" value="${n === 3 ? 20 : 40}">
+    </div>`).join('');
+  $('msSteps').innerHTML = STEP_ORDER.map((st) =>
+    `<button data-step="${st}" aria-pressed="true">${STEP_LABEL[st]}</button>`).join('');
+  $('msSteps').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    if (msSteps.has(b.dataset.step)) msSteps.delete(b.dataset.step); else msSteps.add(b.dataset.step);
+    showMissionSettings();
+  }));
+  for (const id of ['msS1', 'msS2', 'msS3', 'msMix', 'msMixSpeed']) $(id).addEventListener('input', showMissionSettings);
+  $('msTotal').addEventListener('input', showMissionSettings);
+}
+function missionSettings() {
+  return {
+    steps: STEP_ORDER.filter((st) => msSteps.has(st)),
+    dry_run: $('msDry').getAttribute('aria-pressed') === 'true',
+    recipe_kg: Math.max(0, parseFloat($('msTotal').value) || 0),
+    recipe: [1, 2, 3].map((n) => parseFloat($(`msS${n}`).value)),
+    mix_s: parseFloat($('msMix').value), mix_speed: parseFloat($('msMixSpeed').value),
+    laps_max: Math.max(1, parseInt($('msLaps').value, 10) || 1),
+    empty_kg: Math.max(0, parseFloat($('msEmpty').value) || 0),
+  };
+}
+function showMissionSettings() {
+  const m = missionSettings(), whole = m.recipe.reduce((a, b) => a + b, 0);
+  [1, 2, 3].forEach((n, i) => {
+    const pct = whole > 0 ? m.recipe[i] / whole : 0;
+    $(`msS${n}Val`).innerHTML = `${Math.round(pct * 100)}%<small>${(m.recipe_kg * pct).toFixed(2)} kg</small>`;
+    paintRange($(`msS${n}`));
+  });
+  $('msRecipeSum').textContent = whole > 0 ? `${m.recipe_kg.toFixed(2)} kg in total` : 'all silos at 0';
+  $('msMixVal').textContent = m.mix_s >= 60 ? `${Math.floor(m.mix_s / 60)} min ${Math.round(m.mix_s % 60)} s` : `${m.mix_s} s`;
+  $('msMixSpeedVal').textContent = `${Math.round(m.mix_speed * 100)}%`;
+  paintRange($('msMix'));
+  paintRange($('msMixSpeed'));
+  $('msSteps').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(msSteps.has(b.dataset.step))));
+  const dry = m.dry_run;
+  $('msDry').textContent = dry ? 'Dry run: valves and door stay closed' : 'Real run: valves and door open';
+  $('msDry').className = dry ? '' : 'quiet';
+}
+function applyMissionSettings(st) {
+  if (msLoaded || !st || !Object.keys(st).length) return;
+  msLoaded = true;
+  if (typeof st.recipe_kg === 'number') $('msTotal').value = st.recipe_kg;
+  (st.recipe || []).forEach((v, i) => { if ($(`msS${i + 1}`)) $(`msS${i + 1}`).value = v; });
+  if (typeof st.mix_s === 'number') $('msMix').value = st.mix_s;
+  if (typeof st.mix_speed === 'number') $('msMixSpeed').value = st.mix_speed;
+  if (st.laps_max) $('msLaps').value = st.laps_max;
+  if (typeof st.empty_kg === 'number') $('msEmpty').value = st.empty_kg;
+  if (Array.isArray(st.steps)) msSteps = new Set(st.steps);
+  // like the laps, a mission always starts as a dry run until you switch it
+  showMissionSettings();
+}
+buildMission();
+showMissionSettings();
+$('msDry').addEventListener('click', () => {
+  const b = $('msDry');
+  b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+  showMissionSettings();
+});
+$('msStart').addEventListener('click', () => {
+  const m = missionSettings();
+  if (!m.steps.length) { toast('Pick at least one step', true); return; }
+  if (!m.dry_run && !confirm(`Real run: load ${m.recipe_kg.toFixed(2)} kg, mix, then feed with the door open. Start?`)) return;
+  action('/api/mission/start', m);
+});
+$('msStop').addEventListener('click', () => action('/api/mission/stop'));
+
+function showMission(s) {
+  const m = s.mission;
+  if (!m) { $('msTimeline').innerHTML = '<li class="pending"><span class="ico"></span><div><b>Mission needs the feed_mission package</b></div></li>'; return; }
+  applyMissionSettings(m.settings);
+  const p = m.progress;
+  const running = !!p && p.state === 'running';
+  $('missionBadge').hidden = !running;
+  $('msStart').className = running ? 'running' : 'primary';
+  $('msRunMeta').textContent = !p ? 'mission node not running'
+    : p.state === 'running' ? `running since ${p.started}${p.dry_run ? ', dry run' : ''}`
+      : p.state === 'idle' ? 'ready' : `${p.state}${p.error ? `: ${p.error}` : ''}`;
+  const steps = p && p.steps && p.steps.length ? p.steps
+    : STEP_ORDER.filter((st) => msSteps.has(st)).map((name) => ({name, state: 'pending', detail: ''}));
+  const fills = (p && p.fills) || [];
+  const key = JSON.stringify([steps, fills]);
+  if (key === showMission.key) return;
+  showMission.key = key;
+  $('msTimeline').innerHTML = steps.map((st) => {
+    let extra = '';
+    if (st.name === 'fill' && fills.length) {
+      extra = `<div class="fillbars">${fills.map((f) => {
+        const frac = f.target > 0 ? Math.max(0, Math.min(1, f.added / f.target)) : 0;
+        return `<div class="fillbar"><span>Silo ${f.silo}</span><div class="tank"><div class="fill" style="width:${frac * 100}%"></div></div>
+          <span>${f.state === 'skipped' ? 'skipped' : `${f.added.toFixed(2)} / ${f.target.toFixed(2)} kg`}</span></div>`;
+      }).join('')}</div>`;
+    }
+    return `<li class="${st.state}"><span class="ico" aria-hidden="true"></span><div>
+      <b>${STEP_LABEL[st.name] || st.name}</b><small>${st.detail || st.state}</small>${extra}</div></li>`;
+  }).join('');
+}
+
+// ---- dock ----
+$('dockBtn').addEventListener('click', () => action('/api/dock'));
+$('undockBtn').addEventListener('click', () => action('/api/undock'));
+$('locDock').addEventListener('click', () => action('/api/localize/docked'));
+function showDock(s) {
+  const m = s.mission, d = m && m.dock;
+  const busy = m && m.dock_busy;
+  let text = 'Dock: no status', sub = '', dot = 'idle';
+  if (!m) sub = 'needs feed_mission';
+  else if (busy) { text = busy === 'docking' ? 'Docking…' : 'Undocking…'; dot = 'on'; }
+  else if (d && d.docked) { text = 'On the dock'; dot = 'on'; sub = s.battery && s.battery.charging ? 'charging' : ''; }
+  else if (d && d.visible) { text = 'Dock in sight'; sub = 'Dock can drive it on from here'; }
+  else if (d) { text = 'Not on the dock'; sub = 'drive within about a metre, facing it, to dock'; }
+  if (!busy && m && m.dock_result) sub = sub ? `${sub} · last: ${m.dock_result}` : `last: ${m.dock_result}`;
+  $('dockText').textContent = text;
+  $('dockSub').textContent = sub;
+  $('dockDot').className = `dot ${dot}`;
+  $('dockBtn').disabled = !!busy || !!(d && d.docked);
+  $('undockBtn').disabled = !!busy || !(d && d.docked);
+}
+
+// ---- top bar: how well the robot knows where it is ----
+function showFit(s) {
+  const f = s.feed && s.feed.fit;
+  $('fitChip').hidden = f === null || f === undefined;
+  if (f === null || f === undefined) return;
+  const pct = Math.round(f * 100);
+  const good = f >= 0.6, poor = f < 0.4;
+  $('fitText').textContent = `Position ${good ? 'good' : poor ? 'lost?' : 'unsure'} ${pct}%`;
+  $('fitDot').className = `dot ${good ? 'on' : poor ? '' : 'idle'}`;
+  $('fitChip').title = `${pct}% of the lidar points land on walls of the map. Under ~40%: the robot does not know where it is; use Find robot on map (Setup).`;
 }
 
 // ---- cameras ----
@@ -2019,6 +2476,11 @@ async function poll() {
     showHazards(s.hazards);
     showPoses(s);
     showFeed(s);
+    showMission(s);
+    showDock(s);
+    showFit(s);
+    updateTrail(s.pose);
+    showMapCards(s);
     const fresh = s.weight !== null && s.weight_age_s < 2;
     $('weight').textContent = s.weight === null ? '—' : s.weight.toFixed(3);
     $('weightBox').style.opacity = fresh ? 1 : 0.45;

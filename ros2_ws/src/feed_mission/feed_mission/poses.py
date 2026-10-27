@@ -3,7 +3,8 @@
 ~/maps/arena_poses.yaml by default:
 
     silo1: {x: 1.20, y: -0.40, yaw: 1.571, saved: '2026-10-26 21:10:03'}
-    start: {...}
+    start: {...}      # in front of the dock: the mission drives here, then docks
+    docked: {...}     # on the dock: the mission starts its localization here
     cow_box: {cx: 0.76, cy: -0.39, yaw: 1.38, length: 1.0, width: 0.5, saved: ...}
     feed: {gap: 0.1, door_open: 0.2, ...}     # last settings used for laps
 
@@ -25,9 +26,10 @@ import yaml
 DEFAULT_FILE = '~/maps/arena_poses.yaml'
 
 SILOS = ('silo1', 'silo2', 'silo3')
-NAMES = SILOS + ('start',)
+NAMES = SILOS + ('start', 'docked')
 BOX_KEY = 'cow_box'
 FEED_KEY = 'feed'
+MISSION_KEY = 'mission'
 MAX_RUNS = 200
 
 
@@ -115,15 +117,24 @@ def save_box(box, path=DEFAULT_FILE):
     return data[BOX_KEY]
 
 
-def load_feed(path=DEFAULT_FILE):
-    f = _read(path).get(FEED_KEY)
+def load_section(key, path=DEFAULT_FILE):
+    """A dict of last-used settings ('feed', 'mission'); empty if none yet."""
+    f = _read(path).get(key)
     return dict(f) if isinstance(f, dict) else {}
 
 
-def save_feed(settings, path=DEFAULT_FILE):
+def save_section(key, settings, path=DEFAULT_FILE):
     data = _read(path)
-    data[FEED_KEY] = dict(settings)
+    data[key] = dict(settings)
     _write(path, data)
+
+
+def load_feed(path=DEFAULT_FILE):
+    return load_section(FEED_KEY, path)
+
+
+def save_feed(settings, path=DEFAULT_FILE):
+    save_section(FEED_KEY, settings, path)
 
 
 def runs_file(path=DEFAULT_FILE):

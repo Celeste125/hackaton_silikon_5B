@@ -34,6 +34,7 @@ from feed_mission.lap_geometry import (
 
 SCAN_POINTS_MAX = 500
 SNAP_MAX_ERROR_M = 0.02  # a worse fit means the size is wrong: keep the old box
+FIT_EVERY_S = 1.0        # how often the position check runs
 RUNS_SHOWN = 12
 RUNNING = ('approach', 'turn', 'straight', 'blocked')
 
@@ -93,6 +94,8 @@ class Feed:
         self.scan = None
         self.progress = None       # dict from /lap/progress
         self.run = None            # the run being logged
+        self.fit_cache = (0.0, None)  # (monotonic time, result) of the position check
+        self.plain_walls = None    # (map version, WallDistance) without leaving anything out
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                              reliability=ReliabilityPolicy.RELIABLE)
         node.create_subscription(OccupancyGrid, '/map', self._on_map, latched)
@@ -173,6 +176,30 @@ class Feed:
                     r * np.sin(a) + t.transform.translation.y]
         age = (self.node.get_clock().now() - Time.from_msg(s.header.stamp)).nanoseconds * 1e-9
         return pts, max(0.0, age)
+
+    def position_fit(self):
+        """How well the robot knows where it is: the share of lidar points that land
+        within 5 cm of a wall on the map. Over ~70% is good; a wrong AMCL pose
+        drops it to 20-40%. None without a map, scan or TF."""
+        t, cached = self.fit_cache
+        if time.monotonic() - t < FIT_EVERY_S:
+            return cached
+        result = None
+        with self.lock:
+            m, version = self.map, self.map_version
+        pts, age = self.scan_points()
+        if m is not None and pts is not None and len(pts) >= 30 and age is not None and age < 2.0:
+            if self.plain_walls is None or self.plain_walls[0] != version:
+                info = m.info
+                grid = np.array(m.data, dtype=np.int16).reshape(info.height, info.width)
+                self.plain_walls = (version, WallDistance(grid, info.resolution,
+                                                          info.origin.position.x,
+                                                          info.origin.position.y))
+            walls = self.plain_walls[1]
+            near = sum(1 for x, y in pts if walls(x, y) < 0.05)
+            result = round(near / len(pts), 2)
+        self.fit_cache = (time.monotonic(), result)
+        return result
 
     def scan_payload(self):
         pts, age = self.scan_points()
@@ -332,6 +359,7 @@ class Feed:
         return {
             'box': self.box(), 'settings': settings, 'progress': progress,
             'runs': runs, 'map_version': version, 'logging': running, 'run_start_kg': start_kg,
+            'fit': self.position_fit(),
         }
 
 

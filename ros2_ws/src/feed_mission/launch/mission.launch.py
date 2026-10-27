@@ -4,10 +4,10 @@
     ros2 launch frontier_explorer navigation.launch.py
     ros2 launch feed_mission mission.launch.py
 
-For now: the lap driver (four corners taught in the web panel's Setup tab,
-laps started from the Unload tab or /lap/start) and the relocalizer, which
-finds the robot on the map when AMCL started from a wrong estimate ("Find
-robot on map" in the Setup tab, or /relocalize).
+Starts the three feed_mission nodes:
+  mission      the whole run in one go (web panel Mission tab, /mission/start)
+  lap_driver   feeding laps around the cow box (Feed tab, /lap/start)
+  relocalizer  finds the robot on the map from the lidar (Setup tab, /relocalize)
 """
 
 from launch import LaunchDescription
@@ -35,6 +35,13 @@ def generate_launch_description():
                 'poses_file': LaunchConfiguration('poses_file'),
                 'speed': LaunchConfiguration('speed'),
             }],
+        ),
+        Node(
+            package='feed_mission',
+            executable='mission',
+            name='mission',
+            output='screen',
+            parameters=[{'poses_file': LaunchConfiguration('poses_file')}],
         ),
         Node(
             package='feed_mission',
