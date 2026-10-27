@@ -416,6 +416,7 @@ class WebControlNode(Node):
             self.drive = (max(-MAX_LINEAR, min(MAX_LINEAR, linear)),
                           max(-MAX_ANGULAR, min(MAX_ANGULAR, angular)))
             self.last_drive_t = time.monotonic()
+        self._publish_drive()  # now, not at the next 10 Hz tick of a busy spin thread
 
     def set_motors(self, speeds):
         with self.lock:

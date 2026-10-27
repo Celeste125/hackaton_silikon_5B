@@ -198,8 +198,8 @@ class Feed:
                                                           info.origin.position.x,
                                                           info.origin.position.y))
             walls = self.plain_walls[1]
-            near = sum(1 for x, y in pts if walls(x, y) < 0.05)
-            result = round(near / len(pts), 2)
+            near = sum(1 for x, y in pts[::3] if walls(x, y) < 0.05)
+            result = round(near / len(pts[::3]), 2)
         self.fit_cache = (time.monotonic(), result)
         return result
 

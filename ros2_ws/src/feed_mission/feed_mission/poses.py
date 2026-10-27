@@ -17,6 +17,7 @@ Each lap run also adds a line to feed_runs.yaml in the same folder (settings
 and how much feed left the container), to tune the door opening against.
 """
 
+import copy
 import math
 import os
 import tempfile
@@ -50,12 +51,27 @@ def resolve(path=DEFAULT_FILE):
     return os.path.abspath(os.path.expanduser(path))
 
 
+_LOADER = getattr(yaml, 'CSafeLoader', yaml.SafeLoader)
+_cache = {}  # path -> ((mtime_ns, size), parsed); the web panel reads these twice a second
+
+
+def _parse(path):
+    """Parsed YAML of a file, re-read only when it changed. Callers get their own copy."""
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return None
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _cache.get(path)
+    if hit is None or hit[0] != key:
+        with open(path) as f:
+            hit = (key, yaml.load(f, Loader=_LOADER))
+        _cache[path] = hit
+    return copy.deepcopy(hit[1])
+
+
 def _read(path):
-    path = resolve(path)
-    if not os.path.exists(path):
-        return {}
-    with open(path) as f:
-        data = yaml.safe_load(f)
+    data = _parse(resolve(path))
     return data if isinstance(data, dict) else {}
 
 
@@ -155,11 +171,7 @@ def runs_file(path=DEFAULT_FILE):
 
 
 def load_runs(path=DEFAULT_FILE):
-    f = runs_file(path)
-    if not os.path.exists(f):
-        return []
-    with open(f) as fh:
-        runs = yaml.safe_load(fh)
+    runs = _parse(runs_file(path))
     return runs if isinstance(runs, list) else []
 
 
