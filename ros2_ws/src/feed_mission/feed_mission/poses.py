@@ -3,8 +3,8 @@
 ~/maps/arena_poses.yaml by default:
 
     silo1: {x: 1.20, y: -0.40, yaw: 1.571, saved: '2026-10-26 21:10:03'}
-    start: {...}      # in front of the dock: the mission drives here, then docks
-    docked: {...}     # on the dock: the mission starts its localization here
+    docked: {...}     # on the dock; the spot in front of it comes from this pose
+    start: {...}      # only without a dock: where the mission parks at the end
     cow_box: {cx: 0.76, cy: -0.39, yaw: 1.38, length: 1.0, width: 0.5, saved: ...}
     feed: {gap: 0.1, door_open: 0.2, ...}     # last settings used for laps
 
@@ -30,6 +30,18 @@ NAMES = SILOS + ('start', 'docked')
 BOX_KEY = 'cow_box'
 FEED_KEY = 'feed'
 MISSION_KEY = 'mission'
+PREDOCK_DISTANCE = 0.6  # m in front of the dock: from there the Create 3's Dock takes over
+
+
+def predock_pose(docked, distance=PREDOCK_DISTANCE):
+    """The spot in front of the dock, facing it, worked out from the docked pose.
+
+    The Create 3 docks front first, so it is straight back from the docked
+    pose with the same heading; Dock then drives the last bit by itself.
+    """
+    return {'x': docked['x'] - distance * math.cos(docked['yaw']),
+            'y': docked['y'] - distance * math.sin(docked['yaw']),
+            'yaw': docked['yaw']}
 MAX_RUNS = 200
 
 

@@ -203,8 +203,8 @@ Then drive the robot with the panel to each spot and press **Save here**:
 | Pose | Where |
 | --- | --- |
 | Silo 1, 2, 3 | parked under each pipe |
-| Start | in front of the dock, facing it, about 0.5 m out: where Dock can take over |
 | Docked | on the dock (save it while docked) |
+| Start | only without a dock: where the mission parks at the end |
 
 They go to `~/maps/arena_poses.yaml`, in the map frame: teach them again after
 remapping.
@@ -254,10 +254,33 @@ ros2 service call /lap/stop std_srvs/srv/Trigger     # STOP ALL in the panel doe
 ```
 
 Each side is a turn on the spot to face the next corner, then a straight line
-to it, steered back onto the corner-to-corner line in the map frame, so
-odometry drift does not add up. It waits while anything is within
-`stop_distance` (0.15 m) in front and gives up after 20 s. Teleop overrides it
-at any time.
+to it, taken from the map at the corner and followed on odometry, so drift is
+corrected at every corner without the steering twitching at AMCL's steps.
+
+When something gets in the way:
+
+| What happens | What the lap driver does |
+| --- | --- |
+| On the dock | undocks first |
+| Someone drives it by hand | pauses (door closed, sends nothing), rejoins when they let go |
+| Obstacle in front, or something touching its side | stops and waits; gives up after 20 s. Blocked longer than 1.5 s: rejoins |
+| More than 20 cm off the line | rejoins |
+| Position lost (under 35% of the lidar on the map for 3 s) | pauses until AMCL is back, then rejoins |
+
+Rejoin: still close to the line, it carries on; at the corner, it takes the
+next side; otherwise Nav2 brings it to the end of the side (planning around the
+box) and the lap goes on from there. Steering back onto a line from far away
+is what made it spin next to the box.
+
+Only one thing drives the robot at a time: a mission blocks laps, goals, dock
+and manual dosing; laps replace a goal sent from the map; a goal from the map
+stops manual laps; Dock and Undock wait until nothing else runs. Laps and a
+mission without *Find position* refuse to start while the position check is
+under 40%.
+
+`feed_mission/test/sim_laps.py` runs the real lap driver against a simulated
+robot with these disturbances (pushed off by teleop, an obstacle, an AMCL
+jump): run it after changing the lap driver.
 
 ### The map view
 
@@ -285,6 +308,10 @@ panel has **Dock** / **Undock** under the drive pad and shows whether it is on
 the dock or sees it. Dock works from about a metre in front of the dock, facing
 it. Check that the container clears everything around the dock.
 
+The battery in the top bar shows charging from the battery current: the
+Create 3 does not set the charging status itself, but its current is positive
+while it charges.
+
 The dock also fixes the localization: the robot docks to within about a
 centimetre every time. Save **Docked** once while it is docked; from then on
 **Position from dock** (Setup) sets AMCL to exactly that pose, and the mission
@@ -299,7 +326,7 @@ does it at the start of every run.
 | Load from the silos | for each silo with a share: Nav2 to the silo pose, let the scale settle, open the valve until the weight has risen by the share, close it. Flow stops: one shake, then it fails |
 | Mix | the mixer for the set time and speed |
 | Feed the cows | laps with the Feed tab settings, one at a time, until the weight is below the set kg (or the lap limit) |
-| Back to the dock | Nav2 to Start, then Dock |
+| Back to the dock | Nav2 to 60 cm in front of the dock (worked out from Docked: the Create 3 docks front first), then Dock. Already docked: nothing to do |
 
 The recipe is a total in kg and a share per silo (40 / 40 / 20 % of 2 kg is
 0.8 / 0.8 / 0.4 kg); with the same feed in every silo it runs the same way.

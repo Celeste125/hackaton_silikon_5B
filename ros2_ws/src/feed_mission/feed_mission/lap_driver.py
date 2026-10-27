@@ -9,6 +9,7 @@ Feed tab) by lap_geometry.plan_lap: a rectangle around the box, clockwise so
 the box is on the robot's right where the door is, `gap` from the faces it
 feeds. Nav2 hesitates near walls by design, so the laps bypass it:
 
+  0. On the dock: Undock first (Create 3 action), then go on from there.
   1. Start at the lap corner nearest the robot; Nav2 takes it there if needed.
   2. Turn on the spot until it faces the next corner.
   3. Drive straight to it, steering back onto the corner-to-corner line.
@@ -23,6 +24,19 @@ feeds. Nav2 hesitates near walls by design, so the laps bypass it:
 dry_run drives the same laps with the door kept closed (progress still shows
 where it would open). Parameters are read at each start.
 
+Disturbances: while anyone drives by hand (teleop) the laps pause, door
+closed, sending nothing. Afterwards, after being blocked for a while, or if
+the robot ends up more than off_line_m from the line, it rejoins: still close
+to the line, it carries on; otherwise Nav2 takes it to the end of the side
+(planning around the box) and the lap goes on from that corner. Steering
+back onto a line from far away is what made it spin and zig-zag next to the
+box.
+
+Position watchdog: once a second it checks how much of the lidar lands on
+the walls of the map (/map). Under min_fit for fit_pause_s it pauses
+("position lost"): the lap lines follow the robot's believed position, so a
+lost AMCL would steer it into the box. It rejoins once the match is back.
+
 Safety: it stops while anything is in front of the robot (stop_distance) and
 refuses a turn while anything is inside the circle its corners sweep; after
 block_timeout_s it gives up. It drives through twist_mux (cmd_vel_lap, between
@@ -34,6 +48,7 @@ door, along) report what it is doing.
 
 import json
 import math
+import time
 
 import numpy as np
 import rclpy
@@ -51,10 +66,20 @@ from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from feed_mission import poses as pose_store
-from feed_mission.lap_geometry import Box, door_open_at, plan_lap, start_corner
+from feed_mission.lap_geometry import Box, WallDistance, door_open_at, plan_lap, start_corner
+from nav_msgs.msg import OccupancyGrid
+
+try:  # undocking needs the Create 3 messages; without them laps start as they are
+    from irobot_create_msgs.action import Undock
+    from irobot_create_msgs.msg import DockStatus
+except ImportError:
+    Undock = DockStatus = None
+
+DOCK_STALE_S = 3.0
 
 LOOP_HZ = 20.0
 PROGRESS_HZ = 5.0
+ACTIVE = ('undock', 'approach', 'rejoin', 'turn', 'straight')  # a run is going on
 
 
 def wrap(a):
@@ -100,6 +125,37 @@ def straight_command(pose, start, target, speed, max_w=0.6, gain=2.5,
     return v, w, along, False
 
 
+def line_offset(pose, start, target):
+    """(along, lateral, heading error, length) of pose relative to the line start -> target.
+
+    lateral > 0: left of the line. heading error: line direction minus yaw.
+    """
+    x, y, yaw = pose
+    length = math.hypot(target[0] - start[0], target[1] - start[1])
+    ux, uy = (target[0] - start[0]) / length, (target[1] - start[1]) / length
+    dx, dy = x - start[0], y - start[1]
+    return dx * ux + dy * uy, ux * dy - uy * dx, wrap(math.atan2(uy, ux) - yaw), length
+
+
+def rejoin_decision(pose, start, target, tol=0.12, end_tol=0.15):
+    """After a disturbance: 'continue' on the line, 'next' (this side is as good
+    as done), or 'navigate' (too far off: let Nav2 bring it to the side's end)."""
+    along, lateral, _, length = line_offset(pose, start, target)
+    if abs(length - along) < end_tol and abs(lateral) < 2 * tol:
+        return 'next'  # at the corner (not pushed far past it)
+    if abs(lateral) <= tol and -end_tol <= along <= length:
+        return 'continue'
+    return 'navigate'
+
+
+def side_contact(points, half_len, half_w, margin=0.015):
+    """True if a point is within margin of the robot's sides (it is brushing something)."""
+    if len(points) == 0:
+        return False
+    x, y = np.abs(points[:, 0]), np.abs(points[:, 1])
+    return bool(np.any((x <= half_len) & (y >= half_w - 0.02) & (y < half_w + margin)))
+
+
 def blocked_ahead(points, half_len, half_w, stop_distance):
     """True if a point (base_link, Nx2) is in front of the robot within stop_distance."""
     if len(points) == 0:
@@ -137,10 +193,17 @@ class LapDriver(Node):
         p('turn_speed', 0.6)           # rad/s max on the spot
         p('stop_distance', 0.15)       # m free space needed in front
         p('block_timeout_s', 20.0)     # blocked this long -> give up
+        p('rejoin_after_s', 1.5)       # blocked longer than this: check the lap is still right
+        p('off_line_m', 0.20)          # further off the line than this: rejoin
+        p('teleop_topic', '/Team2/cmd_vel_teleop')
+        p('teleop_quiet_s', 1.0)       # no teleop for this long: driving by hand is over
+        p('min_fit', 0.35)             # share of lidar on the map's walls below which it is lost
+        p('fit_pause_s', 3.0)          # lost this long: pause until the match is back
         p('approach_tolerance', 0.25)  # closer than this to the first corner: no Nav2
         p('half_length', 0.17)         # footprint, as in nav2_params local_costmap
         p('half_width', 0.26)
         p('cmd_vel_topic', '/Team2/cmd_vel_lap')
+        p('namespace', '/Team2')       # of the Create 3 (dock_status, undock)
         p('map_frame', 'map')
         p('odom_frame', 'odom')
         p('base_frame', 'base_link')
@@ -157,6 +220,23 @@ class LapDriver(Node):
         self.create_service(Trigger, 'lap/start', self._on_start)
         self.create_service(Trigger, 'lap/stop', self._on_stop)
         self.nav = ActionClient(self, NavigateToPose, 'navigate_to_pose')
+        self.walls = None        # WallDistance of /map, for the position watchdog
+        self.fit = None          # last share of lidar points on the map's walls
+        self.lost_since = None   # monotonic time the fit dropped below min_fit
+        self.lost = False        # paused because the position is lost
+        latched_map = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(OccupancyGrid, '/map', self._on_map, latched_map)
+        self.create_timer(1.0, self._check_fit)
+        self.teleop_t = 0.0      # last non-zero teleop command (monotonic)
+        self.paused = False      # laps paused while someone drives by hand
+        self.create_subscription(Twist, self.g('teleop_topic'), self._on_teleop, 10)
+        self.dock_status = None  # (is_docked, monotonic time)
+        self.undock_goal = None
+        if DockStatus is not None:
+            ns = self.g('namespace').rstrip('/')
+            self.create_subscription(DockStatus, f'{ns}/dock_status', self._on_dock,
+                                     qos_profile_sensor_data)
+            self.undock_client = ActionClient(self, Undock, f'{ns}/undock')
 
         self.scan = None
         self.state = 'idle'
@@ -179,6 +259,46 @@ class LapDriver(Node):
 
     def _on_scan(self, msg):
         self.scan = msg
+
+    def _on_map(self, msg):
+        info = msg.info
+        grid = np.array(msg.data, dtype=np.int16).reshape(info.height, info.width)
+        self.walls = WallDistance(grid, info.resolution, info.origin.position.x, info.origin.position.y)
+
+    def _check_fit(self):
+        """Share of the lidar on the map's walls at the believed pose; tracks being lost."""
+        if self.walls is None or self.scan is None or self.state not in ACTIVE:
+            self.lost_since = None
+            return
+        pose = self._pose()
+        pts = self._scan_points()[::3]
+        if pose is None or len(pts) < 30:
+            return
+        c, s = math.cos(pose[2]), math.sin(pose[2])
+        near = sum(1 for x, y in pts
+                   if self.walls(pose[0] + c * x - s * y, pose[1] + s * x + c * y) < 0.05)
+        self.fit = near / len(pts)
+        if self.fit < self.g('min_fit'):
+            self.lost_since = self.lost_since or time.monotonic()
+        else:
+            self.lost_since = None
+
+    def _position_lost(self):
+        return self.lost_since is not None and time.monotonic() - self.lost_since > self.g('fit_pause_s')
+
+    def _on_teleop(self, msg):
+        if msg.linear.x != 0.0 or msg.angular.z != 0.0:
+            self.teleop_t = time.monotonic()
+
+    def _teleop_active(self):
+        return time.monotonic() - self.teleop_t < self.g('teleop_quiet_s')
+
+    def _on_dock(self, msg):
+        self.dock_status = (bool(msg.is_docked), time.monotonic())
+
+    def _docked(self):
+        s = self.dock_status
+        return bool(s and s[0] and time.monotonic() - s[1] < DOCK_STALE_S)
 
     def _pose(self, frame=None):
         try:
@@ -221,7 +341,7 @@ class LapDriver(Node):
 
     def _on_start(self, request, response):
         response.success = False
-        if self.state in ('approach', 'turn', 'straight'):
+        if self.state in ACTIVE:
             response.message = f'already running ({self.status})'
             return response
         box = pose_store.load_box(self.g('poses_file'))
@@ -235,32 +355,73 @@ class LapDriver(Node):
         except ValueError as e:
             response.message = str(e)
             return response
-        pose = self._pose()
-        if pose is None:
+        if self._pose() is None:
             response.message = 'robot not localized: no map -> base_link (start navigation)'
             return response
-        first = start_corner(plan, pose[0], pose[1])
         self.plan = plan
-        self.order = [(first + i) % 4 for i in range(4)]
         self.segment = 0
         self.total = 4 * max(1, int(self.g('laps')))
         self.blocked_since = None
-        start = plan['corners'][first]
-        if math.dist(pose[:2], start) > self.g('approach_tolerance'):
-            if not self._send_nav_goal(start, plan['corners'][(first + 1) % 4]):
-                response.message = (
-                    f'robot is {math.dist(pose[:2], start):.2f} m from the first lap corner '
-                    'and Nav2 is not running: start navigation or drive it there')
-                return response
-            self._set_state('approach')
-        else:
-            self._set_state('turn')
-        response.success = True
         dry = ', dry run' if self.g('dry_run') else ''
-        response.message = f'{self.total // 4} lap(s) started{dry}'
+        if self._docked():
+            # Turning or driving on the dock goes nowhere: get off it first.
+            if not self.undock_client.wait_for_server(timeout_sec=2.0):
+                response.message = 'the robot is docked and the Create 3 undock action is not available'
+                return response
+            self._set_state('undock')
+            self.undock_client.send_goal_async(Undock.Goal()).add_done_callback(self._on_undock_accepted)
+            response.message = f'undocking first, then {self.total // 4} lap(s){dry}'
+        else:
+            ok, why = self._go()
+            if not ok:
+                response.message = why
+                return response
+            response.message = f'{self.total // 4} lap(s) started{dry}'
+        response.success = True
         if plan['warnings']:
             response.message += '. Check: ' + '; '.join(plan['warnings'])
         return response
+
+    def _go(self):
+        """From where the robot is now: Nav2 to the nearest lap corner, or turn there."""
+        pose = self._pose()
+        if pose is None:
+            return False, 'robot not localized: no map -> base_link (start navigation)'
+        plan = self.plan
+        first = start_corner(plan, pose[0], pose[1])
+        self.order = [(first + i) % 4 for i in range(4)]
+        start = plan['corners'][first]
+        if math.dist(pose[:2], start) > self.g('approach_tolerance'):
+            if not self._send_nav_goal(start, plan['corners'][(first + 1) % 4]):
+                return False, (f'robot is {math.dist(pose[:2], start):.2f} m from the first lap '
+                               'corner and Nav2 is not running: start navigation or drive it there')
+            self._set_state('approach')
+        else:
+            self._set_state('turn')
+        return True, ''
+
+    def _on_undock_accepted(self, future):
+        handle = future.result()
+        if not handle.accepted:
+            self._finish('failed: the Create 3 refused to undock')
+            return
+        self.undock_goal = handle
+        handle.get_result_async().add_done_callback(self._on_undock_result)
+
+    def _on_undock_result(self, future):
+        self.undock_goal = None
+        if self.state != 'undock':
+            return  # stopped meanwhile
+        try:
+            still_docked = future.result().result.is_docked
+        except Exception:
+            still_docked = True
+        if still_docked:
+            self._finish('failed: still on the dock after undocking')
+            return
+        ok, why = self._go()
+        if not ok:
+            self._finish(f'failed: {why}')
 
     def _on_stop(self, request, response):
         self._finish('idle')
@@ -294,12 +455,43 @@ class LapDriver(Node):
 
     def _on_nav_result(self, future):
         self.nav_goal = None
-        if self.state != 'approach':
+        if self.state not in ('approach', 'rejoin'):
             return  # stopped meanwhile
-        if future.result().status == 4:  # SUCCEEDED
-            self._set_state('turn')
+        if future.result().status != 4:  # not SUCCEEDED
+            where = 'the first lap corner' if self.state == 'approach' else 'the lap'
+            self._finish(f'failed: Nav2 could not bring the robot to {where}')
+        elif self.state == 'rejoin':
+            self._side_done()  # it is at the end of the side it left
         else:
-            self._finish('failed: Nav2 could not reach the first lap corner')
+            self._set_state('turn')
+
+    # ---- getting back onto the lap ------------------------------------------
+
+    def _rejoin(self, why):
+        """After a disturbance: carry on, skip to the next corner, or Nav2 to it."""
+        pose = self._pose()
+        if pose is None:
+            self._finish('failed: lost localization (no map -> base_link)')
+            return
+        side = self._side()
+        start = self.plan['corners'][side['start']]
+        target = self.plan['corners'][side['end']]
+        decision = rejoin_decision(pose, start, target)
+        self.get_logger().info(f'lap: rejoin {why}: {decision}')
+        self.line = None  # re-taken from the map either way
+        if decision == 'continue':
+            self._set_state('straight' if self.state == 'straight' else 'turn')
+            return
+        if decision == 'next':
+            self._side_done()
+            return
+        nxt = self.plan['sides'][self.order[(self.segment + 1) % 4]]
+        if not self._send_nav_goal(target, self.plan['corners'][nxt['end']]):
+            self._finish(f'failed: off the lap {why} and Nav2 is not running')
+            return
+        self._door(False)
+        self._set_state('rejoin')
+        self._set_status(f'rejoin: off the lap {why}, Nav2 to the next corner')
 
     # ---- control loop -------------------------------------------------------
 
@@ -308,6 +500,30 @@ class LapDriver(Node):
 
     def _step(self):
         if self.state not in ('turn', 'straight'):
+            return
+        # Someone drives by hand: pause, and rejoin once they have let go.
+        if self._teleop_active():
+            if not self.paused:
+                self.paused = True
+                self._door(False)
+                self._set_status('paused: someone is driving by hand')
+            return
+        if self.paused:
+            self.paused = False
+            self._rejoin('after driving by hand')
+            return
+        # Lost: its idea of the lap no longer matches the room. Wait for AMCL.
+        if self._position_lost():
+            if not self.lost:
+                self.lost = True
+                self._drive(0.0, 0.0)
+                self._door(False)
+                self._set_status(f'paused: position lost ({self.fit * 100:.0f}% of the lidar on the map)'
+                                 ', waiting for it to come back')
+            return
+        if self.lost:
+            self.lost = False
+            self._rejoin('after the position was lost')
             return
         if self.line is None:
             self._begin_side()
@@ -325,13 +541,14 @@ class LapDriver(Node):
             if turn_blocked(pts, hl, hw):
                 self._blocked('turning: something is within reach of the corners')
                 return
+            if self._unblocked():
+                return
             target_yaw = math.atan2(target[1] - pose[1], target[0] - pose[0])
             w, done = turn_command(pose[2], target_yaw, self.g('turn_speed'))
             if done:
                 self._drive(0.0, 0.0)
                 self._set_state('straight')
                 return
-            self._unblocked()
             self._drive(0.0, w)
             return
 
@@ -339,13 +556,25 @@ class LapDriver(Node):
             self._door(False)
             self._blocked('obstacle ahead')
             return
-        self._unblocked()
+        if side_contact(pts, hl, hw):
+            self._door(False)
+            self._blocked('something is touching the side')
+            return
+        if self._unblocked():
+            return
+        if abs(line_offset(pose, start, target)[1]) > self.g('off_line_m'):
+            self._drive(0.0, 0.0)
+            self._rejoin('drifted off the line')
+            return
         v, w, self.along, done = straight_command(pose, start, target, self.g('speed'))
         self._door(door_open_at(side, self.along))
         if not done:
             self._drive(v, w)
             return
         self._drive(0.0, 0.0)
+        self._side_done()
+
+    def _side_done(self):
         self._door(False)
         self.segment += 1
         self.along = 0.0
@@ -365,9 +594,17 @@ class LapDriver(Node):
             self._set_status(f'blocked: {why}')
 
     def _unblocked(self):
-        if self.blocked_since is not None:
-            self.blocked_since = None
-            self._set_state(self.state)  # restores the normal status text
+        """Clear a block. True if that started a rejoin (the caller must stop here)."""
+        if self.blocked_since is None:
+            return False
+        held = (self.get_clock().now() - self.blocked_since).nanoseconds * 1e-9
+        self.blocked_since = None
+        if held > self.g('rejoin_after_s'):
+            # Blocked for a while: it may have been pushed, check before driving on.
+            self._rejoin('after being blocked')
+            return self.state not in ('turn', 'straight') or self.line is None
+        self._set_state(self.state)  # restores the normal status text
+        return False
 
     # ---- outputs ------------------------------------------------------------
 
@@ -389,7 +626,11 @@ class LapDriver(Node):
         if state == 'turn' and self.state != 'turn':
             self.line = None  # a new side: taken from the map on the next step
         self.state = state
-        if state == 'approach':
+        if state == 'rejoin':
+            pass  # _rejoin sets the status with its reason
+        elif state == 'undock':
+            self._set_status('undock: getting off the dock first')
+        elif state == 'approach':
             self._set_status('approach: Nav2 to the first lap corner')
         elif state in ('turn', 'straight'):
             lap = self.segment // 4 + 1
@@ -408,7 +649,8 @@ class LapDriver(Node):
 
     def _publish_progress(self):
         running = self.state in ('turn', 'straight')
-        state = 'blocked' if self.blocked_since is not None else self.state.split(':')[0]
+        state = ('blocked' if self.blocked_since is not None else 'paused' if self.paused or self.lost
+                 else self.state.split(':')[0])
         self.progress_pub.publish(String(data=json.dumps({
             'state': state,
             'text': self.status,
@@ -419,13 +661,20 @@ class LapDriver(Node):
             'door': self.door_open,
             'door_planned': self.door_wanted and running,
             'dry_run': bool(self.g('dry_run')),
+            'fit': None if self.fit is None else round(self.fit, 2),
         })))
 
     def _finish(self, state):
         if self.nav_goal is not None:
             self.nav_goal.cancel_goal_async()
             self.nav_goal = None
-        was_driving = self.state in ('turn', 'straight', 'approach')
+        if self.undock_goal is not None:
+            self.undock_goal.cancel_goal_async()
+            self.undock_goal = None
+        was_driving = self.state in ACTIVE
+        self.paused = False
+        self.lost = False
+        self.lost_since = None
         self.state = state
         self.blocked_since = None
         if was_driving:

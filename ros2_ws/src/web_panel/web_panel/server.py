@@ -86,6 +86,7 @@ CAMERA_TOPICS = ['/camera0/image_raw/compressed', '/camera1/image_raw/compressed
 CAMERA_STREAM_FPS = 10.0  # per browser; caps Wi-Fi use, the cameras run at 15
 CAMERA_STALE_S = 2.0
 HAZARD_HOLD_S = 0.6  # a hazard stays on the page this long after its last report
+CHARGING_CURRENT_A = 0.05  # more than this into the battery: charging
 POSE_MAX_AGE_S = 2.0  # older map -> base_link is not saved as a pose
 
 
@@ -180,8 +181,32 @@ class WebControlNode(Node):
         self.create_timer(0.1, self._publish_drive)
         self.feed = feed_mod.Feed(self, self.tf, self.poses_file, self.current_weight) \
             if feed_mod else None
-        self.mission = mission_api.MissionApi(self, self.poses_file) if mission_api else None
-        self.nav = nav_api.NavApi(self)
+        self.mission = mission_api.MissionApi(
+            self, self.poses_file,
+            position_fit=self.feed.position_fit if self.feed else (lambda: None)) if mission_api else None
+        self.nav = nav_api.NavApi(
+            self, docked=(self.mission.docked if self.mission else (lambda: False)))
+
+    def activity(self):
+        """What drives the robot now: 'mission', 'laps', 'goal', 'dock' or None.
+
+        Only one at a time: two of them would fight over the base (a lap
+        outranks Nav2 in twist_mux, so a goal would stall; Nav2 would drive
+        off to an old goal after the laps).
+        """
+        if self.mission is not None:
+            p = self.mission.progress
+            if p and p.get('state') == 'running':
+                return 'mission'
+            if self.mission.dock_busy:
+                return 'dock'
+        if self.feed is not None and self.feed.progress \
+                and self.feed.progress.get('state') in feed_mod.RUNNING:
+            return 'laps'
+        g = self.nav.state()['goal']
+        if g and g['state'] in ('undocking', 'sent', 'driving'):
+            return 'goal'
+        return None
 
     def current_weight(self):
         """kg, or None without a fresh reading."""
@@ -200,11 +225,15 @@ class WebControlNode(Node):
             pct = None
         elif pct <= 1.0:  # sensor_msgs says 0..1; some drivers send 0..100
             pct *= 100.0
-        charging = msg.power_supply_status in (
-            BatteryState.POWER_SUPPLY_STATUS_CHARGING, BatteryState.POWER_SUPPLY_STATUS_FULL)
+        # The Create 3 leaves power_supply_status at UNKNOWN even on the dock;
+        # its current is positive while charging, negative on battery.
+        current = float(msg.current) if msg.current == msg.current else 0.0
+        full = msg.power_supply_status == BatteryState.POWER_SUPPLY_STATUS_FULL
+        charging = full or msg.power_supply_status == BatteryState.POWER_SUPPLY_STATUS_CHARGING \
+            or current > CHARGING_CURRENT_A
         with self.lock:
-            self.battery = {'percent': pct, 'charging': charging,
-                            'voltage': float(msg.voltage), 't': time.monotonic()}
+            self.battery = {'percent': pct, 'charging': charging, 'full': full,
+                            'current': current, 'voltage': float(msg.voltage), 't': time.monotonic()}
 
     def _on_hazards(self, msg):
         names = {
@@ -460,6 +489,8 @@ class WebControlNode(Node):
                 'battery': None if self.battery is None else {
                     'percent': self.battery['percent'],
                     'charging': self.battery['charging'],
+                    'full': self.battery['full'],
+                    'current': self.battery['current'],
                     'voltage': self.battery['voltage'],
                     'age_s': now - self.battery['t'],
                 },
@@ -660,6 +691,8 @@ def create_app(ros):
     def valve_dose(valve: int, body: DoseBody):
         if valve not in VALVES:
             raise HTTPException(404, 'no such valve')
+        if ros.activity() == 'mission':
+            return {'ok': False, 'message': 'The mission is filling the silos: stop it first'}
         ok, msg = ros.start_dose(valve, body.target_kg, body.percent)
         return {'ok': ok, 'message': msg}
 
@@ -699,8 +732,8 @@ def create_app(ros):
         feed_mod.add_routes(app, ros, ros.feed, require_control, client_id, Depends,
                             HTTPException, Request)
     if ros.mission is not None:
-        mission_api.add_routes(app, ros.mission, require_control, client_id, Depends, Request)
-    nav_api.add_routes(app, ros.nav, require_control, client_id, Depends, Request)
+        mission_api.add_routes(app, ros, ros.mission, require_control, client_id, Depends, Request)
+    nav_api.add_routes(app, ros, ros.nav, require_control, client_id, Depends, Request)
 
     @app.post('/api/tare', dependencies=[Depends(require_control)])
     def tare():

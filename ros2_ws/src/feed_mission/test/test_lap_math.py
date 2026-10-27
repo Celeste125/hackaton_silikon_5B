@@ -7,7 +7,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from feed_mission.lap_driver import (  # noqa: E402
-    blocked_ahead, straight_command, turn_blocked, turn_command, wrap,
+    blocked_ahead, line_offset, rejoin_decision, side_contact, straight_command, turn_blocked,
+    turn_command, wrap,
 )
 
 DT = 0.05
@@ -65,3 +66,30 @@ def test_turn_blocked_by_anything_within_corner_reach():
     assert turn_blocked(np.array([[-0.2, 0.2]]), hl, hw)       # 0.28 m: a corner would hit it
     assert not turn_blocked(np.array([[0.0, 0.40]]), hl, hw)   # 0.40 m: clear
 
+
+
+def test_line_offset_signs():
+    along, lateral, err, length = line_offset((1.0, 0.2, 0.1), (0.0, 0.0), (2.0, 0.0))
+    assert (along, round(lateral, 3), round(err, 3), length) == (1.0, 0.2, -0.1, 2.0)
+    assert line_offset((1.0, -0.3, 0.0), (0.0, 0.0), (2.0, 0.0))[1] < 0  # right of the line
+
+
+def test_rejoin_continues_when_close_to_the_line():
+    assert rejoin_decision((0.8, 0.05, 0.0), (0, 0), (2, 0)) == 'continue'
+
+
+def test_rejoin_skips_ahead_at_the_end_of_the_side():
+    assert rejoin_decision((1.92, 0.1, 0.0), (0, 0), (2, 0)) == 'next'
+
+
+def test_rejoin_uses_nav2_when_pushed_off_or_past_the_corner():
+    assert rejoin_decision((1.0, -0.30, 1.2), (0, 0), (2, 0)) == 'navigate'   # pushed 30 cm off
+    assert rejoin_decision((2.6, 0.0, 0.0), (0, 0), (2, 0)) == 'navigate'     # pushed 60 cm past it
+    assert rejoin_decision((-0.5, 0.0, 0.0), (0, 0), (2, 0)) == 'navigate'    # behind the start
+
+
+def test_side_contact_only_right_beside_the_body():
+    hl, hw = 0.17, 0.26
+    assert side_contact(np.array([[0.0, -0.268]]), hl, hw)        # 8 mm off the right side
+    assert not side_contact(np.array([[0.0, -0.32]]), hl, hw)     # 6 cm away
+    assert not side_contact(np.array([[0.30, -0.265]]), hl, hw)   # ahead of the corner, not beside

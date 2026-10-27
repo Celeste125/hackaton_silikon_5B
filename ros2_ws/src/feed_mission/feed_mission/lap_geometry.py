@@ -118,8 +118,10 @@ def plan_lap(box, gap=0.10, end_gap=0.15, feed='long', margin=0.05, door_x=0.0):
         sides.append({'start': i, 'end': (i + 1) % 4, 'face': 'long' if long_face else 'short',
                       'feed': fed, 'length': length, 'door': door})
     warnings = []
-    if min(gap, end_gap) < 0.02:
-        warnings.append('less than 2 cm between the robot and the box')
+    if min(gap, end_gap) < 0.05:
+        # the map pose is good to a few cm, and the box outline only as good as its fit
+        warnings.append(f'only {min(gap, end_gap) * 100:.0f} cm between the robot and the box: '
+                        'it may brush the box; 5 cm or more is safer')
     clear = math.hypot(o_long, o_short) - CORNER_REACH
     if clear < 0.03:
         warnings.append(f'turns too close to the box corners ({clear * 100:.0f} cm to spare)')

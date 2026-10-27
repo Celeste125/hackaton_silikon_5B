@@ -16,7 +16,9 @@ Steps (parameter `steps` picks which ones run, in this order):
   mix       Mixer motors for mix_s seconds.
   feed      Laps around the cow box (lap_driver, with the Feed tab settings),
             one at a time, until the weight is below empty_kg or laps_max.
-  dock      Nav2 to the start pose (in front of the dock), Create 3 Dock.
+  dock      Nav2 to the spot in front of the dock (0.6 m out from the taught
+            docked pose, facing it), then the Create 3's Dock. Without a docked
+            pose: Nav2 to the start pose.
 
 dry_run keeps the valves and the door closed and skips waiting for weight
 (each silo waits a few seconds instead), so the whole run can be watched
@@ -52,7 +54,7 @@ except ImportError:
     Dock = Undock = DockStatus = None
 
 STEPS = ('localize', 'undock', 'fill', 'mix', 'feed', 'dock')
-RUNNING = ('approach', 'turn', 'straight', 'blocked')
+RUNNING = ('undock', 'approach', 'rejoin', 'paused', 'turn', 'straight', 'blocked')
 NUM_SILOS = 3
 
 
@@ -134,6 +136,7 @@ class Mission(Node):
         p('laps_max', 6)
         p('empty_kg', 0.05)                 # feeding stops below this
         p('nav_timeout_s', 120.0)
+        p('lap_timeout_s', 600.0)           # one lap taking longer than this: give up
         p('num_motors', 2)
         self.g = lambda n: self.get_parameter(n).value
         ns = self.g('namespace').rstrip('/')
@@ -206,6 +209,10 @@ class Mission(Node):
     def _docked(self):
         s = self.dock_status
         return bool(s and s[0] and time.monotonic() - s[2] < 5.0)
+
+    def _dock_visible(self):
+        s = self.dock_status
+        return bool(s and s[1] and time.monotonic() - s[2] < 5.0)
 
     # ---- status -------------------------------------------------------------
 
@@ -330,6 +337,10 @@ class Mission(Node):
         return result
 
     def _navigate(self, pose, what):
+        if Undock is not None and self._docked():
+            # Nav2 cannot drive it off the dock, whether or not Undock was ticked.
+            self._step_status(self.status['current'] or 'undock', 'running', 'undocking first')
+            self._step_undock()
         goal = NavigateToPose.Goal()
         goal.pose = PoseStamped()
         goal.pose.header.frame_id = 'map'
@@ -491,7 +502,13 @@ class Mission(Node):
             if time.monotonic() > end:
                 raise StepFailed('lap_driver did not start')
             self._sleep(0.1)
+        end = time.monotonic() + float(self.g('lap_timeout_s'))
         while self.lap_progress.get('state') in RUNNING:
+            if time.monotonic() > end:
+                if self.lap_stop.service_is_ready():
+                    self.lap_stop.call_async(Trigger.Request())
+                raise StepFailed(f'a lap took over {self.g("lap_timeout_s"):.0f} s: '
+                                 f'{self.lap_progress.get("text") or "stuck"}')
             self._sleep(0.2)
         state = self.lap_progress.get('state')
         if state != 'done':
@@ -522,15 +539,30 @@ class Mission(Node):
         return f'{laps_max} lap(s), {start_kg - left:.2f} kg fed, {left:.2f} kg left'
 
     def _step_dock(self):
-        start = self._poses().get('start')
-        if start is None:
-            raise StepFailed('no start pose saved (Setup tab: in front of the dock)')
-        self._navigate(start, 'the start pose')
-        if Dock is None:
-            return 'at the start pose (no dock: irobot_create_msgs missing)'
+        if self._docked():
+            return 'already on the dock'
+        poses = self._poses()
+        if 'docked' in poses:
+            target, what = pose_store.predock_pose(poses['docked']), 'the front of the dock'
+        elif 'start' in poses:
+            target, what = poses['start'], 'the start pose'
+        else:
+            raise StepFailed('save the Docked pose in Setup, while the robot is on the dock')
+        if Dock is None or 'docked' not in poses:
+            self._navigate(target, what)
+            return f'at {what} (no dock to drive onto)'
+        self._step_status('dock', 'running', f'driving to {what}')
+        try:
+            self._navigate(target, what)
+        except StepFailed:
+            if not self._dock_visible():
+                raise
+            # close enough that the Create 3 sees its dock: let it do the rest
+            self._step_status('dock', 'running', 'Nav2 stopped short, but the dock is in sight')
+        self._step_status('dock', 'running', 'driving onto the dock')
         result = self._action(self.dock_client, Dock.Goal(), 90.0, 'docking')
         if not result.result.is_docked:
-            raise StepFailed('Dock did not end on the dock')
+            raise StepFailed('the Create 3 could not dock (is the dock in front of it?)')
         return 'docked'
 
 

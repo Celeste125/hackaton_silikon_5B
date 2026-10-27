@@ -1,7 +1,8 @@
 """Map tools of the panel, like RViz's: set the robot's position, send a goal.
 
   POST /api/initialpose {x, y, yaw}   AMCL starts from there ("2D Pose Estimate")
-  POST /api/goal {x, y, yaw}          Nav2 drives there ("Nav2 Goal")
+  POST /api/goal {x, y, yaw}          Nav2 drives there ("Nav2 Goal"); on the
+                                      dock it undocks first
   POST /api/goal/cancel               cancels every Nav2 goal (any device)
 
 Also reports Nav2's current path (/plan) and goal for the map view.
@@ -18,6 +19,11 @@ from nav_msgs.msg import Path
 from rclpy.action import ActionClient
 from action_msgs.srv import CancelGoal
 
+try:
+    from irobot_create_msgs.action import Undock
+except ImportError:
+    Undock = None
+
 PLAN_POINTS_MAX = 200
 PLAN_STALE_S = 3.0
 
@@ -33,8 +39,11 @@ def _quat(yaw):
 
 
 class NavApi:
-    def __init__(self, node):
+    def __init__(self, node, docked=lambda: False, namespace='/Team2'):
+        """docked: callable -> True while the robot is on its dock."""
         self.node = node
+        self.docked = docked
+        self.undock = ActionClient(node, Undock, f'{namespace.rstrip("/")}/undock') if Undock else None
         self.lock = threading.Lock()
         self.plan = None          # ([[x, y], ...], monotonic time)
         self.goal = None          # {'x', 'y', 'yaw', 'state'}
@@ -66,6 +75,39 @@ class NavApi:
     def send_goal(self, b):
         if not self.nav.wait_for_server(timeout_sec=1.0):
             return False, 'Nav2 is not running (navigation.launch.py)'
+        if self.undock is not None and self.docked():
+            # Nav2 cannot drive the robot off its dock: undock, then go.
+            if not self.undock.wait_for_server(timeout_sec=1.0):
+                return False, 'the robot is docked and the Create 3 undock action is not available'
+            with self.lock:
+                self.goal = {'x': b.x, 'y': b.y, 'yaw': b.yaw, 'state': 'undocking'}
+            self.undock.send_goal_async(Undock.Goal()).add_done_callback(
+                lambda f: self._after_undock_accepted(f, b))
+            return True, 'Undocking first, then driving to the goal'
+        return self._send_nav(b)
+
+    def _after_undock_accepted(self, future, b):
+        handle = future.result()
+        if not handle.accepted:
+            self._set_goal_state('undock refused')
+            return
+        handle.get_result_async().add_done_callback(lambda f: self._after_undock(f, b))
+
+    def _after_undock(self, future, b):
+        with self.lock:
+            wanted = self.goal is not None and self.goal['state'] == 'undocking'
+        if not wanted:
+            return  # cancelled meanwhile
+        try:
+            still_docked = future.result().result.is_docked
+        except Exception:
+            still_docked = True
+        if still_docked:
+            self._set_goal_state('undock failed')
+        else:
+            self._send_nav(b)
+
+    def _send_nav(self, b):
         goal = NavigateToPose.Goal()
         goal.pose = PoseStamped()
         goal.pose.header.frame_id = 'map'
@@ -102,14 +144,14 @@ class NavApi:
         with self.lock:
             plan = self.plan
             goal = dict(self.goal) if self.goal else None
-        driving = goal is not None and goal['state'] in ('sent', 'driving')
+        driving = goal is not None and goal['state'] in ('undocking', 'sent', 'driving')
         # Nav2 republishes /plan while it drives; an old one is only kept for
         # a goal still being driven to.
         show = plan is not None and (driving or time.monotonic() - plan[1] < PLAN_STALE_S)
         return {'plan': plan[0] if show else None, 'goal': goal}
 
 
-def add_routes(app, api, require_control, client_id, depends, Request):
+def add_routes(app, ros, api, require_control, client_id, depends, Request):
 
     @app.post('/api/initialpose', dependencies=[depends(require_control)])
     def initial_pose(body: PoseBody):
@@ -118,6 +160,12 @@ def add_routes(app, api, require_control, client_id, depends, Request):
 
     @app.post('/api/goal', dependencies=[depends(require_control)])
     def goal(body: PoseBody):
+        act = ros.activity()
+        if act in ('mission', 'dock'):
+            return {'ok': False, 'message': 'Not now: ' + ('a mission is running' if act == 'mission'
+                                                           else 'the robot is docking or undocking')}
+        if act == 'laps':
+            ros.call('lap/stop')  # a goal from the map means: stop the laps, go there
         ok, msg = api.send_goal(body)
         return {'ok': ok, 'message': msg}
 

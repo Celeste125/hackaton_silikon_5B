@@ -63,8 +63,10 @@ def _param(name, value):
 
 
 class MissionApi:
-    def __init__(self, node, poses_file, namespace='/Team2'):
+    def __init__(self, node, poses_file, namespace='/Team2', position_fit=lambda: None):
+        """position_fit: callable -> share of lidar points on the map, or None."""
         self.node = node
+        self.position_fit = position_fit
         self.poses_file = poses_file
         ns = namespace.rstrip('/')
         self.lock = threading.Lock()
@@ -115,6 +117,10 @@ class MissionApi:
     def start(self, s):
         req = SetParameters.Request()
         steps = [x for x in s.steps if x in STEPS]
+        fit = self.position_fit()
+        if 'localize' not in steps and fit is not None and fit < 0.40:
+            return False, (f'Position unsure ({fit * 100:.0f}% of the lidar on the map): '
+                           'add Find position, or use Find robot first')
         req.parameters = [
             _param('steps', steps), _param('dry_run', bool(s.dry_run)),
             _param('recipe_kg', float(s.recipe_kg)), _param('recipe', [float(x) for x in s.recipe]),
@@ -221,10 +227,18 @@ class MissionApi:
                 'progress': progress, 'settings': settings}
 
 
-def add_routes(app, api, require_control, client_id, depends, Request):
+BUSY = {'mission': 'a mission is running', 'laps': 'laps are running', 'goal': 'Nav2 is driving to a goal', 'dock': 'the robot is docking or undocking'}
+
+
+def add_routes(app, ros, api, require_control, client_id, depends, Request):
 
     @app.post('/api/mission/start', dependencies=[depends(require_control)])
     def mission_start(body: MissionSettings):
+        act = ros.activity()
+        if act in ('laps', 'dock'):
+            return {'ok': False, 'message': f'Not now: {BUSY[act]}, stop it first'}
+        if act == 'goal':
+            ros.nav.cancel_all()  # the mission replaces a goal sent from the map
         ok, msg = api.start(body)
         return {'ok': ok, 'message': msg}
 
@@ -236,11 +250,17 @@ def add_routes(app, api, require_control, client_id, depends, Request):
 
     @app.post('/api/dock', dependencies=[depends(require_control)])
     def dock():
+        act = ros.activity()
+        if act:
+            return {'ok': False, 'message': f'Not now: {BUSY[act]}, stop it first'}
         ok, msg = api.run_dock_action(undock=False)
         return {'ok': ok, 'message': msg}
 
     @app.post('/api/undock', dependencies=[depends(require_control)])
     def undock():
+        act = ros.activity()
+        if act:
+            return {'ok': False, 'message': f'Not now: {BUSY[act]}, stop it first'}
         ok, msg = api.run_dock_action(undock=True)
         return {'ok': ok, 'message': msg}
 

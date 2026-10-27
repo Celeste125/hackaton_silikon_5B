@@ -34,9 +34,11 @@ from feed_mission.lap_geometry import (
 
 SCAN_POINTS_MAX = 500
 SNAP_MAX_ERROR_M = 0.02  # a worse fit means the size is wrong: keep the old box
+MIN_FIT_TO_START = 0.40  # position check below this: the robot does not know where it is
 FIT_EVERY_S = 1.0        # how often the position check runs
 RUNS_SHOWN = 12
-RUNNING = ('approach', 'turn', 'straight', 'blocked')
+RUNNING = ('undock', 'approach', 'rejoin', 'paused', 'turn', 'straight', 'blocked')
+BUSY = {'mission': 'a mission is running', 'laps': 'laps are running', 'goal': 'Nav2 is driving to a goal', 'dock': 'the robot is docking or undocking'}
 
 
 class FeedSettings(BaseModel):
@@ -407,6 +409,16 @@ def add_routes(app, ros, feed, require_control, client_id, depends, HTTPExceptio
     def lap_start(body: FeedSettings):
         if feed.box() is None:
             return {'ok': False, 'message': 'Measure the cow box first'}
+        act = ros.activity()
+        if act in ('mission', 'dock'):
+            return {'ok': False, 'message': f'Not now: {BUSY[act]}'}
+        if act == 'goal':
+            ros.nav.cancel_all()  # laps replace a goal sent from the map
+        fit = feed.position_fit()
+        if fit is not None and fit < MIN_FIT_TO_START:
+            return {'ok': False, 'message': (
+                f'Position unsure ({fit * 100:.0f}% of the lidar on the map): '
+                'use Find robot or Position from dock first')}
         ok, msg = feed.set_lap_params(body)
         if not ok:
             return {'ok': False, 'message': msg}

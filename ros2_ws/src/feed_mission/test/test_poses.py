@@ -59,3 +59,10 @@ def test_runs_are_appended_next_to_the_poses_file(tmp_path):
     assert [r['door_open'] for r in runs] == [0.2, 0.3]
     assert poses.load_runs(f) == runs and runs[0]['time']
     assert (tmp_path / 'feed_runs.yaml').exists()
+
+
+def test_predock_is_straight_back_from_the_docked_pose():
+    p = poses.predock_pose({'x': 2.0, 'y': -1.5, 'yaw': 0.0})
+    assert (round(p['x'], 3), round(p['y'], 3), p['yaw']) == (1.4, -1.5, 0.0)
+    q = poses.predock_pose({'x': 0.0, 'y': 0.0, 'yaw': math.pi / 2}, distance=0.5)
+    assert abs(q['x']) < 1e-9 and q['y'] == pytest.approx(-0.5)

@@ -100,15 +100,28 @@
   .dot.on { background: var(--live); box-shadow: 0 0 0 4px rgba(61, 214, 181, .2); }
   .dot.idle { background: var(--muted); box-shadow: none; }
 
-  .battery { display: inline-flex; align-items: center; gap: 4px; }
-  .battery .cell { position: relative; width: 26px; height: 13px; border: 2px solid currentColor; border-radius: 4px; color: var(--muted); }
-  .battery .cell::after { content: ""; position: absolute; right: -5px; top: 2px; width: 3px; height: 5px; border-radius: 0 2px 2px 0; background: currentColor; }
-  .battery .fill { position: absolute; left: 1px; top: 1px; bottom: 1px; width: 0; border-radius: 1px; background: var(--live); transition: width .4s var(--ease); }
-  .battery.mid .fill { background: var(--grain); }
-  .battery.low .fill { background: var(--stop); }
-  .battery.low b { color: var(--stop); }
-  .battery .bolt { display: none; color: var(--grain); font-size: 13px; }
-  .battery.charging .bolt { display: inline; }
+  /* One instrument strip instead of loose pills: each reading is a value
+     with a plain caption under it, the battery the one that stands out. */
+  .vitals { display: flex; align-items: stretch; border-radius: 16px; background: rgba(0, 0, 0, .24); border: 1px solid var(--edge-soft); }
+  .vital { display: flex; align-items: center; gap: 10px; padding: 6px 16px; min-height: 50px; white-space: nowrap; }
+  .vital + .vital { border-left: 1px solid var(--edge-soft); }
+  .vtext { display: flex; flex-direction: column; line-height: 1.15; }
+  .vtext b { font-size: 15px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .vtext small { font-size: 12px; color: var(--muted); }
+  .battery .vtext b { font-size: 18px; }
+  .batt { position: relative; flex: none; width: 46px; height: 24px; border: 2px solid rgba(233, 238, 243, .55); border-radius: 7px; margin-right: 4px; }
+  .batt::after { content: ""; position: absolute; right: -6px; top: 6px; width: 4px; height: 8px; border-radius: 0 3px 3px 0; background: rgba(233, 238, 243, .55); }
+  .batt-in { position: absolute; inset: 2px; border-radius: 3px; overflow: hidden; }
+  .batt-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 3px; background: linear-gradient(180deg, #62e6c8, var(--live)); transition: width .6s var(--ease); }
+  .battery.mid .batt-fill { background: linear-gradient(180deg, #ffd27a, var(--grain)); }
+  .battery.low .batt-fill { background: linear-gradient(180deg, #ff8a8a, var(--stop)); }
+  .battery.low .vtext b { color: #ffb3b3; }
+  .bolt { position: absolute; left: 50%; top: 50%; width: 11px; height: 18px; transform: translate(-50%, -50%); fill: #fff4d6; stroke: #2a1c05; stroke-width: 1.3; stroke-linejoin: round; opacity: 0; }
+  .battery.charging .bolt { opacity: 1; animation: charge 2.4s ease-in-out infinite; }
+  .battery.charging .batt { border-color: rgba(255, 210, 122, .8); box-shadow: 0 0 14px -2px rgba(244, 183, 64, .55); }
+  .battery.charging .batt::after { background: rgba(255, 210, 122, .8); }
+  .battery.charging .vtext small { color: #ffd27a; }
+  @keyframes charge { 50% { transform: translate(-50%, -50%) scale(1.18); } }
 
   .ctl { padding-left: 10px; gap: 10px; }
   .ctl.me { border-color: rgba(61, 214, 181, .45); }
@@ -128,6 +141,17 @@
     .chips { order: 3; width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -2px; padding: 0 2px; }
     .chips::-webkit-scrollbar { display: none; }
     .chip { min-height: 34px; padding: 4px 10px; font-size: 13px; }
+    /* phone: who is in control on one row, the readings on the next */
+    .chips { flex-wrap: wrap; overflow: visible; }
+    .ctl { width: 100%; justify-content: space-between; }
+    .vitals { width: 100%; overflow-x: auto; scrollbar-width: none; }
+    .vitals::-webkit-scrollbar { display: none; }
+    .vital { padding: 4px 12px; min-height: 44px; gap: 8px; flex: 1 0 auto; }
+    .vtext b { font-size: 14px; }
+    .battery .vtext b { font-size: 16px; }
+    .vtext small { font-size: 11px; }
+    .batt { width: 38px; height: 20px; }
+    .batt::after { top: 5px; height: 6px; }
     .ctl { order: -1; }  /* who is in control matters most on a small screen */
     .brand b { font-size: 16px; }
     #stop { order: 2; min-height: 44px; padding: 6px 16px; }
@@ -164,6 +188,13 @@
   button[aria-pressed="true"] { background: rgba(244, 183, 64, .2); border-color: var(--grain); color: #ffe2a6; }
   button.running, button.running[aria-pressed="true"] { color: #062a22; border-color: transparent; background: linear-gradient(180deg, #62e6c8, var(--live)); }
   button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  /* Pressed and waiting for the robot to answer: shows the press was taken. */
+  button.pending, button.pending:disabled { opacity: 1; cursor: progress; position: relative; padding-right: 40px; }
+  button.pending::after {
+    content: ""; position: absolute; right: 14px; top: 50%; width: 14px; height: 14px; margin-top: -7px;
+    border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   .row { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
   .row > * { flex: 1 1 0; min-width: 0; }
@@ -463,14 +494,28 @@
       <b>Feed mixer</b>
     </div>
     <div class="chips">
-      <span class="chip battery" id="battery" title="Create 3 battery">
-        <span class="cell" aria-hidden="true"><span class="fill" id="batFill"></span></span>
-        <span class="bolt" aria-hidden="true">⚡</span>
-        <b id="batPct">—</b><span class="sr-only" id="batSr"></span>
-      </span>
-      <span class="chip" role="status" aria-live="polite"><span class="dot" id="dot"></span><span id="conn">Connecting…</span></span>
-      <span class="chip" id="fitChip" hidden><span class="dot idle" id="fitDot"></span><span id="fitText"></span></span>
-      <span class="chip" id="mapChip" hidden><span class="dot idle" id="mapDot"></span><span id="mapText"></span></span>
+      <div class="vitals" role="group" aria-label="Robot status">
+        <div class="vital battery" id="battery" title="Create 3 battery">
+          <span class="batt" aria-hidden="true">
+            <span class="batt-in"><span class="batt-fill" id="batFill"></span></span>
+            <svg class="bolt" viewBox="0 0 12 20"><path d="M7 0 0 11h5l-1 9 8-12H7z"/></svg>
+          </span>
+          <span class="vtext"><b id="batPct">—</b><small id="batState">battery</small></span>
+          <span class="sr-only" id="batSr" aria-live="polite"></span>
+        </div>
+        <div class="vital" role="status" aria-live="polite">
+          <span class="dot" id="dot"></span>
+          <span class="vtext"><b id="conn">connecting</b><small>scale</small></span>
+        </div>
+        <div class="vital" id="fitChip" hidden>
+          <span class="dot idle" id="fitDot"></span>
+          <span class="vtext"><b id="fitText"></b><small id="fitCap">position</small></span>
+        </div>
+        <div class="vital" id="mapChip" hidden>
+          <span class="dot idle" id="mapDot"></span>
+          <span class="vtext"><b id="mapText"></b><small>map</small></span>
+        </div>
+      </div>
       <span class="chip ctl" id="ctl" aria-live="polite">
         <span class="dot idle" id="ctlDot"></span><span id="ctlMsg">Checking control…</span>
         <button id="ctlBtn" class="primary" hidden></button>
@@ -868,6 +913,25 @@ async function action(path, body, okText) {
   }
 }
 
+// A button that starts something on the robot: it says what it is doing and
+// cannot be pressed twice until the robot has answered.
+async function runAction(btn, busyText, path, body) {
+  if (btn.classList.contains('pending')) return undefined;
+  const label = btn.textContent;
+  btn.classList.add('pending');
+  btn.disabled = true;
+  btn.textContent = busyText;
+  try {
+    const r = await action(path, body);
+    poll();
+    return r;
+  } finally {
+    btn.classList.remove('pending');
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
 // Range fill: from the minimum, or from the centre for bipolar sliders.
 function paintRange(el) {
   const min = +el.min, max = +el.max, v = +el.value;
@@ -1242,8 +1306,8 @@ function showValves(s) {
 const POSE_GROUPS = [
   ['Silos', 'Park under each pipe, facing the way you will approach it.',
     [['silo1', 'Silo 1'], ['silo2', 'Silo 2'], ['silo3', 'Silo 3']]],
-  ['Dock', 'Start: in front of the dock, facing it, where Dock can take over (about 0.5 m out). Docked: on the dock, saved once while docked; from then on "Position from dock" and the mission set the position from it.',
-    [['start', 'Start (in front of the dock)'], ['docked', 'Docked']]],
+  ['Dock', 'Save Docked once, while the robot is on its dock. The mission finds the dock from it (it drives 60 cm in front of it, then docks), and Position from dock sets the position from it. Start is only used without a dock: where the mission parks at the end.',
+    [['docked', 'Docked'], ['start', 'Start (only without a dock)']]],
 ];
 const deg = (rad) => Math.round(rad * 180 / Math.PI);
 function buildPoses() {
@@ -1289,13 +1353,7 @@ function showPoses(s) {
   }
 }
 
-$('reloc').addEventListener('click', async () => {
-  const b = $('reloc');
-  b.disabled = true;
-  b.textContent = 'Searching…';
-  try { await action('/api/relocalize'); poll(); }
-  finally { b.disabled = false; b.textContent = 'Find robot on map'; }
-});
+$('reloc').addEventListener('click', () => runAction($('reloc'), 'Searching', '/api/relocalize'));
 
 // ---- map view ----
 // The arena as the robot sees it: the saved map, the lidar, the robot with
@@ -1312,6 +1370,7 @@ const M = {
   tool: 'pan', trail: [], dash: 0, animating: false,
 };
 const TRAIL_MS = 60000;  // the robot's track fades out over a minute
+const LAP_RUNNING = ['undock', 'approach', 'rejoin', 'paused', 'turn', 'straight', 'blocked'];
 const ROBOT = {hl: 0.17, hw: 0.26};
 const COL = {
   free: [24, 33, 42], wall: [176, 196, 212], grid: 'rgba(255,255,255,0.045)', lap: '#3dd6b5',
@@ -1454,8 +1513,8 @@ function path(c, pts, close) {
 function needsAnimation() {
   const st = M.state || {};
   const prog = st.feed && st.feed.progress, nav = st.nav, mis = st.mission && st.mission.progress;
-  const lapRunning = prog && ['approach', 'turn', 'straight', 'blocked'].includes(prog.state);
-  const navDriving = nav && nav.goal && ['sent', 'driving'].includes(nav.goal.state);
+  const lapRunning = prog && LAP_RUNNING.includes(prog.state);
+  const navDriving = nav && nav.goal && ['undocking', 'sent', 'driving'].includes(nav.goal.state);
   return mapVisible() && (lapRunning || navDriving || (mis && mis.state === 'running') || !!M.drag);
 }
 function animate(ts) {
@@ -1523,7 +1582,7 @@ function renderMap() {
   // lap plan: dashed sides marching in the driving direction
   const plan = M.plan;
   const prog = st.feed && st.feed.progress;
-  const running = prog && ['approach', 'turn', 'straight', 'blocked'].includes(prog.state);
+  const running = prog && LAP_RUNNING.includes(prog.state);
   if (plan && box) {
     const bad = new Set((plan.problems || []).filter((p) => p.kind === 'side').map((p) => p.index));
     plan.sides.forEach((sd, i) => {
@@ -1589,7 +1648,7 @@ function renderMap() {
     c.stroke();
     c.setLineDash([]);
   }
-  if (nav.goal && ['sent', 'driving'].includes(nav.goal.state)) drawPoseArrow(c, nav.goal, COL.plan, true);
+  if (nav.goal && ['undocking', 'sent', 'driving'].includes(nav.goal.state)) drawPoseArrow(c, nav.goal, COL.plan, true);
 
   // taught poses
   const poses = st.poses || {};
@@ -1605,6 +1664,18 @@ function renderMap() {
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillText(isSilo ? key.slice(4) : key === 'docked' ? 'D' : 'S', px, py + 0.5 * d);
+  }
+
+  // where Dock takes over: 60 cm in front of the docked pose, facing the dock
+  if (poses.docked) {
+    const p = poses.docked, pre = {x: p.x - 0.6 * Math.cos(p.yaw), y: p.y - 0.6 * Math.sin(p.yaw), yaw: p.yaw};
+    const [ax, ay] = toScreen(pre.x, pre.y), [bx, by] = toScreen(p.x, p.y);
+    c.setLineDash([4 * d, 4 * d]);
+    c.strokeStyle = 'rgba(155,231,255,0.6)';
+    c.lineWidth = 1.5 * d;
+    c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+    c.setLineDash([]);
+    c.beginPath(); c.arc(ax, ay, 5 * d, 0, Math.PI * 2); c.stroke();
   }
 
   // lidar
@@ -1910,12 +1981,7 @@ document.addEventListener('fullscreenchange', () => {
   $('mapFull').setAttribute('aria-pressed', String(isFull()));
   setTimeout(resizeMap, 50);
 });
-$('mapFind').addEventListener('click', async () => {
-  const b = $('mapFind');
-  b.disabled = true;
-  b.textContent = 'Searching…';
-  try { await action('/api/relocalize'); poll(); } finally { b.disabled = false; b.textContent = 'Find robot'; }
-});
+$('mapFind').addEventListener('click', () => runAction($('mapFind'), 'Searching', '/api/relocalize'));
 $('mapCancel').addEventListener('click', () => action('/api/goal/cancel'));
 
 function updateTrail(pose) {
@@ -1927,7 +1993,7 @@ function updateTrail(pose) {
 }
 function showMapCards(s) {
   const nav = s.nav || {};
-  const driving = nav.goal && ['sent', 'driving'].includes(nav.goal.state);
+  const driving = nav.goal && ['undocking', 'sent', 'driving'].includes(nav.goal.state);
   $('mapCancel').hidden = !driving;
   if (!isFull()) return;
   const cards = [];
@@ -1938,10 +2004,10 @@ function showMapCards(s) {
     cards.push(`<div class="map-card">Mission${mp.dry_run ? ' · dry run' : ''}<b>${cur ? (STEP_LABEL[cur.name] || cur.name) : 'starting'}</b>${cur ? cur.detail : ''}</div>`);
   }
   const lp = s.feed && s.feed.progress;
-  if (lp && ['approach', 'turn', 'straight', 'blocked'].includes(lp.state)) {
+  if (lp && LAP_RUNNING.includes(lp.state)) {
     cards.push(`<div class="map-card">Laps<b>${lp.lap ? `lap ${lp.lap} of ${lp.laps}` : 'starting'}</b>${lp.text || ''} · door ${lp.door ? 'open' : 'closed'}</div>`);
   }
-  if (driving) cards.push(`<div class="map-card">Nav2<b>driving to the goal</b>${nav.goal.x.toFixed(2)}, ${nav.goal.y.toFixed(2)}</div>`);
+  if (driving) cards.push(`<div class="map-card">Nav2<b>${nav.goal.state === 'undocking' ? 'undocking first' : 'driving to the goal'}</b>${nav.goal.x.toFixed(2)}, ${nav.goal.y.toFixed(2)}</div>`);
   const fit = s.feed && s.feed.fit;
   const bat = s.battery && s.battery.percent !== null ? `${Math.round(s.battery.percent)}%` : '—';
   cards.push(`<div class="map-card">Battery ${bat} · position ${fit === null || fit === undefined ? '—' : `${Math.round(fit * 100)}%`}<b>${$('dockText').textContent}</b></div>`);
@@ -2040,7 +2106,7 @@ async function putBox(b) {
     poll();
   } catch (e) { toast(String(e.message || e), true); }
 }
-$('fdDetect').addEventListener('click', async () => { await action('/api/box/detect'); await poll(); schedulePlan(); });
+$('fdDetect').addEventListener('click', async () => { await runAction($('fdDetect'), 'Detecting', '/api/box/detect'); schedulePlan(); });
 $('fdSnap').addEventListener('click', async () => {
   const b = $('fdSnap');
   b.disabled = true;
@@ -2063,11 +2129,12 @@ $('fdRotR').addEventListener('click', () => rotate(-1));
 $('fdStart').addEventListener('click', () => {
   const s = feedSettings();
   if (!s.dry_run && !confirm(`Real run: the door opens to ${Math.round(s.door_open * 100)}% beside the box. Start?`)) return;
-  action('/api/lap/start', s);
+  runAction($('fdStart'), 'Starting', '/api/lap/start', s);
 });
 $('fdStop').addEventListener('click', () => action('/api/lap/stop'));
 
-const RUN_TEXT = {idle: 'Ready', done: 'Laps done', approach: 'Driving to the first corner'};
+const RUN_TEXT = {idle: 'Ready', done: 'Laps done', approach: 'Driving to the first corner', undock: 'Undocking first',
+  rejoin: 'Getting back onto the lap', paused: 'Paused: someone is driving by hand'};
 function showFeed(s) {
   const f = s.feed;
   M.state = s;
@@ -2087,7 +2154,7 @@ function showFeed(s) {
   if (b && document.activeElement !== $('fdWid')) $('fdWid').value = Math.round(b.width * 100);
   // run
   const p = f.progress;
-  const running = !!p && ['approach', 'turn', 'straight', 'blocked'].includes(p.state);
+  const running = !!p && LAP_RUNNING.includes(p.state);
   const bad = !!p && (p.state === 'failed' || p.state === 'blocked');
   const text = !p ? 'Lap driver not running: ros2 launch feed_mission mission.launch.py'
     : running && p.lap ? `Lap ${p.lap} of ${p.laps}${p.dry_run ? ' (dry run)' : ''}` : (RUN_TEXT[p.state] || p.text);
@@ -2195,7 +2262,7 @@ $('msStart').addEventListener('click', () => {
   const m = missionSettings();
   if (!m.steps.length) { toast('Pick at least one step', true); return; }
   if (!m.dry_run && !confirm(`Real run: load ${m.recipe_kg.toFixed(2)} kg, mix, then feed with the door open. Start?`)) return;
-  action('/api/mission/start', m);
+  runAction($('msStart'), 'Starting', '/api/mission/start', m);
 });
 $('msStop').addEventListener('click', () => action('/api/mission/stop'));
 
@@ -2231,9 +2298,9 @@ function showMission(s) {
 }
 
 // ---- dock ----
-$('dockBtn').addEventListener('click', () => action('/api/dock'));
-$('undockBtn').addEventListener('click', () => action('/api/undock'));
-$('locDock').addEventListener('click', () => action('/api/localize/docked'));
+$('dockBtn').addEventListener('click', () => runAction($('dockBtn'), 'Sending', '/api/dock'));
+$('undockBtn').addEventListener('click', () => runAction($('undockBtn'), 'Sending', '/api/undock'));
+$('locDock').addEventListener('click', () => runAction($('locDock'), 'Setting', '/api/localize/docked'));
 function showDock(s) {
   const m = s.mission, d = m && m.dock;
   const busy = m && m.dock_busy;
@@ -2258,7 +2325,8 @@ function showFit(s) {
   if (f === null || f === undefined) return;
   const pct = Math.round(f * 100);
   const good = f >= 0.6, poor = f < 0.4;
-  $('fitText').textContent = `Position ${good ? 'good' : poor ? 'lost?' : 'unsure'} ${pct}%`;
+  $('fitText').textContent = `${pct}%`;
+  $('fitCap').textContent = good ? 'position good' : poor ? 'position lost?' : 'position unsure';
   $('fitDot').className = `dot ${good ? 'on' : poor ? '' : 'idle'}`;
   $('fitChip').title = `${pct}% of the lidar points land on walls of the map. Under ~40%: the robot does not know where it is; use Find robot on map (Setup).`;
 }
@@ -2357,26 +2425,34 @@ function showCams(s) {
 }
 
 // ---- top bar: battery, map, hazards ----
-function showBattery(b) {
+function showBattery(b, dock) {
   const el = $('battery');
   const p = b && b.percent !== null && b.age_s < 10 ? b.percent : null;
+  const docked = !!(dock && dock.docked);
+  const charging = p !== null && !!b.charging;
   $('batPct').textContent = p === null ? '—' : `${Math.round(p)}%`;
-  $('batFill').style.width = p === null ? '0' : `${Math.max(4, Math.min(100, p)) * 0.2}px`;
-  el.classList.toggle('low', p !== null && p < 20);
-  el.classList.toggle('mid', p !== null && p >= 20 && p < 40);
-  el.classList.toggle('charging', !!(b && b.charging));
-  const sr = p === null ? 'Battery unknown' : `Battery ${Math.round(p)} percent${b.charging ? ', charging' : ''}`;
-  $('batSr').textContent = sr;
-  el.title = p === null ? 'No battery data from the Create 3' : `${sr}, ${b.voltage.toFixed(1)} V`;
+  $('batFill').style.width = p === null ? '0' : `${Math.max(3, Math.min(100, p))}%`;
+  el.classList.toggle('low', p !== null && p < 20 && !charging);
+  el.classList.toggle('mid', p !== null && p >= 20 && p < 40 && !charging);
+  el.classList.toggle('charging', charging);
+  const state = p === null ? 'no battery data'
+    : b.full || (docked && p >= 99) ? 'full, on the dock'
+      : charging ? (docked ? 'charging on the dock' : 'charging')
+        : docked ? 'on the dock, not charging' : p < 20 ? 'low, dock soon' : 'on battery';
+  $('batState').textContent = state;
+  const sr = p === null ? 'Battery unknown' : `Battery ${Math.round(p)} percent, ${state}`;
+  if ($('batSr').textContent !== sr) $('batSr').textContent = sr;
+  el.title = p === null ? 'No battery data from the Create 3'
+    : `${sr}. ${b.voltage.toFixed(1)} V, ${b.current > 0 ? '+' : ''}${(b.current || 0).toFixed(2)} A`;
 }
 const MAP_TEXT = {
-  starting: 'Map: starting', exploring: 'Map: exploring', returning: 'Map: driving home',
-  saving: 'Map: saving', done: 'Map saved',
+  starting: 'starting', exploring: 'exploring', returning: 'driving home',
+  saving: 'saving', done: 'saved',
 };
 function showExplorer(st) {
   $('mapChip').hidden = !st;
   if (!st) return;
-  $('mapText').textContent = MAP_TEXT[st] || `Map: ${st}`;
+  $('mapText').textContent = MAP_TEXT[st] || st;
   $('mapDot').className = `dot ${st === 'done' ? 'on' : st.startsWith('failed') ? '' : 'idle'}`;
 }
 let lastHazards = '';
@@ -2471,7 +2547,7 @@ async function poll() {
     showValves(s);
     showMotorState(s);
     showCams(s);
-    showBattery(s.battery);
+    showBattery(s.battery, s.mission && s.mission.dock);
     showExplorer(s.explorer);
     showHazards(s.hazards);
     showPoses(s);
@@ -2487,10 +2563,10 @@ async function poll() {
     $('cells').innerHTML = s.cells.map((c, i) => `<span title="Load cell ${i + 1}">${c.toFixed(3)}</span>`).join('');
     if (s.door && s.door.mode === 'position' && document.activeElement !== $('door')) showDoor(s.door.value);
     $('dot').classList.toggle('on', fresh);
-    $('conn').textContent = fresh ? 'Scale live' : s.weight === null ? 'No scale data' : 'Scale data stale';
+    $('conn').textContent = fresh ? 'live' : s.weight === null ? 'no data' : 'stale';
   } catch (e) {
     $('dot').classList.remove('on');
-    $('conn').textContent = 'Panel server unreachable';
+    $('conn').textContent = 'server unreachable';
   }
 }
 showTool(tool);
