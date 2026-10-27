@@ -353,6 +353,12 @@ so above about 60% a silo can stop early; use *After each silo* if you need
 it faster. While filling with the mixer on, the weight is the median over 1 s
 instead of 0.6 s.
 
+**Feeding** in the Mission tab sets the door opening (default 20%) and the
+mixer for the mission's laps: *Mix the whole time* (default), *Mix near the
+end* (starts once the container is down to the kg you enter) or *Off*, at
+its own speed. These replace the Feed tab's door and mixer settings during
+a mission; gaps and speed still come from the Feed tab.
+
 Running the mixer by hand in the panel takes it over: the mission and the
 lap driver leave it alone while you do (`/mixer/manual`).
 *Dry run* (the default) drives everything with the valves and the door

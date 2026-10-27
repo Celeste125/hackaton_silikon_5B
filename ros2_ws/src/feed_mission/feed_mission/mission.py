@@ -23,6 +23,9 @@ Steps (parameter `steps` picks which ones run, in this order):
   mix       Mixer motors for mix_s seconds.
   feed      Laps around the cow box (lap_driver, with the Feed tab settings),
             one at a time, until the weight is below empty_kg or laps_max.
+            The mission's own door opening (feed_door_open) and mixer
+            (feed_mix: 'always', 'below' feed_mix_below_kg, or 'off', at
+            feed_mix_speed) replace the Feed tab's.
   dock      Nav2 to the spot in front of the dock (0.6 m out from the taught
             docked pose, facing it), then the Create 3's Dock. Without a docked
             pose: Nav2 to the start pose.
@@ -67,6 +70,7 @@ except ImportError:
 STEPS = ('localize', 'undock', 'fill', 'mix', 'feed', 'dock')
 RUNNING = ('undock', 'approach', 'rejoin', 'paused', 'turn', 'straight', 'blocked')
 NUM_SILOS = 3
+MIX_ALWAYS_KG = 1000.0  # 'mix below' for the whole run: more than the container holds
 MANUAL_MIX_S = 1.0  # s after the web panel's last 'mixer/manual' it has the mixer
 
 
@@ -149,6 +153,10 @@ class Mission(Node):
         p('fill_mix', 'pour')               # mixer while filling: pour, between or off
         p('fill_mix_speed', 0.5)
         p('fill_mix_s', 3.0)                # 'between': this long after each silo
+        p('feed_door_open', 0.2)            # door opening on the laps, 0..1
+        p('feed_mix', 'always')             # mixer on the laps: always, below or off
+        p('feed_mix_below_kg', 0.5)         # 'below': on once the container is down to this
+        p('feed_mix_speed', 0.6)
         p('laps_max', 6)
         p('empty_kg', 0.05)                 # feeding stops below this
         p('nav_timeout_s', 120.0)
@@ -652,7 +660,13 @@ class Mission(Node):
         allowed = ('feed', 'gap', 'end_gap', 'door_open', 'door_margin', 'door_x', 'speed',
                    'mix_below_kg', 'mix_speed')
         values = {k: (float(v) if k != 'feed' else str(v)) for k, v in settings.items() if k in allowed}
-        values.update(laps=1, dry_run=dry)
+        mix = str(self.g('feed_mix'))
+        values.update(
+            laps=1, dry_run=dry, door_open=float(self.g('feed_door_open')),
+            mix_speed=float(self.g('feed_mix_speed')),
+            # the lap driver mixes once the weight is at or below this
+            mix_below_kg={'always': MIX_ALWAYS_KG, 'off': 0.0}.get(
+                mix, float(self.g('feed_mix_below_kg'))))
         self._set_lap_params(values)
         laps_max, empty = int(self.g('laps_max')), float(self.g('empty_kg'))
         start_kg = None if dry else self._weight()
