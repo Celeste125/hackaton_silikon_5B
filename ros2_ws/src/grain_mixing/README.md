@@ -20,6 +20,33 @@ sudo chown -R $USER:$USER build install log
 
 A `not found: .../imdl_simulation/local_setup.bash` message when sourcing is a harmless warning from a stale entry in `install/`.
 
+## Quick start
+
+Open a terminal and run the launch file with a video:
+
+```bash
+cd ~/hackaton_silikon_5B/ros2_ws
+source install/setup.bash
+ros2 launch grain_mixing grain_mixing.launch.py \
+  video_path:=/home/ce/hackaton_silikon_5B/vision_system/videos/clip_hd.mp4 \
+  rate:=1.0
+```
+
+You should see `grain_analyzer reading ... at 1.0 frames/s`. Then open a second terminal (run `source install/setup.bash` again in every new terminal) and read the results:
+
+```bash
+ros2 topic echo /grain_analyzer/homogeneity
+```
+
+A new number appears about once per second. Stop the launch with `Ctrl+C` (a long Python error message at that point is harmless).
+
+What the launch does: it starts one node, `grain_analyzer`, with the parameters of `config/params.yaml`, plus the two arguments you pass:
+
+- `video_path:=...` is the video file (or camera index) the analyzer reads. Leave it out to make the analyzer wait for images on `/image_raw` instead (see "From the `image_raw` topic" below).
+- `rate:=...` is how many frames per second are analysed.
+
+The test video is not on this branch. Use any video of the mixer filmed from above, at 1920 x 1080, or adjust the crop (see Tuning).
+
 ## Run
 
 The analyzer gets its frames from one of two places. Use the launch file in both cases.
@@ -70,6 +97,7 @@ ros2 run grain_mixing video_source --ros-args \
 | `/grain_analyzer/area/wheat` | Float32 | Percent that is wheat |
 | `/grain_analyzer/overlay` | Image | Frame with colour overlay and legend |
 | `/grain_analyzer/stacked` | Image | Raw frame above the overlay |
+| `/grain_analyzer/overlay/compressed` | CompressedImage | The overlay as JPEG (about 50 kB). The web panel shows it as the "Grain mixing" camera. |
 
 `/image_raw` is only used in mode 2 (published by your camera, or by `video_source`). The two image outputs are only encoded while something is subscribed to them.
 
