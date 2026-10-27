@@ -586,6 +586,7 @@
             <div class="row" data-needs-control>
               <button class="quiet" id="fdDetect">Detect from map</button>
               <button class="quiet" id="fdSnap">Snap to lidar</button>
+              <button id="fdEdit" aria-pressed="false">Edit on map</button>
             </div>
             <div class="fd-size" data-needs-control>
               <label class="field">Length, cm<input type="number" id="fdLen" min="10" max="400" step="1" inputmode="numeric"></label>
@@ -593,7 +594,7 @@
               <button id="fdRotL" aria-label="Turn the box 1 degree left">⟲ 1°</button>
               <button id="fdRotR" aria-label="Turn the box 1 degree right">⟳ 1°</button>
             </div>
-            <p class="hint">Detect finds the box on the map (drawn a little too big). Type its real size, park the robot beside it and Snap: the outline moves onto the lidar points. Fine-tune with Edit box on the map.</p>
+            <p class="hint">Detect finds the box on the map (drawn a little too big). Type its real size, park the robot beside it and Snap: the outline moves onto the lidar points (red dots). Then fine-tune on the map: drag the box, drag a corner to resize, turn it with the round knob.</p>
           </section>
 
           <section class="sub" aria-labelledby="fdFeedH">
@@ -1294,12 +1295,17 @@ function fitMap() {
 $('mapFit').addEventListener('click', () => { M.follow = false; markFollow(); fitMap(); });
 function markFollow() { $('mapFollow').setAttribute('aria-pressed', String(M.follow)); }
 $('mapFollow').addEventListener('click', () => { M.follow = !M.follow; markFollow(); drawMap(); });
-$('mapEdit').addEventListener('click', () => {
-  M.edit = !M.edit;
-  $('mapEdit').setAttribute('aria-pressed', String(M.edit));
-  mapCanvas.classList.toggle('editing', M.edit);
-  if (M.edit) toast('Drag the cow box to move it');
-});
+function setEdit(on) {
+  M.edit = on;
+  for (const id of ['mapEdit', 'fdEdit']) $(id).setAttribute('aria-pressed', String(on));
+  $('fdEdit').textContent = on ? 'Done editing' : 'Edit on map';
+  if (on) {
+    if (!phone.matches && stageMode !== 'map') setStage('map');
+    toast('Drag the box to move it, a corner to resize, the round knob to rotate (Shift: 5° steps)');
+  }
+  drawMap();
+}
+$('mapEdit').addEventListener('click', () => setEdit(!M.edit));
 
 // The box being dragged, else the saved one.
 const curBox = () => M.dragBox || (M.state && M.state.feed && M.state.feed.box) || null;
@@ -1366,6 +1372,7 @@ function renderMap() {
     c.stroke();
     c.setLineDash([]);
   }
+  const boxEditor = box && M.edit;
 
   // lap plan
   const plan = M.plan;
@@ -1468,12 +1475,48 @@ function renderMap() {
     c.lineCap = 'butt';
   }
 
+  if (boxEditor) drawBoxEditor(c, box);
+
   // scale bar
   const meters = [0.25, 0.5, 1, 2].find((m) => m * s >= 60 * d) || 2;
   $('mapScale').textContent = `▬ ${meters < 1 ? `${meters * 100} cm` : `${meters} m`}`;
 }
 
-// pan, zoom, pinch, drag the box
+// pan, zoom, pinch; in Edit box: move, resize from a corner, rotate
+const HANDLE_PX = 14;    // grab distance around a handle, CSS px
+const KNOB_PX = 34;      // rotate knob distance outside the box, CSS px
+function boxFrame(b) { return [Math.cos(b.yaw), Math.sin(b.yaw)]; }
+function toBoxFrame(b, x, y) {
+  const [c, s] = boxFrame(b), dx = x - b.cx, dy = y - b.cy;
+  return [dx * c + dy * s, -dx * s + dy * c];
+}
+function fromBoxFrame(b, u, v) {
+  const [c, s] = boxFrame(b);
+  return [b.cx + u * c - v * s, b.cy + u * s + v * c];
+}
+const CORNER_SIGNS = [[-1, 1], [1, 1], [1, -1], [-1, -1]];
+function knobPos(b) {
+  // screen position of the rotate knob, off the middle of the +width side
+  const [mx, my] = toScreen(...fromBoxFrame(b, 0, b.width / 2));
+  const [cx, cy] = toScreen(b.cx, b.cy);
+  const L = Math.hypot(mx - cx, my - cy) || 1, k = KNOB_PX * dprNow();
+  return [mx + (mx - cx) / L * k, my + (my - cy) / L * k, mx, my];
+}
+function hitBox(px, py) {
+  const b = curBox();
+  if (!b || !M.edit) return null;
+  const d = dprNow(), r = HANDLE_PX * d;
+  const [kx, ky] = knobPos(b);
+  if (Math.hypot(px - kx, py - ky) < r) return {kind: 'rotate'};
+  const corners = boxCorners(b);
+  for (let i = 0; i < 4; i++) {
+    const [sx, sy] = toScreen(...corners[i]);
+    if (Math.hypot(px - sx, py - sy) < r) return {kind: 'corner', i};
+  }
+  const [wx, wy] = toWorld(px, py);
+  return insideBox(b, wx, wy) ? {kind: 'move'} : null;
+}
+const HIT_CURSOR = {rotate: 'alias', corner: 'nwse-resize', move: 'move'};
 mapCanvas.addEventListener('wheel', (e) => {
   if (!M.view) return;
   e.preventDefault();
@@ -1489,39 +1532,61 @@ mapCanvas.addEventListener('wheel', (e) => {
 mapCanvas.addEventListener('pointerdown', (e) => {
   if (!M.view) return;
   mapCanvas.setPointerCapture(e.pointerId);
-  const d = dprNow();
-  M.pointers.set(e.pointerId, [e.offsetX * d, e.offsetY * d]);
+  const d = dprNow(), px = e.offsetX * d, py = e.offsetY * d;
+  M.pointers.set(e.pointerId, [px, py]);
   if (M.pointers.size === 2) { M.drag = {type: 'pinch'}; return; }
-  const [wx, wy] = toWorld(e.offsetX * d, e.offsetY * d);
-  const box = curBox();
-  if (M.edit && haveControl && box && insideBox(box, wx, wy)) {
-    M.drag = {type: 'box', start: [wx, wy], box0: {...box}};
+  const hit = haveControl ? hitBox(px, py) : null;
+  if (hit) {
+    const b = {...curBox()};
+    const [wx, wy] = toWorld(px, py);
+    M.drag = {type: hit.kind, i: hit.i, start: [wx, wy], box0: b,
+      ang0: Math.atan2(wy - b.cy, wx - b.cx)};
   } else {
-    M.drag = {type: 'pan', last: [e.offsetX * d, e.offsetY * d]};
+    M.drag = {type: 'pan', last: [px, py]};
     mapCanvas.classList.add('dragging');
   }
 });
 mapCanvas.addEventListener('pointermove', (e) => {
-  if (!M.drag || !M.pointers.has(e.pointerId)) return;
   const d = dprNow(), p = [e.offsetX * d, e.offsetY * d];
+  if (!M.drag || !M.pointers.has(e.pointerId)) {
+    const hit = M.edit && haveControl && M.view ? hitBox(p[0], p[1]) : null;
+    mapCanvas.style.cursor = hit ? HIT_CURSOR[hit.kind] : '';
+    return;
+  }
   const prev = M.pointers.get(e.pointerId);
   M.pointers.set(e.pointerId, p);
-  if (M.drag.type === 'pinch' && M.pointers.size === 2) {
+  const D = M.drag;
+  if (D.type === 'pinch' && M.pointers.size === 2) {
     const [a, b] = [...M.pointers.values()];
     const other = a === p ? b : a;
     const before = Math.hypot(prev[0] - other[0], prev[1] - other[1]);
     const after = Math.hypot(p[0] - other[0], p[1] - other[1]);
     if (before > 0) M.view.s = Math.max(20, Math.min(2000, M.view.s * after / before));
     M.touched = true;
-  } else if (M.drag.type === 'pan') {
-    M.view.cx -= (p[0] - M.drag.last[0]) / M.view.s;
-    M.view.cy += (p[1] - M.drag.last[1]) / M.view.s;
-    M.drag.last = p;
+  } else if (D.type === 'pan') {
+    M.view.cx -= (p[0] - D.last[0]) / M.view.s;
+    M.view.cy += (p[1] - D.last[1]) / M.view.s;
+    D.last = p;
     M.touched = true;
     if (M.follow) { M.follow = false; markFollow(); }
-  } else if (M.drag.type === 'box') {
+  } else {
     const [wx, wy] = toWorld(p[0], p[1]);
-    M.dragBox = {...M.drag.box0, cx: M.drag.box0.cx + wx - M.drag.start[0], cy: M.drag.box0.cy + wy - M.drag.start[1]};
+    const b0 = D.box0;
+    if (D.type === 'move') {
+      M.dragBox = {...b0, cx: b0.cx + wx - D.start[0], cy: b0.cy + wy - D.start[1]};
+    } else if (D.type === 'rotate') {
+      let yaw = b0.yaw + Math.atan2(wy - b0.cy, wx - b0.cx) - D.ang0;
+      const step = (e.shiftKey ? 5 : 0.5) * Math.PI / 180;
+      M.dragBox = {...b0, yaw: Math.round(yaw / step) * step};
+    } else if (D.type === 'corner') {
+      // the opposite corner stays put, the angle is kept
+      const [sx, sy] = CORNER_SIGNS[D.i];
+      const [ou, ov] = [-sx * b0.length / 2, -sy * b0.width / 2];
+      const [pu, pv] = toBoxFrame(b0, wx, wy);
+      const nu = sx * Math.max(0.1, sx * (pu - ou)), nv = sy * Math.max(0.1, sy * (pv - ov));
+      const [cx, cy] = fromBoxFrame(b0, ou + nu / 2, ov + nv / 2);
+      M.dragBox = {...b0, cx, cy, length: Math.abs(nu), width: Math.abs(nv)};
+    }
     schedulePlan();
   }
   drawMap();
@@ -1529,9 +1594,9 @@ mapCanvas.addEventListener('pointermove', (e) => {
 async function endDrag(e) {
   M.pointers.delete(e.pointerId);
   mapCanvas.classList.remove('dragging');
-  const drag = M.drag;
+  const D = M.drag;
   M.drag = M.pointers.size ? M.drag : null;
-  if (drag && drag.type === 'box' && M.dragBox) {
+  if (D && ['move', 'rotate', 'corner'].includes(D.type) && M.dragBox) {
     const b = M.dragBox;
     await putBox(b);
     M.dragBox = null;
@@ -1540,6 +1605,34 @@ async function endDrag(e) {
 mapCanvas.addEventListener('pointerup', endDrag);
 mapCanvas.addEventListener('pointercancel', endDrag);
 mapCanvas.addEventListener('dblclick', fitMap);
+
+function drawBoxEditor(c, b) {
+  const d = dprNow();
+  // rotate knob
+  const [kx, ky, mx, my] = knobPos(b);
+  c.beginPath(); c.moveTo(mx, my); c.lineTo(kx, ky);
+  c.strokeStyle = 'rgba(244,183,64,0.8)'; c.lineWidth = 1.5 * d; c.stroke();
+  c.beginPath(); c.arc(kx, ky, 7 * d, 0, Math.PI * 2);
+  c.fillStyle = '#0c1f26'; c.fill(); c.strokeStyle = COL.box; c.lineWidth = 2 * d; c.stroke();
+  c.beginPath(); c.arc(kx, ky, 3 * d, -2.2, 1.2); c.strokeStyle = COL.box; c.lineWidth = 1.5 * d; c.stroke();
+  // corner handles
+  for (const [x, y] of boxCorners(b)) {
+    const [sx, sy] = toScreen(x, y), h = 5.5 * d;
+    c.fillStyle = '#fff'; c.fillRect(sx - h, sy - h, 2 * h, 2 * h);
+    c.strokeStyle = COL.box; c.lineWidth = 2 * d; c.strokeRect(sx - h, sy - h, 2 * h, 2 * h);
+  }
+  // size and angle label under the box
+  const label = `${Math.round(b.length * 100)} × ${Math.round(b.width * 100)} cm · ${Math.round(b.yaw * 180 / Math.PI * 2) / 2}°`;
+  const [cx, cy] = toScreen(b.cx, b.cy);
+  c.font = `600 ${12 * d}px system-ui, sans-serif`;
+  const w = c.measureText(label).width + 16 * d, h = 22 * d;
+  c.fillStyle = 'rgba(5,12,16,0.78)';
+  c.beginPath();
+  if (c.roundRect) c.roundRect(cx - w / 2, cy - h / 2, w, h, 11 * d); else c.rect(cx - w / 2, cy - h / 2, w, h);
+  c.fill();
+  c.fillStyle = '#ffe2a6'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(label, cx, cy + 0.5 * d);
+}
 
 // ---- feed tab ----
 const FEED_SLIDERS = [
@@ -1597,16 +1690,10 @@ async function fetchPlan() {
   const box = curBox();
   if (!box) { M.plan = null; showPlan(); drawMap(); return; }
   try {
-    const res = await fetch('/api/feed/plan', {method: 'POST', headers: HEADERS, body: JSON.stringify(feedSettings())});
+    const body = {...feedSettings(), box: M.dragBox
+      ? {cx: box.cx, cy: box.cy, yaw: box.yaw, length: box.length, width: box.width} : null};
+    const res = await fetch('/api/feed/plan', {method: 'POST', headers: HEADERS, body: JSON.stringify(body)});
     M.plan = res.ok ? await res.json() : null;
-    if (M.plan && M.dragBox) {
-      // while dragging, shift the saved plan with the box for a live preview
-      const saved = M.state.feed.box, dx = M.dragBox.cx - saved.cx, dy = M.dragBox.cy - saved.cy;
-      const mv = ([x, y]) => [x + dx, y + dy];
-      M.plan.corners = M.plan.corners.map(mv);
-      M.plan.sides.forEach((sd) => { sd.from = mv(sd.from); sd.to = mv(sd.to); if (sd.door) sd.door = sd.door.map(mv); });
-      M.plan.problems = [];
-    }
   } catch (e) { M.plan = null; }
   showPlan();
   drawMap();
@@ -1653,6 +1740,7 @@ function editSize() {
   putBox({...b, length: Math.max(L, W), width: Math.min(L, W)});
 }
 $('fdLen').addEventListener('change', editSize);
+$('fdEdit').addEventListener('click', () => setEdit(!M.edit));
 $('fdWid').addEventListener('change', editSize);
 const rotate = (deg) => { const b = curBox(); if (b) putBox({...b, yaw: b.yaw + deg * Math.PI / 180}); };
 $('fdRotL').addEventListener('click', () => rotate(1));

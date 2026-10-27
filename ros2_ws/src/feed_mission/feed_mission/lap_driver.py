@@ -11,8 +11,11 @@ feeds. Nav2 hesitates near walls by design, so the laps bypass it:
 
   1. Start at the lap corner nearest the robot; Nav2 takes it there if needed.
   2. Turn on the spot until it faces the next corner.
-  3. Drive straight to it, steering back onto the corner-to-corner line in
-     the map frame, so odometry drift is corrected on every side.
+  3. Drive straight to it, steering back onto the corner-to-corner line.
+     The line is taken from the map once per side and then followed on
+     odometry: AMCL corrects the map pose in steps of a cm or more, and
+     steering on those steps made the robot twitch. Drift is still corrected
+     at every corner, when the next side is taken from the map.
   4. On a fed side the door opens by `door_open` (0..1) while the door is
      beside the box face, and closes before the end of the box.
   5. Repeat every side, `laps` times.
@@ -139,6 +142,7 @@ class LapDriver(Node):
         p('half_width', 0.26)
         p('cmd_vel_topic', '/Team2/cmd_vel_lap')
         p('map_frame', 'map')
+        p('odom_frame', 'odom')
         p('base_frame', 'base_link')
         self.g = lambda n: self.get_parameter(n).value
 
@@ -162,6 +166,7 @@ class LapDriver(Node):
         self.segment = 0         # sides driven so far
         self.total = 0
         self.along = 0.0
+        self.line = None         # (start, target, frame) of the side being driven
         self.blocked_since = None
         self.nav_goal = None
         self.door_open = False   # commanded
@@ -175,12 +180,26 @@ class LapDriver(Node):
     def _on_scan(self, msg):
         self.scan = msg
 
-    def _pose(self):
+    def _pose(self, frame=None):
         try:
-            t = self.tf.lookup_transform(self.g('map_frame'), self.g('base_frame'), Time())
+            t = self.tf.lookup_transform(frame or self.g('map_frame'), self.g('base_frame'), Time())
         except TransformException:
             return None
         return t.transform.translation.x, t.transform.translation.y, _yaw(t.transform.rotation)
+
+    def _begin_side(self):
+        """Take the next side from the map into the odom frame, to drive it on odometry."""
+        side = self._side()
+        a, b = self.plan['corners'][side['start']], self.plan['corners'][side['end']]
+        try:
+            t = self.tf.lookup_transform(self.g('odom_frame'), self.g('map_frame'), Time())
+        except TransformException:
+            self.line = (a, b, self.g('map_frame'))  # no odom: steer on the map pose
+            return
+        c, s = math.cos(_yaw(t.transform.rotation)), math.sin(_yaw(t.transform.rotation))
+        tx, ty = t.transform.translation.x, t.transform.translation.y
+        to_odom = lambda p: (tx + c * p[0] - s * p[1], ty + s * p[0] + c * p[1])  # noqa: E731
+        self.line = (to_odom(a), to_odom(b), self.g('odom_frame'))
 
     def _scan_points(self):
         """Latest scan as Nx2 points in base_link (the lidar is mounted turned)."""
@@ -290,13 +309,14 @@ class LapDriver(Node):
     def _step(self):
         if self.state not in ('turn', 'straight'):
             return
-        pose = self._pose()
+        if self.line is None:
+            self._begin_side()
+        start, target, frame = self.line
+        pose = self._pose(frame)
         if pose is None:
-            self._finish('failed: lost localization (no map -> base_link)')
+            self._finish(f'failed: lost the robot pose (no {frame} -> base_link)')
             return
         side = self._side()
-        start = self.plan['corners'][side['start']]
-        target = self.plan['corners'][side['end']]
         pts = self._scan_points()
         hl, hw = self.g('half_length'), self.g('half_width')
 
@@ -366,6 +386,8 @@ class LapDriver(Node):
             self.door_pub.publish(Float32(data=pos))
 
     def _set_state(self, state):
+        if state == 'turn' and self.state != 'turn':
+            self.line = None  # a new side: taken from the map on the next step
         self.state = state
         if state == 'approach':
             self._set_status('approach: Nav2 to the first lap corner')

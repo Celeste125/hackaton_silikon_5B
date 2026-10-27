@@ -430,13 +430,14 @@ local_costmap:
         mark_threshold: 0.70
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        # Cost spreads 0.55 m from walls and falls off slowly, so the planner
-        # keeps to the middle of a corridor instead of hugging the wall. It must
-        # exceed the footprint's corner reach (0.32 m with padding), or the
-        # planner leaves no room to turn. Cost only, not lethal: the robot can
-        # still pass gaps down to its own width.
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        # Cost spreads 0.40 m from walls, so the planner prefers the middle of
+        # a gap without keeping the robot far from everything (0.55 m with a
+        # slow falloff made it hesitant and wide around the silos and the box).
+        # Cost only, not lethal: the robot can still pass gaps down to its own
+        # width. Override with inflation_radius:= / cost_scaling_factor:= on
+        # navigation.launch.py and slam_navigation.launch.py.
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.40
       always_send_full_costmap: true
 
 global_costmap:
@@ -495,13 +496,14 @@ global_costmap:
           obstacle_min_range: 0.0
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        # Cost spreads 0.55 m from walls and falls off slowly, so the planner
-        # keeps to the middle of a corridor instead of hugging the wall. It must
-        # exceed the footprint's corner reach (0.32 m with padding), or the
-        # planner leaves no room to turn. Cost only, not lethal: the robot can
-        # still pass gaps down to its own width.
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        # Cost spreads 0.40 m from walls, so the planner prefers the middle of
+        # a gap without keeping the robot far from everything (0.55 m with a
+        # slow falloff made it hesitant and wide around the silos and the box).
+        # Cost only, not lethal: the robot can still pass gaps down to its own
+        # width. Override with inflation_radius:= / cost_scaling_factor:= on
+        # navigation.launch.py and slam_navigation.launch.py.
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.40
       always_send_full_costmap: true
 
 map_server:

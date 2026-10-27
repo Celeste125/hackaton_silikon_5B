@@ -183,11 +183,11 @@ def generate_launch_description():
         # inflation_radius must stay above that. 0.23 / 10 / 1.0 left little
         # cost past the footprint and the robot drove into walls.
         DeclareLaunchArgument(
-            'inflation_radius', default_value='0.55',
+            'inflation_radius', default_value='0.40',
             description='Distance (m) around obstacles with extra cost.',
         ),
         DeclareLaunchArgument(
-            'cost_scaling_factor', default_value='3.0',
+            'cost_scaling_factor', default_value='5.0',
             description='Higher = cost drops faster = robot may pass closer.',
         ),
         DeclareLaunchArgument(

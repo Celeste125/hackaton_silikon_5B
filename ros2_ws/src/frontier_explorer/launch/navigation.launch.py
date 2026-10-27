@@ -54,6 +54,14 @@ def generate_launch_description():
             'amcl.ros__parameters.initial_pose.yaw': LaunchConfiguration('initial_yaw'),
             # Lidar only: nothing publishes the tracked_objects cloud.
             'collision_monitor.ros__parameters.tracked_objects.enabled': 'false',
+            'local_costmap.local_costmap.ros__parameters.inflation_layer.'
+            'inflation_radius': LaunchConfiguration('inflation_radius'),
+            'local_costmap.local_costmap.ros__parameters.inflation_layer.'
+            'cost_scaling_factor': LaunchConfiguration('cost_scaling_factor'),
+            'global_costmap.global_costmap.ros__parameters.inflation_layer.'
+            'inflation_radius': LaunchConfiguration('inflation_radius'),
+            'global_costmap.global_costmap.ros__parameters.inflation_layer.'
+            'cost_scaling_factor': LaunchConfiguration('cost_scaling_factor'),
         },
         convert_types=True,
     )
@@ -100,6 +108,10 @@ def generate_launch_description():
             'map', default_value=os.path.expanduser('~/maps/arena.yaml'),
             description='Saved map (nav2 map_server yaml).',
         ),
+        DeclareLaunchArgument('inflation_radius', default_value='0.40',
+                              description='Distance (m) around walls with extra cost, both costmaps.'),
+        DeclareLaunchArgument('cost_scaling_factor', default_value='5.0',
+                              description='Higher = cost drops faster = robot may pass closer.'),
         DeclareLaunchArgument('initial_x', default_value='0.0',
                               description='Start pose x in the map frame (m).'),
         DeclareLaunchArgument('initial_y', default_value='0.0',

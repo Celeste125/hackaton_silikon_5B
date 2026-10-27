@@ -58,6 +58,10 @@ class BoxBody(BaseModel):
     width: float = Field(..., gt=0.05, le=5.0)
 
 
+class PlanBody(FeedSettings):
+    box: BoxBody | None = Field(None, description='plan for this box instead of the saved one')
+
+
 def _param(name, value):
     v = ParameterValue()
     if isinstance(value, bool):
@@ -227,11 +231,15 @@ class Feed:
 
     # ---- plan and laps ------------------------------------------------------
 
-    def plan(self, s):
-        d = self.box()
-        if d is None:
-            return None
-        box = Box.from_dict(d)
+    def plan(self, s, box=None):
+        """The lap for settings s, around `box` (a BoxBody, e.g. while dragging) or the saved box."""
+        if box is None:
+            d = self.box()
+            if d is None:
+                return None
+            box = Box.from_dict(d)
+        else:
+            box = Box(box.cx, box.cy, box.yaw, box.length, box.width)
         plan = plan_lap(box, gap=s.gap, end_gap=s.end_gap, feed=s.feed,
                         margin=s.door_margin, door_x=s.door_x)
         corners = plan['corners']
@@ -360,9 +368,9 @@ def add_routes(app, ros, feed, require_control, client_id, depends, HTTPExceptio
         return {'ok': ok, 'message': msg}
 
     @app.post('/api/feed/plan')
-    def feed_plan(body: FeedSettings):
+    def feed_plan(body: PlanBody):
         """Preview: needs no control."""
-        plan = feed.plan(body)
+        plan = feed.plan(body, body.box)
         if plan is None:
             raise HTTPException(404, 'no cow box yet')
         return plan

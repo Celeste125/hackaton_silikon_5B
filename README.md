@@ -164,6 +164,11 @@ start mark, then with bringup running:
 ros2 launch frontier_explorer navigation.launch.py        # loads ~/maps/arena.yaml
 ```
 
+Costmap inflation (how far Nav2 keeps the robot from walls) is 0.40 m with
+`cost_scaling_factor` 5; change both costmaps at once with
+`inflation_radius:=0.35 cost_scaling_factor:=6` (same on
+`slam_navigation.launch.py`).
+
 AMCL localizes the robot on the map by matching the lidar against it. The map's
 (0, 0) is where mapping started, so from the start mark the robot already knows
 where it is. Started elsewhere: `initial_x:=1.2 initial_y:=0.4 initial_yaw:=1.57`
@@ -212,8 +217,10 @@ box instead of from taught corners:
    The map draws walls a few cm thick, so type the box's real length and width,
    park the robot beside it and *Snap to lidar*: the outline moves and turns
    onto the lidar points of the faces it sees (refused if it does not fit
-   within 2 cm, usually a wrong size). Fine-tune with *Edit box* (drag it on
-   the map) and the 1-degree turn buttons.
+   within 2 cm, usually a wrong size). Fine-tune with *Edit on map*: drag the
+   box to move it, a corner to resize it (the opposite corner stays put), the
+   round knob to turn it (0.5 degree steps, 5 with Shift). The lap on the map
+   follows while you drag.
 2. **Lap.** A rectangle around the box, driven clockwise so the box is on the
    robot's right, where the door is. *Gap to the box* is the distance from the
    robot's side to the faces it feeds, the other gap applies to the other

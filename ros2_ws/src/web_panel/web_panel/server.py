@@ -7,7 +7,8 @@ It is only a front end for topics of other nodes, mostly esp_driver_node:
   /door/position, /door/raw_us, /door/save_open, /door/save_closed
   /mixer/motor_0, /mixer/motor_1, /mixer/shake (unjam pattern, run on the ESP)
   /loadcell/weight, /loadcell/cells, /loadcell/tare
-  /Team2/cmd_vel (geometry_msgs/Twist, Create 3 base, parameter cmd_vel_topic)
+  /Team2/cmd_vel_teleop when twist_mux runs (navigation, laps), else straight to
+  /Team2/cmd_vel (geometry_msgs/Twist; parameters teleop_topic, cmd_vel_topic)
   /valve1..3/percent (published), /valve1..3/angle (feedback). The valves are
   driven by silo_controller/valve_controller.py on the Pi, which must be running.
   /camera0, /camera1 image_raw/compressed (JPEG, parameter camera_topics), from
@@ -50,6 +51,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, CompressedImage
 from std_msgs.msg import Float32, Float32MultiArray, String
 from std_srvs.srv import Trigger
+from action_msgs.srv import CancelGoal
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from web_panel.control_lease import ControlLease
@@ -97,9 +99,15 @@ class WebControlNode(Node):
             self.create_publisher(Float32, f'mixer/motor_{i}', 10)
             for i in range(self.num_motors)
         ]
+        # Driving goes through twist_mux's teleop input when the mux runs, so it
+        # overrides Nav2 and the laps cleanly; without it, straight to the base.
         self.declare_parameter('cmd_vel_topic', '/Team2/cmd_vel')
+        self.declare_parameter('teleop_topic', '/Team2/cmd_vel_teleop')
         self.cmd_vel_pub = self.create_publisher(
             Twist, self.get_parameter('cmd_vel_topic').value, 10)
+        self.teleop_pub = self.create_publisher(
+            Twist, self.get_parameter('teleop_topic').value, 10)
+        self.nav_cancel = self.create_client(CancelGoal, 'navigate_to_pose/_action/cancel_goal')
         self.drive = (0.0, 0.0)
         self.last_drive_t = 0.0
         self._drive_active = False
@@ -319,8 +327,11 @@ class WebControlNode(Node):
             speeds = list(self.motors) if fresh else [0.0] * len(self.motors)
             if not fresh:
                 self.motors = list(speeds)
-            publish = fresh or self._motors_active
-            self._motors_active = fresh and any(speeds)
+            # Only while a motor runs, plus one stop after: zeros sent all the
+            # time would override any other node driving the mixer.
+            running = any(speeds)
+            publish = running or self._motors_active
+            self._motors_active = running
         if publish:
             for pub, s in zip(self.motor_pubs, speeds):
                 pub.publish(Float32(data=s))
@@ -350,29 +361,34 @@ class WebControlNode(Node):
         with self.lock:
             fresh = time.monotonic() - self.last_drive_t < DRIVE_TIMEOUT_S
             lin, ang = self.drive if fresh else (0.0, 0.0)
-            publish = fresh or self._drive_active
             if not fresh:
                 self.drive = (0.0, 0.0)
-            self._drive_active = fresh and (lin != 0.0 or ang != 0.0)
+            # Only while driving, plus one stop after. The page's keep-alive
+            # zeros must not reach the base: interleaved with the laps or Nav2
+            # they made the robot stop and go many times a second.
+            moving = lin != 0.0 or ang != 0.0
+            publish = moving or self._drive_active
+            self._drive_active = moving
         if publish:
             msg = Twist()
             msg.linear.x = lin
             msg.angular.z = ang
-            self.cmd_vel_pub.publish(msg)
+            self._base_pub().publish(msg)
+
+    def _base_pub(self):
+        return self.teleop_pub if self.teleop_pub.get_subscription_count() > 0 else self.cmd_vel_pub
 
     def set_drive(self, linear, angular):
         with self.lock:
             self.drive = (max(-MAX_LINEAR, min(MAX_LINEAR, linear)),
                           max(-MAX_ANGULAR, min(MAX_ANGULAR, angular)))
             self.last_drive_t = time.monotonic()
-            self._drive_active = self.drive != (0.0, 0.0)
 
     def set_motors(self, speeds):
         with self.lock:
             self.shake = None  # plain speeds end the shake pattern
             self.motors = list(speeds)
             self.last_motor_t = time.monotonic()
-            self._motors_active = any(speeds)
 
     def stop_outputs(self):
         """Zero the motors and the base, e.g. when control changes hands."""
@@ -382,6 +398,10 @@ class WebControlNode(Node):
     def emergency_stop(self):
         self.stop_outputs()
         self.close_all_valves()
+        self.cmd_vel_pub.publish(Twist())  # straight to the base, whoever drives
+        if self.nav_cancel.service_is_ready():
+            # zero goal id and stamp: cancel every Nav2 goal
+            self.nav_cancel.call_async(CancelGoal.Request())
         lap_stop = self.trigger_clients['lap/stop']
         if lap_stop.service_is_ready():  # fire and forget: STOP must never wait
             lap_stop.call_async(Trigger.Request())
