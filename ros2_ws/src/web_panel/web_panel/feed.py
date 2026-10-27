@@ -46,11 +46,13 @@ class FeedSettings(BaseModel):
     feed: str = Field('long', pattern='^(long|all|none)$')
     gap: float = Field(0.10, ge=0.0, le=0.6, description='m, robot side to a fed face')
     end_gap: float = Field(0.15, ge=0.0, le=0.8, description='m, to the other faces')
-    door_open: float = Field(0.2, ge=0.0, le=1.0, description='door opening, 0..1')
+    door_open: float = Field(0.3, ge=0.0, le=1.0, description='door opening, 0..1')
     door_margin: float = Field(0.05, ge=0.0, le=0.5)
     door_x: float = Field(0.0, ge=-0.3, le=0.3, description='m, door ahead of the centre')
     speed: float = Field(0.15, ge=0.03, le=0.3)
     dry_run: bool = False
+    mix_below_kg: float = Field(0.5, ge=0.0, le=10.0, description='mixer on below this; 0: never')
+    mix_speed: float = Field(0.5, ge=0.0, le=1.0)
 
 
 class BoxBody(BaseModel):
@@ -306,6 +308,7 @@ class Feed:
             _param('door_open', float(s.door_open)), _param('door_margin', float(s.door_margin)),
             _param('door_x', float(s.door_x)), _param('speed', float(s.speed)),
             _param('dry_run', bool(s.dry_run)),
+            _param('mix_below_kg', float(s.mix_below_kg)), _param('mix_speed', float(s.mix_speed)),
         ]
         done = threading.Event()
         future = self.lap_params.call_async(req)

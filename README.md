@@ -47,16 +47,16 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 
 | Launch file | What it starts | When to use it |
 | --- | --- | --- |
-| `robot_bringup bringup.launch.py` | `esp_driver_node`, `web_panel`, both cameras, the lidar. Switches: `web:=false`, `cameras:=false`, `lidar:=false`, `teleop:=true` | Every time: starts the robot |
-| `robot_bringup cameras.launch.py` | two `v4l2_camera` nodes: `/camera0`, `/camera1` (`image_raw` + `image_raw/compressed` JPEG) | Only the cameras; bringup includes it |
+| `robot_bringup bringup.launch.py` | `esp_driver_node`, `web_panel` (which reads both cameras itself), the lidar. Switches: `web:=false`, `cameras:=false`, `lidar:=false`, `teleop:=true`, `camera_mode:=ros` | Every time: starts the robot |
+| `robot_bringup cameras.launch.py` | two `v4l2_camera` nodes: `/camera0`, `/camera1` (`image_raw` + `image_raw/compressed` JPEG) | Only with `camera_mode:=ros` (bringup then includes it), or to test the cameras alone |
 | `frontier_explorer lidar.launch.py` | `sllidar_node` (`/scan_raw`) and `scan_timestamp_fixer` (`/scan`) | Only the lidar, e.g. to test it; bringup includes it |
 | `frontier_explorer slam_navigation.launch.py` | `odom_tf_republisher`, slam_toolbox, Nav2, twist_mux | On top of bringup: map and navigate at the same time |
 | `frontier_explorer explore.launch.py` | `frontier_explorer` | On top of that: explore the whole arena, then save the map |
 | `frontier_explorer navigation.launch.py` | `map_server` (saved map), AMCL, Nav2, `odom_tf_republisher`, twist_mux | On top of bringup: drive on the saved map, no more mapping |
 | `frontier_explorer mapping.launch.py` | lidar, `scan_timestamp_fixer`, `odom_tf_republisher`, slam_toolbox (no Nav2) | Map by driving with teleop yourself. Brings its own lidar: run bringup with `lidar:=false` |
 | `frontier_explorer rviz.launch.py` | RViz with `rviz/navigation.rviz`: map, costmaps, scan, footprint, TF, plans, goal, AMCL | Watch mapping or navigation (needs a display) |
-| `frontier_explorer nav2.launch.py` | Nav2 servers and lifecycle managers | Not by hand: `slam_navigation.launch.py` includes it |
-| `feed_mission mission.launch.py` | `mission`, `lap_driver`, `relocalizer` | On top of navigation: teaching poses, laps, the whole run |
+| `frontier_explorer nav2.launch.py` | Nav2 servers and lifecycle managers, all in one process (`use_composition:=false`: one process each) | Not by hand: `slam_navigation.launch.py` and `navigation.launch.py` include it |
+| `feed_mission mission.launch.py` | `mission`, `lap_driver`, `relocalizer`, in one process (`one_process:=false`: three) | On top of navigation: teaching poses, laps, the whole run |
 
 `silo_controller` has no launch file: the Pi runs `valve_controller` in Docker
 (see its `Dockerfile`).
@@ -64,8 +64,8 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 | Node | Does |
 | --- | --- |
 | `esp_driver_node` | serial link to the ESP: `/loadcell/*`, `/mixer/motor_*`, `/mixer/shake`, `/door/*` |
-| `web_panel` | the web panel on port 8000; streams `/camera0` and `/camera1` as MJPEG |
-| `scan_timestamp_fixer` | `/scan_raw` -> `/scan`, restamped with the Jetson's clock so scans and TF match. Also drops returns closer than `min_range` (0.16 m): the legs of the platform above the lidar |
+| `web_panel` | the web panel on port 8000; reads both cameras and streams them as MJPEG (see [Cameras](#cameras)) |
+| `scan_timestamp_fixer` | `/scan_raw` -> `/scan`, restamped with the Jetson's clock so scans and TF match. Also drops returns closer than `min_range` (0.16 m), the legs of the platform above the lidar, and every return inside the robot's outline (`footprint_half_length` 0.165 m x `footprint_half_width` 0.255 m), such as the open door and its chute |
 | `odom_tf_republisher` | `/Team2/odom` -> `odom -> base_link` TF |
 | `frontier_explorer` | picks the best unexplored edge of `/map`, sends it to Nav2; at the end drives home, saves the map, reports done |
 | `valve_controller` | `/valve1..3/percent` -> servo angles, with saved open/closed calibration |
@@ -229,7 +229,10 @@ box instead of from taught corners:
    faces. The corners fall past the ends of the box, so the robot's own
    corners (0.31 m from its centre) clear the box when it turns on the spot.
    Red on the map: the saved map shows a wall in the way there.
-3. **Door.** It opens by *Door opening* (part open, e.g. 20%) only while the
+   Keep the other gap at 10 cm or more: the robot stops for anything within
+   2 cm beside its front, so at 5 cm a few cm of error at a corner stops it
+   (bag of 2026-10-27, side 3).
+3. **Door.** It opens by *Door opening* (part open, e.g. 30%) only while the
    door is beside a fed face (*Long faces*, *All faces* or *None*), starting
    and stopping *margin* inside each end of the face, and is closed for the
    turns. *Door position on the robot* moves that stretch if the door is not
@@ -243,8 +246,16 @@ the settings, the weight before and after, and **kg per metre of open door**,
 the number to tune the door opening and speed against. Weigh with the robot
 stopped and the mixer off. The last settings are kept for next time.
 
+**Mixing while feeding.** The mixer starts once less than *Mix below* is left
+in the mixer (default 0.5 kg; 0 = never) and runs at *Mix speed* until the
+laps end, so the last of the feed does not stay stuck in a corner. The weight
+is the median over the last second, so the robot rocking does not start it
+early. Not in a dry run. For mixing during the whole feeding run, set *Mix
+below* to the full load (e.g. 4 kg).
+
 By hand (`gap`, `end_gap`, `feed`, `door_open`, `door_margin`, `door_x`,
-`speed`, `dry_run` and `laps` are parameters of `/lap_driver`):
+`speed`, `dry_run`, `laps`, `mix_below_kg` and `mix_speed` are parameters of
+`/lap_driver`):
 
 ```bash
 ros2 param set /lap_driver laps 2
@@ -264,6 +275,7 @@ When something gets in the way:
 | On the dock | undocks first |
 | Someone drives it by hand | pauses (door closed, sends nothing), rejoins when they let go |
 | Obstacle in front, or something touching its side | stops and waits; gives up after 20 s. Blocked longer than 1.5 s: rejoins |
+| Its own open door | the door sticks out about 1.5 cm past the side and the lidar sees it; while it is open (and 1.5 s after it closes) the side checks skip `door_x` +- `door_half_length` (0.10 m), out to `door_reach` (0.04 m) past the right side |
 | More than 20 cm off the line | rejoins |
 | Position lost (under 35% of the lidar on the map for 3 s) | pauses until AMCL is back, then rejoins |
 
@@ -331,6 +343,24 @@ does it at the start of every run.
 The recipe is a total in kg and a share per silo (40 / 40 / 20 % of 2 kg is
 0.8 / 0.8 / 0.4 kg); with the same feed in every silo it runs the same way.
 Tap a step to leave it out, e.g. only *Feed the cows* to test the laps.
+
+**Mixing while filling** keeps the feed from piling up under the chute:
+*While pouring* (the default) runs the mixer at its own speed (50%) while a
+valve is open; *After each silo* mixes a few seconds with the valve closed;
+*Off*. In the bag of 2026-10-27 the scale stayed within about 10 g with the
+mixer at 50-60% and the robot standing, but jumped by up to 0.8 kg at 100%,
+so above about 60% a silo can stop early; use *After each silo* if you need
+it faster. While filling with the mixer on, the weight is the median over 1 s
+instead of 0.6 s.
+
+**Feeding** in the Mission tab sets the door opening (default 20%) and the
+mixer for the mission's laps: *Mix the whole time* (default), *Mix near the
+end* (starts once the container is down to the kg you enter) or *Off*, at
+its own speed. These replace the Feed tab's door and mixer settings during
+a mission; gaps and speed still come from the Feed tab.
+
+Running the mixer by hand in the panel takes it over: the mission and the
+lap driver leave it alone while you do (`/mixer/manual`).
 *Dry run* (the default) drives everything with the valves and the door
 closed. Stop, or STOP ALL, closes the valves and the door and stops the
 mixer, the laps and Nav2.
@@ -365,8 +395,24 @@ Camera 1 in the panel (`/camera0`) is the C920 in USB port 2.2, camera 2
 (`/camera1`) the one in port 2.1. The launch uses the `/dev/v4l/by-path/` links
 for those ports, because `/dev/videoN` numbers change when a camera is
 replugged. Override with `camera0_device:=/dev/video0 camera1_device:=/dev/video2`.
-A camera can only be opened by one node, so stop any other `v4l2_camera_node`
-first. The panel streams at up to 10 fps per browser, and stops a stream while
+The web panel opens the cameras itself and passes on the JPEG frames the
+C920s make themselves: about 1% of a core for both. The `v4l2_camera` node
+decodes every frame to RGB and encodes it again, about 40% of a core per
+camera; with two of them (and a third left over from the old autostart, see
+[After a reboot](#after-a-reboot)) the Jetson ran at 100%. The panel still
+publishes `/camera0/image_raw/compressed` and `/camera1/...`, but only while
+something subscribes, e.g. to record them on the Jetson:
+
+```bash
+ros2 bag record /camera0/image_raw/compressed /camera1/image_raw/compressed ...
+```
+
+Recorded from the laptop over Wi-Fi they mostly get dropped (best effort,
+large messages), which is why a bag from the laptop has no images.
+`camera_mode:=ros` brings back the `v4l2_camera` nodes.
+
+A camera can only be opened by one program, so stop any other
+`v4l2_camera_node` first; the panel retries every 2 s until it gets it. The panel streams at up to 10 fps per browser, and stops a stream while
 it is off-screen, the tab is hidden or the cameras are turned off there.
 
 The ESP is on `/dev/ttyCH341USB0` (`SERIAL_PORT` in `mixer_esp_driver/config.py`).
@@ -456,8 +502,14 @@ changing it, run `ros2 daemon stop`, and give `ros2 node list` a few seconds
 - Plug the dongle in before the robot starts its ROS app. If the robot booted
   without it, restart the app from its web page ("Restart application"), since
   the app only uses the wired interface that exists when it starts.
-- Nothing launches automatically. Start `robot_bringup bringup.launch.py`
-  (and navigation if needed) yourself, after the wired link is up.
+- Nothing of this repository launches automatically. Start
+  `robot_bringup bringup.launch.py` (and navigation if needed) yourself,
+  after the wired link is up.
+- The old IMDL autostart must stay off: a `@reboot` cron entry
+  (`~/delayed_launch_jetson_hardware.sh`) starts a camera node in the tmux
+  session `jetson_camera`, which takes a camera away from the panel and
+  costs 40% of a core. Turn it off with `crontab -e` (comment out the line)
+  and `tmux kill-session -t jetson_camera`.
 - Run `sws` first and launch from `~/imdl-main/ros2_ws`. The ESP driver reads
   `loadcell_calibration.json` and `door_calibration.json` from the **current
   directory**; launched from `~` it used the wrong load-cell calibration and

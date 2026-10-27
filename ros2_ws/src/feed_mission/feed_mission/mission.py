@@ -15,9 +15,17 @@ Steps (parameter `steps` picks which ones run, in this order):
             valve until the weight has risen by that silo's share, close it.
             If the weight stops rising it shakes the mixer once; if it still
             does not rise, it fails. Then back out the same way.
+            fill_mix spreads the feed so it does not pile up under the chute:
+            'pour' runs the mixer at fill_mix_speed while a valve is open (at
+            half speed the scale stays within ~10 g; at full speed it jumps by
+            several hundred g), 'between' mixes fill_mix_s after each silo with
+            the valve closed, 'off' does neither.
   mix       Mixer motors for mix_s seconds.
   feed      Laps around the cow box (lap_driver, with the Feed tab settings),
             one at a time, until the weight is below empty_kg or laps_max.
+            The mission's own door opening (feed_door_open) and mixer
+            (feed_mix: 'always', 'below' feed_mix_below_kg, or 'off', at
+            feed_mix_speed) replace the Feed tab's.
   dock      Nav2 to the spot in front of the dock (0.6 m out from the taught
             docked pose, facing it), then the Create 3's Dock. Without a docked
             pose: Nav2 to the start pose.
@@ -44,7 +52,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
-from std_msgs.msg import Float32, Float32MultiArray, String
+from std_msgs.msg import Bool, Float32, Float32MultiArray, String
 from std_srvs.srv import Trigger
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -62,6 +70,8 @@ except ImportError:
 STEPS = ('localize', 'undock', 'fill', 'mix', 'feed', 'dock')
 RUNNING = ('undock', 'approach', 'rejoin', 'paused', 'turn', 'straight', 'blocked')
 NUM_SILOS = 3
+MIX_ALWAYS_KG = 1000.0  # 'mix below' for the whole run: more than the container holds
+MANUAL_MIX_S = 1.0  # s after the web panel's last 'mixer/manual' it has the mixer
 
 
 class Stopped(Exception):
@@ -123,7 +133,8 @@ def _param(name, value):
 
 
 class Mission(Node):
-    def __init__(self):
+    def __init__(self, tf=None):
+        """tf: a shared tf2 Buffer (all feed_mission nodes in one process), else its own."""
         super().__init__('mission')
         p = self.declare_parameter
         p('poses_file', pose_store.DEFAULT_FILE)
@@ -139,6 +150,13 @@ class Mission(Node):
         p('stall_kg', 0.01)
         p('mix_s', 60.0)
         p('mix_speed', 0.6)                 # -1..1 for both mixer motors
+        p('fill_mix', 'pour')               # mixer while filling: pour, between or off
+        p('fill_mix_speed', 0.5)
+        p('fill_mix_s', 3.0)                # 'between': this long after each silo
+        p('feed_door_open', 0.2)            # door opening on the laps, 0..1
+        p('feed_mix', 'always')             # mixer on the laps: always, below or off
+        p('feed_mix_below_kg', 0.5)         # 'below': on once the container is down to this
+        p('feed_mix_speed', 0.6)
         p('laps_max', 6)
         p('empty_kg', 0.05)                 # feeding stops below this
         p('nav_timeout_s', 120.0)
@@ -163,11 +181,15 @@ class Mission(Node):
         self.shake_pub = self.create_publisher(Float32MultiArray, 'mixer/shake', 10)
         self.door_pub = self.create_publisher(Float32, 'door/position', 10)
         self.cmd_pub = self.create_publisher(Twist, self.g('cmd_vel_topic'), 10)
-        self.tf = Buffer()
-        self.tf_listener = TransformListener(self.tf, self)
+        self.tf = tf
+        if tf is None:
+            self.tf = Buffer()
+            self.tf_listener = TransformListener(self.tf, self)
 
         self.weights = []  # (monotonic time, kg)
         self.create_subscription(Float32, 'loadcell/weight', self._on_weight, 10, callback_group=cb)
+        self.manual_mix_t = 0.0  # last 'mixer/manual' from the web panel: hands off the mixer
+        self.create_subscription(Bool, 'mixer/manual', self._on_manual_mix, 10, callback_group=cb)
         self.lap_progress = None
         self.create_subscription(String, 'lap/progress', self._on_lap, latched, callback_group=cb)
         self.dock_status = None
@@ -198,6 +220,16 @@ class Mission(Node):
     def _on_weight(self, msg):
         now = time.monotonic()
         self.weights = [w for w in self.weights if now - w[0] < 5.0] + [(now, float(msg.data))]
+
+    def _on_manual_mix(self, msg):
+        self.manual_mix_t = time.monotonic() if msg.data else 0.0
+
+    def _mixer(self, speed):
+        """Both mixer motors; left alone while someone runs them from the web panel."""
+        if time.monotonic() - self.manual_mix_t < MANUAL_MIX_S:
+            return
+        for pub in self.motor_pubs:
+            pub.publish(Float32(data=float(speed)))
 
     def _on_lap(self, msg):
         try:
@@ -522,12 +554,18 @@ class Mission(Node):
         watch = FillWatch(target, self.g('stall_s'), self.g('stall_kg'),
                           self.g('fill_timeout_s'), t0=time.monotonic())
         shaken = False
+        mode, mix_speed = str(self.g('fill_mix')), float(self.g('fill_mix_speed'))
+        pour_mix = mode == 'pour' and mix_speed != 0.0
+        # the mixer shakes the scale: a longer median keeps a jolt from ending the fill early
+        window = 1.0 if pour_mix else 0.6
         pub = self.valve_pubs[i]
         pub.publish(Float32(data=float(self.g('valve_percent'))))
         try:
             while True:
+                if pour_mix:
+                    self._mixer(mix_speed)  # every 0.2 s: the ESP stops it after 1 s
                 self._sleep(0.2)
-                added = self._weight(window=0.6) - start
+                added = self._weight(window=window) - start
                 fill['added'] = added
                 self._step_status('fill', 'running',
                                   f'silo {i + 1}: {added:.2f} of {target:.2f} kg')
@@ -546,6 +584,11 @@ class Mission(Node):
                     watch.restart_stall(time.monotonic(), added)
         finally:
             pub.publish(Float32(data=0.0))
+            if pour_mix:
+                self._mixer(0.0)
+        if mode == 'between' and mix_speed != 0.0:
+            self._step_status('fill', 'running', f'silo {i + 1}: mixing')
+            self._mix_for(float(self.g('fill_mix_s')), mix_speed)
         self._sleep(float(self.g('settle_s')))
         added = self._weight() - start
         fill['added'], fill['state'] = added, 'done'
@@ -562,18 +605,20 @@ class Mission(Node):
         finally:
             self.shake_pub.publish(Float32MultiArray(data=[]))
 
-    def _step_mix(self):
-        seconds, speed = float(self.g('mix_s')), float(self.g('mix_speed'))
+    def _mix_for(self, seconds, speed, step=None):
         end = time.monotonic() + seconds
         try:
             while time.monotonic() < end:
-                for pub in self.motor_pubs:
-                    pub.publish(Float32(data=speed))
-                self._step_status('mix', 'running', f'{end - time.monotonic():.0f} s left')
+                self._mixer(speed)
+                if step:
+                    self._step_status(step, 'running', f'{end - time.monotonic():.0f} s left')
                 self._sleep(0.1)
         finally:
-            for pub in self.motor_pubs:
-                pub.publish(Float32(data=0.0))
+            self._mixer(0.0)
+
+    def _step_mix(self):
+        seconds, speed = float(self.g('mix_s')), float(self.g('mix_speed'))
+        self._mix_for(seconds, speed, step='mix')
         return f'mixed {seconds:.0f} s at {speed * 100:.0f}%'
 
     def _set_lap_params(self, values):
@@ -612,9 +657,16 @@ class Mission(Node):
     def _step_feed(self):
         dry = bool(self.g('dry_run'))
         settings = pose_store.load_feed(self.g('poses_file'))
-        allowed = ('feed', 'gap', 'end_gap', 'door_open', 'door_margin', 'door_x', 'speed')
+        allowed = ('feed', 'gap', 'end_gap', 'door_open', 'door_margin', 'door_x', 'speed',
+                   'mix_below_kg', 'mix_speed')
         values = {k: (float(v) if k != 'feed' else str(v)) for k, v in settings.items() if k in allowed}
-        values.update(laps=1, dry_run=dry)
+        mix = str(self.g('feed_mix'))
+        values.update(
+            laps=1, dry_run=dry, door_open=float(self.g('feed_door_open')),
+            mix_speed=float(self.g('feed_mix_speed')),
+            # the lap driver mixes once the weight is at or below this
+            mix_below_kg={'always': MIX_ALWAYS_KG, 'off': 0.0}.get(
+                mix, float(self.g('feed_mix_below_kg'))))
         self._set_lap_params(values)
         laps_max, empty = int(self.g('laps_max')), float(self.g('empty_kg'))
         start_kg = None if dry else self._weight()

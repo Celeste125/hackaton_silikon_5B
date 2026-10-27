@@ -11,9 +11,12 @@ It is only a front end for topics of other nodes, mostly esp_driver_node:
   /Team2/cmd_vel (geometry_msgs/Twist; parameters teleop_topic, cmd_vel_topic)
   /valve1..3/percent (published), /valve1..3/angle (feedback). The valves are
   driven by silo_controller/valve_controller.py on the Pi, which must be running.
-  /camera0, /camera1 image_raw/compressed (JPEG, parameter camera_topics), from
-  cameras.launch.py, and /grain_analyzer/overlay/compressed (grain_mixing).
-  Streamed to the page as MJPEG at /api/camera/<n>.mjpg.
+  Cameras: with camera_devices set (bringup's default), read straight from the
+  webcams as their own JPEG frames (cameras.py, about 1% CPU each) and only
+  republished on camera_topics while something subscribes there. Without it,
+  the camera_topics of v4l2_camera nodes (cameras.launch.py). Topics beyond the
+  devices are always subscribed, e.g. /grain_analyzer/overlay/compressed from
+  grain_mixing. Streamed to the page as MJPEG at /api/camera/<n>.mjpg.
   /Team2/battery_state (battery), /Team2/hazard_detection (bump, cliff, stall;
   needs irobot_create_msgs), /frontier_explorer/status (mapping progress).
   Setup tab: the robot's pose (TF map -> base_link) is saved under a name
@@ -44,17 +47,19 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
-from rclpy.executors import ExternalShutdownException
+from rcl_interfaces.msg import ParameterDescriptor
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.time import Time
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, CompressedImage
-from std_msgs.msg import Float32, Float32MultiArray, String
+from std_msgs.msg import Bool, Float32, Float32MultiArray, String
 from std_srvs.srv import Trigger
 from action_msgs.srv import CancelGoal
 from tf2_ros import Buffer, TransformException, TransformListener
 
+from web_panel import cameras
 from web_panel.control_lease import ControlLease
 
 try:  # taught poses, the map view and laps need feed_mission; the rest works without it
@@ -132,8 +137,22 @@ class WebControlNode(Node):
         # by the ROS thread, read by the web streams; a tuple swap is atomic.
         self.declare_parameter('camera_topics', CAMERA_TOPICS)
         self.camera_topics = list(self.get_parameter('camera_topics').value)
+        # 'dev0,dev1' (as bringup passes it) or a list; empty: no direct cameras
+        self.declare_parameter('camera_devices', '',
+                               ParameterDescriptor(dynamic_typing=True))
+        self.declare_parameter('camera_width', 640)
+        self.declare_parameter('camera_height', 480)
+        devices = self.get_parameter('camera_devices').value or []
+        if isinstance(devices, str):
+            devices = devices.split(',')
+        devices = [d.strip() for d in devices if d.strip()]
         self.camera_frames = [None] * len(self.camera_topics)
+        self.direct_cameras = []
+        if devices:
+            self._start_direct_cameras(devices)
         for i, topic in enumerate(self.camera_topics):
+            if i < len(self.direct_cameras):
+                continue  # read straight from its webcam
             self.create_subscription(
                 CompressedImage, topic, lambda m, i=i: self._on_camera(i, m),
                 qos_profile_sensor_data)
@@ -175,6 +194,8 @@ class WebControlNode(Node):
         self.last_motor_t = 0.0
         self._motors_active = False
         self.shake_pub = self.create_publisher(Float32MultiArray, 'mixer/shake', 10)
+        # True while the mixer runs from here: the mission and lap driver leave it alone
+        self.manual_mix_pub = self.create_publisher(Bool, 'mixer/manual', 10)
         self.shake = None  # {'fwd_ms', 'rev_ms', 'speeds'} while shaking
         self.last_shake_t = 0.0
         self._shake_active = False
@@ -284,6 +305,40 @@ class WebControlNode(Node):
         with self.lock:
             self.explorer_status = msg.data
 
+    def _start_direct_cameras(self, devices):
+        # the first len(devices) topics belong to the webcams; the rest stay topic cameras
+        extra = self.camera_topics[len(devices):]
+        self.camera_topics = [self.camera_topics[i] if i < len(self.camera_topics)
+                              else f'/camera{i}/image_raw/compressed'
+                              for i in range(len(devices))] + extra
+        self.camera_frames = [None] * len(self.camera_topics)
+        self.camera_pubs = [self.create_publisher(CompressedImage, t, qos_profile_sensor_data)
+                            for t in self.camera_topics[:len(devices)]]
+        self.camera_pub_t = [0.0] * len(devices)
+        w = int(self.get_parameter('camera_width').value)
+        h = int(self.get_parameter('camera_height').value)
+        for i, dev in enumerate(devices):
+            cam = cameras.DirectCamera(dev, lambda jpeg, i=i: self._on_direct_frame(i, jpeg),
+                                       width=w, height=h, log=self.get_logger().info)
+            cam.start()
+            self.direct_cameras.append(cam)
+        self.get_logger().info(f'cameras read directly: {", ".join(devices)}')
+
+    def _on_direct_frame(self, i, jpeg):
+        prev = self.camera_frames[i]
+        now = time.monotonic()
+        self.camera_frames[i] = ((prev[0] + 1) if prev else 1, jpeg, now)
+        # For bags and other tools, as before; free while nobody listens.
+        pub = self.camera_pubs[i]
+        if pub.get_subscription_count() > 0 and now - self.camera_pub_t[i] >= 1.0 / CAMERA_STREAM_FPS:
+            self.camera_pub_t[i] = now
+            msg = CompressedImage()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = f'camera{i}'
+            msg.format = 'jpeg'
+            msg.data = jpeg
+            pub.publish(msg)
+
     def _on_camera(self, i, msg):
         if 'jpeg' not in msg.format and 'jpg' not in msg.format:
             self.get_logger().warn(
@@ -369,6 +424,7 @@ class WebControlNode(Node):
             publish = running or self._motors_active
             self._motors_active = running
         if publish:
+            self.manual_mix_pub.publish(Bool(data=running))
             for pub, s in zip(self.motor_pubs, speeds):
                 pub.publish(Float32(data=s))
 
@@ -722,6 +778,11 @@ def create_app(ros):
     @app.post('/api/relocalize', dependencies=[Depends(require_control)])
     def relocalize():
         """Find the robot on the map from the lidar and correct AMCL (takes ~10 s)."""
+        # It needs the robot standing still, and its search would hold up the
+        # lap driver and mission, which share its process.
+        busy = ros.activity()
+        if busy:
+            return {'ok': False, 'message': f'Not while the robot is busy ({busy}): stop it first'}
         ok, msg = ros.call('relocalize', timeout=40.0)
         return {'ok': ok, 'message': msg}
 
@@ -755,7 +816,9 @@ def main(args=None):
     host = node.get_parameter('host').value
     port = int(node.get_parameter('port').value)
 
-    spinner = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    spinner = threading.Thread(target=executor.spin, daemon=True)
     spinner.start()
     node.get_logger().info(f'Web control on http://{host}:{port}')
     try:
@@ -763,11 +826,17 @@ def main(args=None):
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
+        for cam in node.direct_cameras:  # before the node goes: they publish on it
+            cam.stop()
         node.set_motors([0.0] * node.num_motors)
         node._publish_motors()
         node._publish_shake()
         node.set_drive(0.0, 0.0)
         node._publish_drive()
+        # Stop the spinner before Python exits: killed inside rclpy at exit,
+        # the thread aborts the whole process ('terminate called ...').
+        executor.shutdown(timeout_sec=2.0)
+        spinner.join(timeout=2.0)
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

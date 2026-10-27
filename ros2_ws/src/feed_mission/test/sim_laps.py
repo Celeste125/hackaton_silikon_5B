@@ -66,6 +66,12 @@ class Sim(Node):
         self.create_subscription(Float32, 'door/position', lambda m: self.door.append((time.monotonic(), m.data)), 10)
         self.create_subscription(String, 'lap/progress', lambda m: self.progress.append((time.monotonic(), json.loads(m.data))), 10)
         self.scan_pub = self.create_publisher(LaserScan, '/scan', 10)
+        # the scale: 1.2 kg, emptying by 10 g/s while the laps run
+        self.weight_pub = self.create_publisher(Float32, 'loadcell/weight', 10)
+        self.t_start = None
+        self.mixer = []
+        self.create_subscription(Float32, 'mixer/motor_0', lambda m: self.mixer.append((time.monotonic(), m.data, self.kg())), 10)
+        self.create_timer(0.1, lambda: self.weight_pub.publish(Float32(data=self.kg())))
         self.tel_pub = self.create_publisher(Twist, '/sim/teleop', 10)
         ActionServer(self, NavigateToPose, 'navigate_to_pose', self._nav)
         self.create_timer(1 / 30, self._tick)
@@ -85,6 +91,11 @@ class Sim(Node):
         self.map_pub = self.create_publisher(OccupancyGrid, '/map', QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.map_pub.publish(g)
         self.create_timer(0.1, self._scan)
+
+    def kg(self):
+        if self.t_start is None:
+            return 1.2
+        return max(0.0, 1.2 - 0.01 * (time.monotonic() - self.t_start))
 
     def _nav(self, handle):
         p = handle.request.pose.pose
@@ -205,6 +216,7 @@ def main():
     while not f.done(): time.sleep(0.05)
     print('start:', f.result().message)
     t0 = time.monotonic()
+    sim.t_start = t0
     pushed = blocked = False
     while time.monotonic() - t0 < 150:
         t = time.monotonic() - t0
@@ -249,8 +261,12 @@ def main():
     spin = float(np.sum(dts[(np.abs(w) > 0.3) & (v < 0.01)]))
     print(f'time spent turning on the spot: {spin:.1f} s (8 corners at ~2.6 s each would be ~21 s)')
     proc.terminate()
+    on = [(t, v, kg) for t, v, kg in sim.mixer if v > 0]
+    mixed_ok = bool(on) and on[0][2] <= 0.52 and on[0][2] >= 0.35 and sim.mixer[-1][1] == 0.0
+    print(f'mixer: started at {on[0][2]:.2f} kg left' if on else 'mixer: never started',
+          f'| last command {sim.mixer[-1][1] if sim.mixer else None}')
     rclpy.shutdown()
-    return 0 if lap.state == 'done' and clear > 0.0 else 1
+    return 0 if lap.state == 'done' and clear > 0.0 and mixed_ok else 1
 
 
 if __name__ == '__main__':
