@@ -15,7 +15,7 @@ def crop(img):
     return cv2.bitwise_and(img, img, mask=roi), roi
 
 
-def background_filter(img, roi):
+def background_filter(img , roi):
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv, lowerb=(0, 0, 50), upperb=(180, 70, 255))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(7, 7))
