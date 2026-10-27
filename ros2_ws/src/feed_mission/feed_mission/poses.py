@@ -3,6 +3,7 @@
 ~/maps/arena_poses.yaml by default:
 
     silo1: {x: 1.20, y: -0.40, yaw: 1.571, saved: '2026-10-26 21:10:03'}
+    silo_entry: {...} # open space beside silo 1: Nav2 drives here, the rest is straight
     docked: {...}     # on the dock; the spot in front of it comes from this pose
     start: {...}      # only without a dock: where the mission parks at the end
     cow_box: {cx: 0.76, cy: -0.39, yaw: 1.38, length: 1.0, width: 0.5, saved: ...}
@@ -26,7 +27,7 @@ import yaml
 DEFAULT_FILE = '~/maps/arena_poses.yaml'
 
 SILOS = ('silo1', 'silo2', 'silo3')
-NAMES = SILOS + ('start', 'docked')
+NAMES = SILOS + ('silo_entry', 'start', 'docked')
 BOX_KEY = 'cow_box'
 FEED_KEY = 'feed'
 MISSION_KEY = 'mission'

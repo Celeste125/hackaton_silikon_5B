@@ -1304,8 +1304,8 @@ function showValves(s) {
 
 // ---- setup: taught poses ----
 const POSE_GROUPS = [
-  ['Silos', 'Park under each pipe, facing the way you will approach it.',
-    [['silo1', 'Silo 1'], ['silo2', 'Silo 2'], ['silo3', 'Silo 3']]],
+  ['Silos', 'Park under each pipe, facing the way you will fill it. Silo entry: open space beside silo 1 where Nav2 can reach, facing silo 1. The mission drives there with Nav2, then straight into silo 1 and along the row. Without it, it uses a spot 0.6 m beside silo 1.',
+    [['silo_entry', 'Silo entry (optional)'], ['silo1', 'Silo 1'], ['silo2', 'Silo 2'], ['silo3', 'Silo 3']]],
   ['Dock', 'Save Docked once, while the robot is on its dock. The mission finds the dock from it (it drives 60 cm in front of it, then docks), and Position from dock sets the position from it. Start is only used without a dock: where the mission parks at the end.',
     [['docked', 'Docked'], ['start', 'Start (only without a dock)']]],
 ];
@@ -1655,6 +1655,7 @@ function renderMap() {
   for (const [key, p] of Object.entries(poses)) {
     const [px, py] = toScreen(p.x, p.y);
     const isSilo = key.startsWith('silo');
+    const label = key === 'silo_entry' ? 'E' : isSilo ? key.slice(4) : key === 'docked' ? 'D' : 'S';
     c.beginPath();
     c.arc(px, py, 9 * d, 0, Math.PI * 2);
     c.fillStyle = isSilo ? 'rgba(244,183,64,0.92)' : 'rgba(155,231,255,0.92)';
@@ -1663,7 +1664,19 @@ function renderMap() {
     c.font = `700 ${10 * d}px system-ui, sans-serif`;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText(isSilo ? key.slice(4) : key === 'docked' ? 'D' : 'S', px, py + 0.5 * d);
+    c.fillText(label, px, py + 0.5 * d);
+  }
+
+  // the silo route: entry, then straight along the row
+  if (poses.silo1) {
+    const route = [poses.silo_entry, poses.silo1, poses.silo2, poses.silo3].filter(Boolean);
+    c.setLineDash([4 * d, 4 * d]);
+    c.strokeStyle = 'rgba(244,183,64,0.6)';
+    c.lineWidth = 1.5 * d;
+    c.beginPath();
+    route.forEach((p, i) => { const [x, y] = toScreen(p.x, p.y); if (i) c.lineTo(x, y); else c.moveTo(x, y); });
+    c.stroke();
+    c.setLineDash([]);
   }
 
   // where Dock takes over: 60 cm in front of the docked pose, facing the dock

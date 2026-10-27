@@ -9,10 +9,12 @@ Steps (parameter `steps` picks which ones run, in this order):
   localize  On the dock with a taught "docked" pose: tell AMCL exactly where
             the robot is. Otherwise /relocalize (scan matching on the map).
   undock    Create 3 Undock action, if it is docked.
-  fill      For each silo with a share of the recipe: Nav2 to the silo pose,
-            wait for the scale to settle, open the valve until the weight has
-            risen by that silo's share, close it. If the weight stops rising
-            it shakes the mixer once; if it still does not rise, it fails.
+  fill      Nav2 to the silo entry, then straight to silo 1 and along the row
+            (silo_route.py: the row is too tight for Nav2). At each silo up to
+            the last one with a share: wait for the scale to settle, open the
+            valve until the weight has risen by that silo's share, close it.
+            If the weight stops rising it shakes the mixer once; if it still
+            does not rise, it fails. Then back out the same way.
   mix       Mixer motors for mix_s seconds.
   feed      Laps around the cow box (lap_driver, with the Feed tab settings),
             one at a time, until the weight is below empty_kg or laps_max.
@@ -33,7 +35,7 @@ import time
 from statistics import median
 
 import rclpy
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 from rcl_interfaces.srv import SetParameters
@@ -44,8 +46,12 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from std_msgs.msg import Float32, Float32MultiArray, String
 from std_srvs.srv import Trigger
+from rclpy.time import Time
+from tf2_ros import Buffer, TransformException, TransformListener
 
 from feed_mission import poses as pose_store
+from feed_mission import silo_route
+from feed_mission.lap_driver import straight_command, turn_command
 
 try:  # dock and undock need the Create 3 messages
     from irobot_create_msgs.action import Dock, Undock
@@ -138,6 +144,11 @@ class Mission(Node):
         p('nav_timeout_s', 120.0)
         p('lap_timeout_s', 600.0)           # one lap taking longer than this: give up
         p('num_motors', 2)
+        p('cmd_vel_topic', '/Team2/cmd_vel_lap')  # the silo moves, through twist_mux like the laps
+        p('silo_speed', 0.08)               # m/s on the straight moves at the silos
+        p('silo_turn_speed', 0.4)           # rad/s
+        p('entry_side', 'right')            # untaught silo entry: this side of silo 1...
+        p('entry_m', 0.6)                   # ...this far out
         self.g = lambda n: self.get_parameter(n).value
         ns = self.g('namespace').rstrip('/')
         cb = ReentrantCallbackGroup()
@@ -151,6 +162,9 @@ class Mission(Node):
                            for i in range(int(self.g('num_motors')))]
         self.shake_pub = self.create_publisher(Float32MultiArray, 'mixer/shake', 10)
         self.door_pub = self.create_publisher(Float32, 'door/position', 10)
+        self.cmd_pub = self.create_publisher(Twist, self.g('cmd_vel_topic'), 10)
+        self.tf = Buffer()
+        self.tf_listener = TransformListener(self.tf, self)
 
         self.weights = []  # (monotonic time, kg)
         self.create_subscription(Float32, 'loadcell/weight', self._on_weight, 10, callback_group=cb)
@@ -308,6 +322,7 @@ class Mission(Node):
         for pub in self.motor_pubs:
             pub.publish(Float32(data=0.0))
         self.shake_pub.publish(Float32MultiArray(data=[]))
+        self.cmd_pub.publish(Twist())
         if self.active_goal is not None:
             self.active_goal.cancel_goal_async()
             self.active_goal = None
@@ -355,6 +370,73 @@ class Mission(Node):
     def _poses(self):
         return pose_store.load(self.g('poses_file'))
 
+    # ---- straight moves, for where Nav2 cannot go ------------------------------
+
+    def _tf_pose(self, frame):
+        try:
+            t = self.tf.lookup_transform(frame, 'base_link', Time())
+        except TransformException:
+            raise StepFailed(f'no {frame} -> base_link transform')
+        q = t.transform.rotation
+        return (t.transform.translation.x, t.transform.translation.y,
+                math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z)))
+
+    def _drive(self, v, w):
+        msg = Twist()
+        msg.linear.x, msg.angular.z = float(v), float(w)
+        self.cmd_pub.publish(msg)
+
+    def _turn_to(self, map_yaw, timeout=20.0):
+        """Turn on the spot to a heading given in the map frame (tracked on odometry)."""
+        offset = self._tf_pose('map')[2] - self._tf_pose('odom')[2]
+        target = map_yaw - offset
+        end = time.monotonic() + timeout
+        try:
+            while True:
+                w, done = turn_command(self._tf_pose('odom')[2], target, float(self.g('silo_turn_speed')))
+                if done:
+                    return
+                if time.monotonic() > end:
+                    raise StepFailed('could not turn to the heading (stuck?)')
+                self._drive(0.0, w)
+                self._sleep(0.05)
+        finally:
+            self._drive(0.0, 0.0)
+
+    def _drive_to(self, target, what, final_yaw=True):
+        """Straight to a pose: face it (or its back, to reverse), drive, then turn to its heading."""
+        here = self._tf_pose('map')
+        dist = math.hypot(target['x'] - here[0], target['y'] - here[1])
+        if dist > 0.03:
+            face, reverse = silo_route.drive_direction(here, target)
+            self._turn_to(face)
+            # the line in the odom frame, taken from the map once: smooth to follow
+            mx, my, myaw = self._tf_pose('map')
+            ox, oy, oyaw = self._tf_pose('odom')
+            dyaw = oyaw - myaw
+            c, s = math.cos(dyaw), math.sin(dyaw)
+            rel = (target['x'] - mx, target['y'] - my)
+            goal = (ox + c * rel[0] - s * rel[1], oy + s * rel[0] + c * rel[1])
+            start = (ox, oy)
+            speed = float(self.g('silo_speed'))
+            end = time.monotonic() + dist / speed * 3 + 10
+            try:
+                while True:
+                    x, y, yaw = self._tf_pose('odom')
+                    if reverse:  # drive the back first: steer as if the back were the front
+                        yaw = yaw + math.pi
+                    v, w, _, done = straight_command((x, y, yaw), start, goal, speed, max_w=0.4)
+                    if done:
+                        break
+                    if time.monotonic() > end:
+                        raise StepFailed(f'could not reach {what} (blocked?)')
+                    self._drive(-v if reverse else v, w)
+                    self._sleep(0.05)
+            finally:
+                self._drive(0.0, 0.0)
+        if final_yaw:
+            self._turn_to(target['yaw'])
+
     # ---- steps --------------------------------------------------------------
 
     def _step_localize(self):
@@ -398,18 +480,26 @@ class Mission(Node):
         dry = bool(self.g('dry_run'))
         self.status['fills'] = [{'silo': i + 1, 'target': t, 'added': 0.0, 'state': 'pending'}
                                 for i, t in enumerate(targets)]
+        last = silo_route.last_silo(targets)
+        if last is None:
+            return 'nothing to fill'
+        silos = [poses.get(f'silo{i + 1}') for i in range(NUM_SILOS)]
+        missing = [i + 1 for i in range(last + 1) if silos[i] is None]
+        if missing:
+            raise StepFailed(f'no pose saved for silo {", ".join(map(str, missing))} (Setup tab)')
+        entry = poses.get('silo_entry') or silo_route.default_entry(
+            silos[0], self.g('entry_side'), float(self.g('entry_m')))
+        self._step_status('fill', 'running', 'driving to the silo entry')
+        self._navigate(entry, 'the silo entry')
         done = []
-        for i, target in enumerate(targets):
+        for i in range(last + 1):
             fill = self.status['fills'][i]
-            if target <= 0:
-                fill['state'] = 'skipped'
-                continue
-            name = f'silo{i + 1}'
-            if name not in poses:
-                raise StepFailed(f'no pose saved for silo {i + 1} (Setup tab)')
             fill['state'] = 'driving'
             self._step_status('fill', 'running', f'driving to silo {i + 1}')
-            self._navigate(poses[name], f'silo {i + 1}')
+            self._drive_to(silos[i], f'silo {i + 1}')  # silo 1 from the entry, then along the row
+            if targets[i] <= 0:
+                fill['state'] = 'skipped'
+                continue
             self._sleep(float(self.g('settle_s')))
             fill['state'] = 'filling'
             if dry:
@@ -418,8 +508,13 @@ class Mission(Node):
                 fill['state'] = 'done'
                 done.append(f'silo {i + 1}: dry')
                 continue
-            added = self._fill_one(i, target, fill)
+            added = self._fill_one(i, targets[i], fill)
             done.append(f'silo {i + 1}: {added:.2f} kg')
+        # out the way it came: reverse along the row to silo 1, straight out to the entry
+        self._step_status('fill', 'running', 'leaving the silos')
+        if last > 0:
+            self._drive_to(silos[0], 'silo 1', final_yaw=False)
+        self._drive_to(entry, 'the silo entry', final_yaw=False)
         return ', '.join(done) if done else 'nothing to fill'
 
     def _fill_one(self, i, target, fill):
