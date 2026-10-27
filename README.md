@@ -23,7 +23,7 @@ side door.
         ├── web_panel/            the web control panel
         ├── mixer_esp_driver/     ESP driver: load cells, mixer motors, door
         ├── frontier_explorer/    lidar, live SLAM + Nav2, frontier exploration, map saving
-        ├── feed_mission/         taught poses (silos, start, lap corners), lap driver
+        ├── feed_mission/         taught poses, cow box, feeding laps, relocalization
         ├── silo_controller/      silo valve servos on the Raspberry Pi
         └── sllidar_ros2/         SLAMTEC lidar driver (downloaded, not in git)
 ```
@@ -34,7 +34,7 @@ side door.
 | --- | --- | --- |
 | `robot_bringup` | Jetson | Launch files only. `bringup.launch.py` starts everything except navigation. |
 | `web_panel` | Jetson | The web control panel (port 8000): scale, valves, mixer motors and shake, door, driving, both camera feeds, battery, bumper warnings, map status, teaching poses (Setup tab), laps. |
-| `feed_mission` | Jetson | The feeding run: poses taught once (`~/maps/arena_poses.yaml`) and the lap driver around the cow box. |
+| `feed_mission` | Jetson | The feeding run: poses and the cow box taught once (`~/maps/arena_poses.yaml`), feeding laps planned from the box, relocalization. |
 | `mixer_esp_driver` | Jetson | Talks to the ESP32 over USB serial: weight from the 4 load cells, the 2 mixer motors (ramped, plus the shake pattern), the door servo. |
 | `frontier_explorer` | Jetson | Everything for driving around: the lidar launch, the live map (slam_toolbox), planning and driving (Nav2), exploring the arena on its own and saving the map when done. |
 | `silo_controller` | Raspberry Pi | Opens and closes the 3 silo valves (servos on a PCA9685). Runs in Docker on the Pi; `valve_cmd` commands it from the Jetson. |
@@ -69,7 +69,7 @@ The Create 3 base needs no package: its firmware publishes `/Team2/odom`,
 | `odom_tf_republisher` | `/Team2/odom` -> `odom -> base_link` TF |
 | `frontier_explorer` | picks the best unexplored edge of `/map`, sends it to Nav2; at the end drives home, saves the map, reports done |
 | `valve_controller` | `/valve1..3/percent` -> servo angles, with saved open/closed calibration |
-| `lap_driver` | laps through the four taught corners: turn on the spot, drive straight, repeat. `/lap/start`, `/lap/stop`, `/lap/status`; drives `/Team2/cmd_vel_lap` (twist_mux, priority 50) |
+| `lap_driver` | feeding laps around the cow box: turn on the spot, drive straight, door open beside the box. `/lap/start`, `/lap/stop`, `/lap/status`, `/lap/progress`; drives `/Team2/cmd_vel_lap` (twist_mux, priority 50) |
 | `relocalizer` | `/relocalize`: finds the robot on the map from the lidar and corrects AMCL (`/initialpose`) |
 
 Parameters: `frontier_explorer/config/` (`nav2_params.yaml`,
@@ -198,28 +198,57 @@ Then drive the robot with the panel to each spot and press **Save here**:
 | --- | --- |
 | Silo 1, 2, 3 | parked under each pipe |
 | Start | where it waits before and after a run |
-| Corner 1-4 | the corners of the lap around the cow box, clockwise (the door is on the right), in driving order |
 
 They go to `~/maps/arena_poses.yaml`, in the map frame: teach them again after
-remapping. Leave room at the corners: the robot's own corners reach 0.31 m
-from its centre when it turns on the spot, and the lap driver refuses a turn
-while anything is that close.
+remapping.
 
-Then laps, from the panel (**Unload** tab: number of laps; door closed, open
-on the two long sides only, or on all sides) or by hand:
+### Feeding laps around the cow box
+
+The **Feed** tab (the big screen switches to **Map**: the arena, the lidar, the
+robot with its door, the box and the planned lap) works out the lap from the
+box instead of from taught corners:
+
+1. **Cow box.** *Detect from map* finds the free-standing obstacle on the map.
+   The map draws walls a few cm thick, so type the box's real length and width,
+   park the robot beside it and *Snap to lidar*: the outline moves and turns
+   onto the lidar points of the faces it sees (refused if it does not fit
+   within 2 cm, usually a wrong size). Fine-tune with *Edit box* (drag it on
+   the map) and the 1-degree turn buttons.
+2. **Lap.** A rectangle around the box, driven clockwise so the box is on the
+   robot's right, where the door is. *Gap to the box* is the distance from the
+   robot's side to the faces it feeds, the other gap applies to the other
+   faces. The corners fall past the ends of the box, so the robot's own
+   corners (0.31 m from its centre) clear the box when it turns on the spot.
+   Red on the map: the saved map shows a wall in the way there.
+3. **Door.** It opens by *Door opening* (part open, e.g. 20%) only while the
+   door is beside a fed face (*Long faces*, *All faces* or *None*), starting
+   and stopping *margin* inside each end of the face, and is closed for the
+   turns. *Door position on the robot* moves that stretch if the door is not
+   at the robot's middle.
+4. **Run.** *Dry run* (the default) drives the same laps with the door kept
+   closed; the map still shows where it would open. Turn it off for a real
+   run. Nav2 first takes the robot to the nearest lap corner.
+
+Every run is logged in `~/maps/feed_runs.yaml` and shown in the *Tuning log*:
+the settings, the weight before and after, and **kg per metre of open door**,
+the number to tune the door opening and speed against. Weigh with the robot
+stopped and the mixer off. The last settings are kept for next time.
+
+By hand (`gap`, `end_gap`, `feed`, `door_open`, `door_margin`, `door_x`,
+`speed`, `dry_run` and `laps` are parameters of `/lap_driver`):
 
 ```bash
 ros2 param set /lap_driver laps 2
-ros2 param set /lap_driver door_sides long    # none | long | all
+ros2 param set /lap_driver dry_run true
 ros2 service call /lap/start std_srvs/srv/Trigger
 ros2 service call /lap/stop std_srvs/srv/Trigger     # STOP ALL in the panel does this too
 ```
 
-If the robot is not at corner 1, Nav2 drives it there first. Each side is a
-turn on the spot to face the next corner, then a straight line to it,
-steered back onto the corner-to-corner line in the map frame, so odometry drift
-does not add up. It waits while anything is within `stop_distance` (0.15 m)
-in front and gives up after 20 s. Teleop overrides it at any time.
+Each side is a turn on the spot to face the next corner, then a straight line
+to it, steered back onto the corner-to-corner line in the map frame, so
+odometry drift does not add up. It waits while anything is within
+`stop_distance` (0.15 m) in front and gives up after 20 s. Teleop overrides it
+at any time.
 
 ### The lidar on its own
 

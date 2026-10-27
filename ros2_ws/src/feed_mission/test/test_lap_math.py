@@ -6,10 +6,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import pytest  # noqa: E402
-
 from feed_mission.lap_driver import (  # noqa: E402
-    blocked_ahead, door_open_sides, straight_command, turn_blocked, turn_command, wrap,
+    blocked_ahead, straight_command, turn_blocked, turn_command, wrap,
 )
 
 DT = 0.05
@@ -67,12 +65,3 @@ def test_turn_blocked_by_anything_within_corner_reach():
     assert turn_blocked(np.array([[-0.2, 0.2]]), hl, hw)       # 0.28 m: a corner would hit it
     assert not turn_blocked(np.array([[0.0, 0.40]]), hl, hw)   # 0.40 m: clear
 
-
-def test_door_sides():
-    # 2 m x 1 m box, starting on a short side: the long sides are 1 and 3
-    corners = [(0, 0), (0, 1), (2, 1), (2, 0)]
-    assert door_open_sides(corners, 'long') == {1, 3}
-    assert door_open_sides(corners, 'all') == {0, 1, 2, 3}
-    assert door_open_sides(corners, 'none') == set()
-    with pytest.raises(ValueError):
-        door_open_sides(corners, 'sometimes')

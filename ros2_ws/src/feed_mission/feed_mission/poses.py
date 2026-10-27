@@ -1,13 +1,18 @@
-"""Named map poses taught once by driving there: the silos, start, lap corners.
+"""What the robot is taught once about the arena, stored next to the saved map.
 
-Stored as YAML next to the saved map (~/maps/arena_poses.yaml by default), so
-they belong to that map: remapping the arena means teaching them again.
+~/maps/arena_poses.yaml by default:
 
     silo1: {x: 1.20, y: -0.40, yaw: 1.571, saved: '2026-10-26 21:10:03'}
+    start: {...}
+    cow_box: {cx: 0.76, cy: -0.39, yaw: 1.38, length: 1.0, width: 0.5, saved: ...}
+    feed: {gap: 0.1, door_open: 0.2, ...}     # last settings used for laps
 
-The web panel's Setup tab writes them; lap_driver and the mission read them.
-Poses are in the map frame, so they only match while the robot is localized
-on the same map (navigation.launch.py with AMCL, or the live SLAM map).
+All in the map frame: they only match while the robot is localized on the
+same map, and remapping the arena means teaching them again. The web panel
+writes them; lap_driver and the mission read them.
+
+Each lap run also adds a line to feed_runs.yaml in the same folder (settings
+and how much feed left the container), to tune the door opening against.
 """
 
 import math
@@ -20,23 +25,45 @@ import yaml
 DEFAULT_FILE = '~/maps/arena_poses.yaml'
 
 SILOS = ('silo1', 'silo2', 'silo3')
-LAP_CORNERS = ('lap1', 'lap2', 'lap3', 'lap4')
-NAMES = SILOS + ('start',) + LAP_CORNERS
+NAMES = SILOS + ('start',)
+BOX_KEY = 'cow_box'
+FEED_KEY = 'feed'
+MAX_RUNS = 200
 
 
 def resolve(path=DEFAULT_FILE):
     return os.path.abspath(os.path.expanduser(path))
 
 
-def load(path=DEFAULT_FILE):
-    """{name: {'x', 'y', 'yaw', 'saved'}}; empty if the file does not exist."""
+def _read(path):
     path = resolve(path)
     if not os.path.exists(path):
         return {}
     with open(path) as f:
-        data = yaml.safe_load(f) or {}
+        data = yaml.safe_load(f)
+    return data if isinstance(data, dict) else {}
+
+
+def _write(path, data):
+    path = resolve(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Write a temp file and rename it over the old one, so a crash mid-write
+    # never leaves a half-written file behind.
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix='.tmp')
+    with os.fdopen(fd, 'w') as f:
+        yaml.safe_dump(data, f, sort_keys=False)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+
+
+def _stamp():
+    return time.strftime('%Y-%m-%d %H:%M:%S')
+
+
+def load(path=DEFAULT_FILE):
+    """{name: {'x', 'y', 'yaw', 'saved'}} of the taught poses."""
     poses = {}
-    for name, p in data.items():
+    for name, p in _read(path).items():
         if name in NAMES and isinstance(p, dict):
             poses[name] = {
                 'x': float(p['x']), 'y': float(p['y']), 'yaw': float(p['yaw']),
@@ -45,38 +72,80 @@ def load(path=DEFAULT_FILE):
     return poses
 
 
-def _write(path, poses):
-    path = resolve(path)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    # Write a temp file and rename it over the old one, so a crash mid-write
-    # never leaves a half-written file behind.
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix='.tmp')
-    with os.fdopen(fd, 'w') as f:
-        yaml.safe_dump({n: poses[n] for n in NAMES if n in poses}, f, sort_keys=False)
-    os.replace(tmp, path)
-
-
 def save_pose(name, x, y, yaw, path=DEFAULT_FILE):
     if name not in NAMES:
         raise ValueError(f'unknown pose "{name}", expected one of {", ".join(NAMES)}')
-    poses = load(path)
-    poses[name] = {
+    data = _read(path)
+    data[name] = {
         'x': round(float(x), 3), 'y': round(float(y), 3),
         'yaw': round(math.atan2(math.sin(yaw), math.cos(yaw)), 4),
-        'saved': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'saved': _stamp(),
     }
-    _write(path, poses)
-    return poses[name]
+    _write(path, data)
+    return data[name]
 
 
 def clear_pose(name, path=DEFAULT_FILE):
-    poses = load(path)
-    if poses.pop(name, None) is not None:
-        _write(path, poses)
+    data = _read(path)
+    if data.pop(name, None) is not None:
+        _write(path, data)
 
 
-def lap_corners(poses):
-    """The four corners in driving order, or None if any is missing."""
-    if not all(c in poses for c in LAP_CORNERS):
+def load_box(path=DEFAULT_FILE):
+    """{'cx', 'cy', 'yaw', 'length', 'width', 'saved'} or None."""
+    b = _read(path).get(BOX_KEY)
+    if not isinstance(b, dict):
         return None
-    return [(poses[c]['x'], poses[c]['y']) for c in LAP_CORNERS]
+    out = {k: float(b[k]) for k in ('cx', 'cy', 'yaw', 'length', 'width')}
+    out['saved'] = str(b.get('saved', ''))
+    return out
+
+
+def save_box(box, path=DEFAULT_FILE):
+    """box: dict or anything with as_dict()."""
+    d = box.as_dict() if hasattr(box, 'as_dict') else dict(box)
+    data = _read(path)
+    data[BOX_KEY] = {
+        'cx': round(float(d['cx']), 3), 'cy': round(float(d['cy']), 3),
+        'yaw': round(float(d['yaw']), 4),
+        'length': round(float(d['length']), 3), 'width': round(float(d['width']), 3),
+        'saved': _stamp(),
+    }
+    _write(path, data)
+    return data[BOX_KEY]
+
+
+def load_feed(path=DEFAULT_FILE):
+    f = _read(path).get(FEED_KEY)
+    return dict(f) if isinstance(f, dict) else {}
+
+
+def save_feed(settings, path=DEFAULT_FILE):
+    data = _read(path)
+    data[FEED_KEY] = dict(settings)
+    _write(path, data)
+
+
+def runs_file(path=DEFAULT_FILE):
+    return os.path.join(os.path.dirname(resolve(path)), 'feed_runs.yaml')
+
+
+def load_runs(path=DEFAULT_FILE):
+    f = runs_file(path)
+    if not os.path.exists(f):
+        return []
+    with open(f) as fh:
+        runs = yaml.safe_load(fh)
+    return runs if isinstance(runs, list) else []
+
+
+def add_run(run, path=DEFAULT_FILE):
+    runs = (load_runs(path) + [dict(run, time=_stamp())])[-MAX_RUNS:]
+    f = runs_file(path)
+    os.makedirs(os.path.dirname(f), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(f), suffix='.tmp')
+    with os.fdopen(fd, 'w') as fh:
+        yaml.safe_dump(runs, fh, sort_keys=False)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, f)
+    return runs

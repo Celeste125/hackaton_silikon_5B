@@ -229,7 +229,7 @@
   .pip .msg { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: var(--muted); }
   .cam-label { position: absolute; left: 10px; top: 10px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .55); font-size: 13px; }
   .stage-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .stage-bar .seg button { min-height: 36px; padding: 4px 14px; font-size: 14px; }
+  .stage-bar .seg button { min-height: 36px; padding: 4px 14px; font-size: 14px; white-space: nowrap; }
   .stage-bar > button { min-height: 36px; padding: 4px 14px; font-size: 14px; }
 
   .drive { padding: 12px; display: grid; gap: 14px; grid-template-columns: auto minmax(0, 1fr); align-items: center; }
@@ -297,6 +297,45 @@
   .lapstatus { font-size: 14px; font-weight: 600; margin: 8px 0 0; min-height: 1.45em; }
   .lapstatus.run { color: var(--live); }
   .lapstatus.bad { color: var(--stop); }
+
+  /* ---- Map view --------------------------------------------------------- */
+  .map-wrap { position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, #0b1a21, #050c10); }
+  .map-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  .map-wrap canvas.dragging { cursor: grabbing; }
+  .map-wrap canvas.editing { cursor: move; }
+  .map-hud { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .map-hud button { min-height: 34px; padding: 4px 12px; font-size: 13px; border-radius: 999px; background: rgba(5, 12, 16, .62); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .map-legend { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 6px 12px; border-radius: 999px; background: rgba(5, 12, 16, .62); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 12px; color: var(--muted); }
+  .map-legend i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  .map-empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); font-size: 14px; pointer-events: none; }
+  .map-empty code { color: var(--text); }
+  #feedMapHost { position: relative; aspect-ratio: 4 / 3; border-radius: var(--radius-md); overflow: hidden; margin-bottom: 14px; border: 1px solid var(--edge-soft); }
+
+  /* ---- Feed tab --------------------------------------------------------- */
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .card-head .meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+  .stats { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .stat { background: rgba(0, 0, 0, .24); border: 1px solid var(--edge-soft); border-radius: 10px; padding: 5px 10px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .stat b { color: var(--text); font-weight: 700; }
+  .stat.live b { color: var(--live); }
+  .stat.amber b { color: #ffd27a; }
+  .warnlist { margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; color: #ffb3b3; }
+  .warnlist li::before { content: "⚠ "; }
+  .runbar { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: rgba(0, 0, 0, .22); border: 1px solid var(--edge-soft); font-size: 14px; }
+  .runbar .dot { flex: none; }
+  .runbar.run { border-color: rgba(61, 214, 181, .45); }
+  .runbar.bad { border-color: rgba(255, 93, 93, .55); }
+  .runbar .grow { flex: 1; min-width: 0; }
+  .runbar small { display: block; color: var(--muted); font-size: 12px; }
+  table.runs { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 6px; }
+  table.runs th { color: var(--muted); font-weight: 600; text-align: right; padding: 4px; }
+  table.runs td { text-align: right; padding: 6px 4px; border-top: 1px solid var(--edge-soft); }
+  table.runs th:first-child, table.runs td:first-child { text-align: left; }
+  table.runs .dry { color: var(--muted); }
+  table.runs .bad { color: #ffb3b3; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 6px; background: rgba(255, 255, 255, .08); color: var(--muted); margin-left: 4px; }
+  .fd-size { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; align-items: end; margin-top: 10px; }
+  .fd-size button { min-height: 46px; padding: 6px 12px; }
   .presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   @media (max-width: 420px) { .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .presets button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px; }
@@ -315,7 +354,7 @@
     .tools .pane.active { display: block; }
     .nav {
       position: sticky; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 5;
-      display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 6px;
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; padding: 6px;
     }
     .nav button { min-height: 52px; padding: 4px; font-size: 13px; background: transparent; border-color: transparent; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; }
     .nav button svg { width: 22px; height: 22px; }
@@ -393,6 +432,21 @@
           <img class="main" id="camMain" alt="">
           <div class="msg" id="camMainMsg">Connecting to the cameras…</div>
           <span class="cam-label"><span class="dot idle" id="camMainDot"></span><span id="camMainName">Camera 1</span></span>
+          <div class="map-wrap" id="mapWrap" hidden>
+            <canvas id="mapCanvas" aria-label="Map of the arena with the robot, the cow box and the planned lap" role="img"></canvas>
+            <div class="map-empty" id="mapEmpty">Loading the map…</div>
+            <div class="map-hud">
+              <button id="mapEdit" aria-pressed="false" data-needs-control title="Drag the cow box on the map">Edit box</button>
+              <button id="mapFollow" aria-pressed="false">Follow robot</button>
+              <button id="mapFit">Fit</button>
+            </div>
+            <div class="map-legend" aria-hidden="true">
+              <span><i style="background:#3dd6b5"></i>lap</span>
+              <span><i style="background:#f4b740"></i>door open</span>
+              <span><i style="background:#ff6b6b"></i>lidar</span>
+              <span id="mapScale"></span>
+            </div>
+          </div>
           <button class="pip" id="pip" hidden aria-label="Show this camera large">
             <img id="camPip" alt="">
             <span class="msg" id="camPipMsg"></span>
@@ -447,6 +501,7 @@
         <button role="tab" id="tab-load" aria-controls="pane-load" data-tab="load">Load</button>
         <button role="tab" id="tab-mix" aria-controls="pane-mix" data-tab="mix">Mix<span class="badge" id="mixBadge" hidden></span></button>
         <button role="tab" id="tab-unload" aria-controls="pane-unload" data-tab="unload">Unload</button>
+        <button role="tab" id="tab-feed" aria-controls="pane-feed" data-tab="feed">Feed<span class="badge" id="feedBadge" hidden></span></button>
         <button role="tab" id="tab-setup" aria-controls="pane-setup" data-tab="setup">Setup</button>
       </div>
       <div class="panes">
@@ -504,25 +559,6 @@
             <input type="range" id="door" min="0" max="1" step="0.01" value="0">
             <div class="scale" aria-hidden="true"><span>Open</span><span>Closed</span></div>
           </div>
-          <div class="sub">
-            <h3>Laps around the cow box</h3>
-            <p class="hint" style="margin: 2px 0 10px">Straight sides and turns on the spot through the four corners saved in Setup. Nav2 first drives to corner 1 if the robot is elsewhere.</p>
-            <div class="row">
-              <label class="field fit">Laps<input type="number" id="lapCount" min="1" max="50" step="1" value="1" inputmode="numeric" style="width: 90px"></label>
-              <div class="field">Door
-                <div class="seg" role="group" aria-label="Door during laps" id="lapDoor">
-                  <button data-door="none" aria-pressed="true">Closed</button>
-                  <button data-door="long" aria-pressed="false">Long sides</button>
-                  <button data-door="all" aria-pressed="false">All sides</button>
-                </div>
-              </div>
-            </div>
-            <div class="row" style="margin-top: 8px">
-              <button class="primary" id="lapStart">Drive laps</button>
-              <button id="lapStop">Stop laps</button>
-            </div>
-            <p class="lapstatus" id="lapStatus" aria-live="polite"></p>
-          </div>
           <details class="sub">
             <summary>Set the door's open and closed ends</summary>
             <div class="slider">
@@ -539,6 +575,85 @@
             </div>
             <p class="hint">The servo follows the slider. Move it until the door is fully open and save, then do the same for closed.</p>
           </details>
+        </div>
+
+        <!-- Feed: laps around the cow box, door open beside it -->
+        <div class="pane" role="tabpanel" id="pane-feed" aria-labelledby="tab-feed">
+          <div id="feedMapHost" hidden></div>
+
+          <section aria-labelledby="fdBoxH">
+            <div class="card-head"><h3 id="fdBoxH">Cow box</h3><span class="meta" id="fdBoxInfo">Not measured yet</span></div>
+            <div class="row" data-needs-control>
+              <button class="quiet" id="fdDetect">Detect from map</button>
+              <button class="quiet" id="fdSnap">Snap to lidar</button>
+            </div>
+            <div class="fd-size" data-needs-control>
+              <label class="field">Length, cm<input type="number" id="fdLen" min="10" max="400" step="1" inputmode="numeric"></label>
+              <label class="field">Width, cm<input type="number" id="fdWid" min="10" max="400" step="1" inputmode="numeric"></label>
+              <button id="fdRotL" aria-label="Turn the box 1 degree left">⟲ 1°</button>
+              <button id="fdRotR" aria-label="Turn the box 1 degree right">⟳ 1°</button>
+            </div>
+            <p class="hint">Detect finds the box on the map (drawn a little too big). Type its real size, park the robot beside it and Snap: the outline moves onto the lidar points. Fine-tune with Edit box on the map.</p>
+          </section>
+
+          <section class="sub" aria-labelledby="fdFeedH">
+            <div class="card-head"><h3 id="fdFeedH">Feeding</h3></div>
+            <div class="seg" role="group" aria-label="Faces to feed" id="fdFaces">
+              <button data-face="long" aria-pressed="true">Long faces</button>
+              <button data-face="all" aria-pressed="false">All faces</button>
+              <button data-face="none" aria-pressed="false">None</button>
+            </div>
+            <div class="slider">
+              <div class="top"><label for="fdDoor">Door opening</label><output id="fdDoorVal" for="fdDoor"></output></div>
+              <input type="range" id="fdDoor" min="0" max="1" step="0.05" value="0.2">
+            </div>
+            <div class="slider">
+              <div class="top"><label for="fdGap">Gap to the box, fed faces</label><output id="fdGapVal" for="fdGap"></output></div>
+              <input type="range" id="fdGap" min="0.02" max="0.30" step="0.01" value="0.10">
+            </div>
+            <div class="slider">
+              <div class="top"><label for="fdEnd">Gap to the box, other faces</label><output id="fdEndVal" for="fdEnd"></output></div>
+              <input type="range" id="fdEnd" min="0.05" max="0.40" step="0.01" value="0.15">
+            </div>
+            <div class="slider">
+              <div class="top"><label for="fdSpeed">Speed</label><output id="fdSpeedVal" for="fdSpeed"></output></div>
+              <input type="range" id="fdSpeed" min="0.05" max="0.25" step="0.01" value="0.15">
+            </div>
+            <details class="sub">
+              <summary>Door timing</summary>
+              <div class="slider">
+                <div class="top"><label for="fdMargin">Opens this far inside each end of the face</label><output id="fdMarginVal" for="fdMargin"></output></div>
+                <input type="range" id="fdMargin" min="0" max="0.25" step="0.01" value="0.05">
+              </div>
+              <div class="slider">
+                <div class="top"><label for="fdDoorX">Door position on the robot (ahead of centre)</label><output id="fdDoorXVal" for="fdDoorX"></output></div>
+                <input type="range" id="fdDoorX" min="-0.2" max="0.2" step="0.01" value="0" data-bipolar="1">
+              </div>
+            </details>
+            <div class="stats" id="fdPlan" aria-live="polite"></div>
+            <ul class="warnlist" id="fdWarn"></ul>
+          </section>
+
+          <section class="sub" aria-labelledby="fdRunH">
+            <div class="card-head"><h3 id="fdRunH">Run</h3></div>
+            <div class="row" data-needs-control>
+              <label class="field fit">Laps<input type="number" id="fdLaps" min="1" max="50" step="1" value="1" inputmode="numeric" style="width: 90px"></label>
+              <button id="fdDry" aria-pressed="true" style="align-self: flex-end" title="Drive the laps with the door kept closed">Dry run: door stays closed</button>
+            </div>
+            <div class="row" style="margin-top: 8px">
+              <button class="primary" id="fdStart" data-needs-control>Drive laps</button>
+              <button id="fdStop">Stop laps</button>
+            </div>
+            <div class="runbar" id="fdRunbar" role="status" aria-live="polite">
+              <span class="dot idle" id="fdRunDot"></span>
+              <div class="grow"><span id="fdRunText">Lap driver not running</span><small id="fdRunSub"></small></div>
+            </div>
+          </section>
+
+          <section class="sub" aria-labelledby="fdLogH">
+            <div class="card-head"><h3 id="fdLogH">Tuning log</h3><span class="meta">kg per metre of open door</span></div>
+            <div id="fdRuns"><p class="hint" style="margin: 0">No runs yet. Each run is logged with its settings and how much feed left the container.</p></div>
+          </section>
         </div>
 
         <!-- Setup: teach the poses once -->
@@ -564,6 +679,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 4v4h-4"/></svg>Mix</button>
     <button role="tab" data-view-btn="unload" aria-controls="view-tools">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="11" rx="2"/><path d="M12 15v6M9 18l3 3 3-3"/></svg>Unload</button>
+    <button role="tab" data-view-btn="feed" aria-controls="view-tools">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="8" y="9" width="8" height="6" rx="1"/><path d="M4 5h16v14H4z" stroke-dasharray="3 2.4"/></svg>Feed</button>
     <button role="tab" data-view-btn="setup" aria-controls="view-tools">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>Setup</button>
   </nav>
@@ -642,7 +759,7 @@ function paintRange(el) {
 document.addEventListener('input', (e) => { if (e.target.type === 'range') paintRange(e.target); });
 
 // ---- layout: stage tabs (desktop) and views (phone) ----
-const TOOLS = ['load', 'mix', 'unload', 'setup'];
+const TOOLS = ['load', 'mix', 'unload', 'feed', 'setup'];
 let tool = TOOLS.includes(store.get('tool')) ? store.get('tool') : 'load';
 let view = ['drive', ...TOOLS].includes(store.get('view')) ? store.get('view') : 'drive';
 
@@ -667,9 +784,14 @@ function showView(v) {
   document.querySelectorAll('[data-view-btn]').forEach((b) =>
     b.setAttribute('aria-selected', String(b.dataset.viewBtn === v)));
   applyCams();  // the camera view is off-screen on the other phone tabs
+  placeMap();
 }
 document.querySelectorAll('.tabs [role=tab]').forEach((b) => {
-  b.addEventListener('click', () => { showTool(b.dataset.tab); if (view !== 'drive') showView(b.dataset.tab); });
+  b.addEventListener('click', () => {
+    showTool(b.dataset.tab);
+    if (view !== 'drive') showView(b.dataset.tab);
+    if (b.dataset.tab === 'feed' && !phone.matches && stageMode !== 'map') setStage('map');
+  });
   b.addEventListener('keydown', (e) => {
     const i = TOOLS.indexOf(tool);
     if (e.key === 'ArrowRight') { e.preventDefault(); showTool(TOOLS[(i + 1) % TOOLS.length], true); }
@@ -679,7 +801,7 @@ document.querySelectorAll('.tabs [role=tab]').forEach((b) => {
 document.querySelectorAll('[data-view-btn]').forEach((b) =>
   b.addEventListener('click', () => showView(b.dataset.viewBtn)));
 const phone = window.matchMedia('(max-width: 899px)');
-phone.addEventListener('change', applyCams);
+phone.addEventListener('change', () => { applyCams(); placeMap(); });
 
 // ---- motors ----
 const pct = (v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`;
@@ -1001,8 +1123,6 @@ const POSE_GROUPS = [
   ['Silos', 'Park under each pipe, facing the way you will approach it.',
     [['silo1', 'Silo 1'], ['silo2', 'Silo 2'], ['silo3', 'Silo 3']]],
   ['Start', 'Where the robot waits before and after a run.', [['start', 'Start']]],
-  ['Lap corners', 'Clockwise around the cow box (the door is on the right), in driving order. Leave room to turn: the robot\'s corners reach 31 cm from its centre.',
-    [['lap1', 'Corner 1'], ['lap2', 'Corner 2'], ['lap3', 'Corner 3'], ['lap4', 'Corner 4']]],
 ];
 const deg = (rad) => Math.round(rad * 180 / Math.PI);
 function buildPoses() {
@@ -1056,25 +1176,546 @@ $('reloc').addEventListener('click', async () => {
   finally { b.disabled = false; b.textContent = 'Find robot on map'; }
 });
 
-// ---- laps ----
-let lapDoor = 'none';
-$('lapDoor').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-  lapDoor = b.dataset.door;
-  $('lapDoor').querySelectorAll('button').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
-}));
-$('lapStart').addEventListener('click', () => {
-  const laps = parseInt($('lapCount').value, 10);
-  if (!(laps >= 1)) { toast('Enter how many laps', true); $('lapCount').focus(); return; }
-  action('/api/lap/start', {laps, door_sides: lapDoor});
+// ---- map view ----
+// The arena as the robot sees it: the saved map, the lidar, the robot with
+// its door, the silos, the cow box and the planned lap. On a desktop it
+// replaces the camera on the big screen ("Map"); on a phone it sits at the top
+// of the Feed tab. Drag to pan, wheel or pinch to zoom.
+let stageMode = store.get('stage') === 'map' ? 'map' : 'cam';
+const mapCanvas = $('mapCanvas');
+const mctx = mapCanvas.getContext('2d');
+const M = {
+  grid: null, loading: false, scan: [], scanAge: null, plan: null, state: null,
+  view: null, follow: false, edit: false, drag: null, pointers: new Map(), dragBox: null,
+  touched: false,  // panned or zoomed by hand: stop refitting on resize
+};
+const ROBOT = {hl: 0.17, hw: 0.26};
+const COL = {
+  free: [20, 39, 48], wall: [168, 203, 214], grid: 'rgba(255,255,255,0.045)', lap: '#3dd6b5',
+  door: '#f4b740', box: '#f4b740', scan: '#ff6b6b', robot: '#3dd6b5', bad: '#ff5d5d', text: '#eaf2f4',
+};
+
+function mapVisible() {
+  if (document.hidden) return false;
+  if (phone.matches) return view === 'feed' || (view === 'drive' && stageMode === 'map');
+  return stageMode === 'map';
+}
+function placeMap() {
+  const onPhoneFeed = phone.matches && view === 'feed';
+  $('feedMapHost').hidden = !onPhoneFeed;
+  const host = onPhoneFeed ? $('feedMapHost') : $('screen');
+  if ($('mapWrap').parentElement !== host) host.appendChild($('mapWrap'));
+  $('mapWrap').hidden = !mapVisible();
+  resizeMap();
+}
+function setStage(mode) {
+  stageMode = mode;
+  store.set('stage', mode);
+  markCamPick();
+  applyCams();
+  placeMap();
+  if (mode === 'map') refreshMapData();
+}
+function resizeMap() {
+  if ($('mapWrap').hidden) return;
+  const dpr = window.devicePixelRatio || 1;
+  const r = $('mapWrap').getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (mapCanvas.width !== w || mapCanvas.height !== h) {
+    mapCanvas.width = w;
+    mapCanvas.height = h;
+    if (M.grid && !M.touched) fitMap();
+  }
+  drawMap();
+}
+window.addEventListener('resize', resizeMap);
+if (window.ResizeObserver) new ResizeObserver(resizeMap).observe($('mapWrap'));
+
+const dprNow = () => window.devicePixelRatio || 1;
+const toScreen = (x, y) => [mapCanvas.width / 2 + (x - M.view.cx) * M.view.s,
+  mapCanvas.height / 2 - (y - M.view.cy) * M.view.s];
+const toWorld = (px, py) => [M.view.cx + (px - mapCanvas.width / 2) / M.view.s,
+  M.view.cy - (py - mapCanvas.height / 2) / M.view.s];
+
+async function loadMap() {
+  if (M.loading) return;
+  M.loading = true;
+  try {
+    const res = await fetch('/api/map', {headers: HEADERS});
+    if (!res.ok) { M.grid = null; drawMap(); return; }
+    const m = await res.json();
+    const raw = atob(m.data);
+    const off = document.createElement('canvas');
+    off.width = m.width;
+    off.height = m.height;
+    const g = off.getContext('2d');
+    const img = g.createImageData(m.width, m.height);
+    for (let r = 0; r < m.height; r++) {
+      for (let c = 0; c < m.width; c++) {
+        const v = raw.charCodeAt(r * m.width + c);
+        if (v === 255) continue;  // unknown stays transparent
+        const k = ((m.height - 1 - r) * m.width + c) * 4;
+        const rgb = v >= 65 ? COL.wall : COL.free;
+        img.data[k] = rgb[0]; img.data[k + 1] = rgb[1]; img.data[k + 2] = rgb[2]; img.data[k + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    M.grid = {...m, img: off};
+    if (!M.view || !M.touched) fitMap();
+    drawMap();
+  } catch (e) { /* retried on the next poll */ } finally { M.loading = false; }
+}
+async function loadScan() {
+  try {
+    const res = await fetch('/api/scan', {headers: HEADERS});
+    const s = await res.json();
+    M.scan = s.points || [];
+    M.scanAge = s.age_s;
+    drawMap();
+  } catch (e) { /* next time */ }
+}
+function refreshMapData() {
+  const f = M.state && M.state.feed;
+  if (f && (!M.grid || M.grid.version !== f.map_version)) loadMap();
+}
+setInterval(() => { if (mapVisible()) loadScan(); }, 400);
+
+function fitMap() {
+  if (!M.grid || $('mapWrap').hidden) return;
+  const g = M.grid, pad = 0.92;
+  const w = g.width * g.resolution, h = g.height * g.resolution;
+  M.view = {
+    cx: g.origin[0] + w / 2, cy: g.origin[1] + h / 2,
+    s: Math.min(mapCanvas.width / w, mapCanvas.height / h) * pad,
+  };
+  M.touched = false;
+  drawMap();
+}
+$('mapFit').addEventListener('click', () => { M.follow = false; markFollow(); fitMap(); });
+function markFollow() { $('mapFollow').setAttribute('aria-pressed', String(M.follow)); }
+$('mapFollow').addEventListener('click', () => { M.follow = !M.follow; markFollow(); drawMap(); });
+$('mapEdit').addEventListener('click', () => {
+  M.edit = !M.edit;
+  $('mapEdit').setAttribute('aria-pressed', String(M.edit));
+  mapCanvas.classList.toggle('editing', M.edit);
+  if (M.edit) toast('Drag the cow box to move it');
 });
-$('lapStop').addEventListener('click', () => action('/api/lap/stop'));
-function showLap(st) {
-  const el = $('lapStatus');
-  el.textContent = st ? `Laps: ${st}` : 'Lap driver not running';
-  const running = !!st && /^(lap |approach|blocked)/.test(st);
-  el.classList.toggle('run', running);
-  el.classList.toggle('bad', !!st && (st.startsWith('failed') || st.startsWith('blocked')));
-  $('lapStart').className = running ? 'running' : 'primary';
+
+// The box being dragged, else the saved one.
+const curBox = () => M.dragBox || (M.state && M.state.feed && M.state.feed.box) || null;
+function boxCorners(b) {
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw), a = b.length / 2, w = b.width / 2;
+  return [[-a, w], [a, w], [a, -w], [-a, -w]].map(([x, y]) => [b.cx + x * c - y * s, b.cy + x * s + y * c]);
+}
+function insideBox(b, x, y) {
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw), dx = x - b.cx, dy = y - b.cy;
+  return Math.abs(dx * c + dy * s) <= b.length / 2 + 0.05 && Math.abs(-dx * s + dy * c) <= b.width / 2 + 0.05;
+}
+
+let mapDrawPending = false;
+function drawMap() {
+  if (mapDrawPending) return;
+  mapDrawPending = true;
+  requestAnimationFrame(() => { mapDrawPending = false; renderMap(); });
+}
+function path(c, pts, close) {
+  c.beginPath();
+  pts.forEach(([x, y], i) => { const [px, py] = toScreen(x, y); if (i) c.lineTo(px, py); else c.moveTo(px, py); });
+  if (close) c.closePath();
+}
+function renderMap() {
+  const c = mctx, W = mapCanvas.width, H = mapCanvas.height, d = dprNow();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, W, H);
+  const empty = $('mapEmpty');
+  if (!M.grid || !M.view) {
+    empty.hidden = false;
+    empty.innerHTML = M.state && M.state.feed === null ? 'The map needs the <code>feed_mission</code> package.'
+      : 'No map yet. Start <code>navigation.launch.py</code>.';
+    return;
+  }
+  empty.hidden = true;
+  const st = M.state || {};
+  const pose = st.pose;
+  if (M.follow && pose) { M.view.cx = pose.x; M.view.cy = pose.y; }
+  const s = M.view.s, g = M.grid;
+
+  // map
+  c.imageSmoothingEnabled = false;
+  const [mx, my] = toScreen(g.origin[0], g.origin[1] + g.height * g.resolution);
+  c.drawImage(g.img, mx, my, g.width * g.resolution * s, g.height * g.resolution * s);
+
+  // 0.5 m grid
+  c.strokeStyle = COL.grid;
+  c.lineWidth = 1;
+  const [x0, y1] = toWorld(0, 0), [x1, y0] = toWorld(W, H);
+  c.beginPath();
+  for (let x = Math.ceil(x0 / 0.5) * 0.5; x < x1; x += 0.5) { const [px] = toScreen(x, 0); c.moveTo(px, 0); c.lineTo(px, H); }
+  for (let y = Math.ceil(y0 / 0.5) * 0.5; y < y1; y += 0.5) { const [, py] = toScreen(0, y); c.moveTo(0, py); c.lineTo(W, py); }
+  c.stroke();
+
+  // cow box
+  const box = curBox();
+  if (box) {
+    path(c, boxCorners(box), true);
+    c.fillStyle = 'rgba(244,183,64,0.13)';
+    c.fill();
+    c.setLineDash(M.dragBox ? [6 * d, 4 * d] : []);
+    c.strokeStyle = COL.box;
+    c.lineWidth = 2 * d;
+    c.stroke();
+    c.setLineDash([]);
+  }
+
+  // lap plan
+  const plan = M.plan;
+  const prog = st.feed && st.feed.progress;
+  const running = prog && ['approach', 'turn', 'straight', 'blocked'].includes(prog.state);
+  if (plan && box) {
+    const bad = new Set((plan.problems || []).filter((p) => p.kind === 'side').map((p) => p.index));
+    plan.sides.forEach((sd, i) => {
+      const current = running && prog.side === i;
+      path(c, [sd.from, sd.to]);
+      c.strokeStyle = bad.has(i) ? COL.bad : COL.lap;
+      c.globalAlpha = current ? 1 : 0.55;
+      c.lineWidth = (current ? 3.5 : 2) * d;
+      c.setLineDash(current ? [] : [7 * d, 6 * d]);
+      c.stroke();
+      c.setLineDash([]);
+      c.globalAlpha = 1;
+      // direction chevron in the middle of the side
+      const mxw = (sd.from[0] + sd.to[0]) / 2, myw = (sd.from[1] + sd.to[1]) / 2;
+      const [px, py] = toScreen(mxw, myw), [qx, qy] = toScreen(sd.to[0], sd.to[1]);
+      const ang = Math.atan2(qy - py, qx - px), k = 7 * d;
+      c.beginPath();
+      c.moveTo(px - k * Math.cos(ang - 0.6), py - k * Math.sin(ang - 0.6));
+      c.lineTo(px, py);
+      c.lineTo(px - k * Math.cos(ang + 0.6), py - k * Math.sin(ang + 0.6));
+      c.strokeStyle = COL.lap;
+      c.lineWidth = 2 * d;
+      c.stroke();
+      if (sd.door) {
+        path(c, sd.door);
+        c.strokeStyle = COL.door;
+        c.lineCap = 'round';
+        c.lineWidth = 7 * d;
+        c.globalAlpha = feedSettings().dry_run ? 0.35 : 0.9;
+        c.stroke();
+        c.globalAlpha = 1;
+        c.lineCap = 'butt';
+      }
+    });
+    const badCorners = new Set((plan.problems || []).filter((p) => p.kind === 'corner').map((p) => p.index));
+    plan.corners.forEach(([x, y], i) => {
+      const [px, py] = toScreen(x, y);
+      c.beginPath();
+      c.arc(px, py, 4 * d, 0, Math.PI * 2);
+      c.fillStyle = badCorners.has(i) ? COL.bad : COL.lap;
+      c.fill();
+    });
+  }
+
+  // taught poses
+  const poses = st.poses || {};
+  for (const [key, p] of Object.entries(poses)) {
+    const [px, py] = toScreen(p.x, p.y);
+    const isSilo = key.startsWith('silo');
+    c.beginPath();
+    c.arc(px, py, 9 * d, 0, Math.PI * 2);
+    c.fillStyle = isSilo ? 'rgba(244,183,64,0.9)' : 'rgba(155,231,255,0.9)';
+    c.fill();
+    c.fillStyle = '#10161a';
+    c.font = `700 ${10 * d}px system-ui, sans-serif`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText(isSilo ? key.slice(4) : 'S', px, py + 0.5 * d);
+  }
+
+  // lidar
+  c.fillStyle = COL.scan;
+  const r = Math.max(1.2, 1.6 * d);
+  for (const [x, y] of M.scan) {
+    const [px, py] = toScreen(x, y);
+    c.fillRect(px - r / 2, py - r / 2, r, r);
+  }
+
+  // robot
+  if (pose) {
+    const cs = Math.cos(pose.yaw), sn = Math.sin(pose.yaw);
+    const at = (lx, ly) => [pose.x + lx * cs - ly * sn, pose.y + lx * sn + ly * cs];
+    c.save();
+    c.shadowColor = 'rgba(61,214,181,0.55)';
+    c.shadowBlur = 14 * d;
+    path(c, [at(ROBOT.hl, ROBOT.hw), at(ROBOT.hl, -ROBOT.hw), at(-ROBOT.hl, -ROBOT.hw), at(-ROBOT.hl, ROBOT.hw)], true);
+    c.fillStyle = 'rgba(61,214,181,0.20)';
+    c.fill();
+    c.restore();
+    c.strokeStyle = COL.robot;
+    c.lineWidth = 2 * d;
+    c.stroke();
+    // heading
+    path(c, [at(ROBOT.hl - 0.02, 0.09), at(ROBOT.hl + 0.07, 0), at(ROBOT.hl - 0.02, -0.09)], true);
+    c.fillStyle = COL.robot;
+    c.fill();
+    // the door, on the right side
+    const dx = feedSettings().door_x;
+    path(c, [at(dx - 0.11, -ROBOT.hw), at(dx + 0.11, -ROBOT.hw)]);
+    const open = prog && prog.door, planned = prog && prog.door_planned;
+    c.strokeStyle = open ? COL.door : planned ? 'rgba(244,183,64,0.55)' : 'rgba(234,242,244,0.55)';
+    c.lineCap = 'round';
+    c.lineWidth = (open ? 6 : 4) * d;
+    c.stroke();
+    c.lineCap = 'butt';
+  }
+
+  // scale bar
+  const meters = [0.25, 0.5, 1, 2].find((m) => m * s >= 60 * d) || 2;
+  $('mapScale').textContent = `▬ ${meters < 1 ? `${meters * 100} cm` : `${meters} m`}`;
+}
+
+// pan, zoom, pinch, drag the box
+mapCanvas.addEventListener('wheel', (e) => {
+  if (!M.view) return;
+  e.preventDefault();
+  const d = dprNow(), px = e.offsetX * d, py = e.offsetY * d;
+  const [wx, wy] = toWorld(px, py);
+  M.view.s = Math.max(20, Math.min(2000, M.view.s * Math.exp(-e.deltaY * 0.0015)));
+  M.touched = true;
+  const [nx, ny] = toWorld(px, py);
+  M.view.cx += wx - nx;
+  M.view.cy += wy - ny;
+  drawMap();
+}, {passive: false});
+mapCanvas.addEventListener('pointerdown', (e) => {
+  if (!M.view) return;
+  mapCanvas.setPointerCapture(e.pointerId);
+  const d = dprNow();
+  M.pointers.set(e.pointerId, [e.offsetX * d, e.offsetY * d]);
+  if (M.pointers.size === 2) { M.drag = {type: 'pinch'}; return; }
+  const [wx, wy] = toWorld(e.offsetX * d, e.offsetY * d);
+  const box = curBox();
+  if (M.edit && haveControl && box && insideBox(box, wx, wy)) {
+    M.drag = {type: 'box', start: [wx, wy], box0: {...box}};
+  } else {
+    M.drag = {type: 'pan', last: [e.offsetX * d, e.offsetY * d]};
+    mapCanvas.classList.add('dragging');
+  }
+});
+mapCanvas.addEventListener('pointermove', (e) => {
+  if (!M.drag || !M.pointers.has(e.pointerId)) return;
+  const d = dprNow(), p = [e.offsetX * d, e.offsetY * d];
+  const prev = M.pointers.get(e.pointerId);
+  M.pointers.set(e.pointerId, p);
+  if (M.drag.type === 'pinch' && M.pointers.size === 2) {
+    const [a, b] = [...M.pointers.values()];
+    const other = a === p ? b : a;
+    const before = Math.hypot(prev[0] - other[0], prev[1] - other[1]);
+    const after = Math.hypot(p[0] - other[0], p[1] - other[1]);
+    if (before > 0) M.view.s = Math.max(20, Math.min(2000, M.view.s * after / before));
+    M.touched = true;
+  } else if (M.drag.type === 'pan') {
+    M.view.cx -= (p[0] - M.drag.last[0]) / M.view.s;
+    M.view.cy += (p[1] - M.drag.last[1]) / M.view.s;
+    M.drag.last = p;
+    M.touched = true;
+    if (M.follow) { M.follow = false; markFollow(); }
+  } else if (M.drag.type === 'box') {
+    const [wx, wy] = toWorld(p[0], p[1]);
+    M.dragBox = {...M.drag.box0, cx: M.drag.box0.cx + wx - M.drag.start[0], cy: M.drag.box0.cy + wy - M.drag.start[1]};
+    schedulePlan();
+  }
+  drawMap();
+});
+async function endDrag(e) {
+  M.pointers.delete(e.pointerId);
+  mapCanvas.classList.remove('dragging');
+  const drag = M.drag;
+  M.drag = M.pointers.size ? M.drag : null;
+  if (drag && drag.type === 'box' && M.dragBox) {
+    const b = M.dragBox;
+    await putBox(b);
+    M.dragBox = null;
+  }
+}
+mapCanvas.addEventListener('pointerup', endDrag);
+mapCanvas.addEventListener('pointercancel', endDrag);
+mapCanvas.addEventListener('dblclick', fitMap);
+
+// ---- feed tab ----
+const FEED_SLIDERS = [
+  ['door_open', 'fdDoor', (v) => `${Math.round(v * 100)}% open`],
+  ['gap', 'fdGap', (v) => `${Math.round(v * 100)} cm`],
+  ['end_gap', 'fdEnd', (v) => `${Math.round(v * 100)} cm`],
+  ['speed', 'fdSpeed', (v) => `${v.toFixed(2)} m/s`],
+  ['door_margin', 'fdMargin', (v) => `${Math.round(v * 100)} cm`],
+  ['door_x', 'fdDoorX', (v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)} cm`],
+];
+let feedFace = 'long';
+let feedLoaded = false;
+function feedSettings() {
+  const out = {feed: feedFace, laps: Math.max(1, parseInt($('fdLaps').value, 10) || 1),
+    dry_run: $('fdDry').getAttribute('aria-pressed') === 'true'};
+  for (const [k, id] of FEED_SLIDERS) out[k] = parseFloat($(id).value);
+  return out;
+}
+function showFeedSettings() {
+  for (const [, id, fmt] of FEED_SLIDERS) { $(`${id}Val`).textContent = fmt(parseFloat($(id).value)); paintRange($(id)); }
+  $('fdFaces').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.face === feedFace)));
+  const dry = $('fdDry').getAttribute('aria-pressed') === 'true';
+  $('fdDry').textContent = dry ? 'Dry run: door stays closed' : 'Real run: door opens';
+  $('fdDry').className = dry ? '' : 'quiet';
+}
+function applySavedSettings(st) {
+  if (feedLoaded || !st || !st.settings || !Object.keys(st.settings).length) return;
+  feedLoaded = true;
+  const v = st.settings;
+  for (const [k, id] of FEED_SLIDERS) if (typeof v[k] === 'number') $(id).value = v[k];
+  if (v.feed) feedFace = v.feed;
+  if (v.laps) $('fdLaps').value = v.laps;
+  // A run starts as a dry run until you switch it, whatever was used last time.
+  showFeedSettings();
+  schedulePlan();
+}
+for (const [, id] of FEED_SLIDERS) $(id).addEventListener('input', () => { showFeedSettings(); schedulePlan(); });
+$('fdFaces').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+  feedFace = b.dataset.face; showFeedSettings(); schedulePlan();
+}));
+$('fdDry').addEventListener('click', () => {
+  const b = $('fdDry');
+  b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+  showFeedSettings();
+  drawMap();
+});
+showFeedSettings();
+
+let planTimer = null;
+function schedulePlan() {
+  clearTimeout(planTimer);
+  planTimer = setTimeout(fetchPlan, 150);
+}
+async function fetchPlan() {
+  const box = curBox();
+  if (!box) { M.plan = null; showPlan(); drawMap(); return; }
+  try {
+    const res = await fetch('/api/feed/plan', {method: 'POST', headers: HEADERS, body: JSON.stringify(feedSettings())});
+    M.plan = res.ok ? await res.json() : null;
+    if (M.plan && M.dragBox) {
+      // while dragging, shift the saved plan with the box for a live preview
+      const saved = M.state.feed.box, dx = M.dragBox.cx - saved.cx, dy = M.dragBox.cy - saved.cy;
+      const mv = ([x, y]) => [x + dx, y + dy];
+      M.plan.corners = M.plan.corners.map(mv);
+      M.plan.sides.forEach((sd) => { sd.from = mv(sd.from); sd.to = mv(sd.to); if (sd.door) sd.door = sd.door.map(mv); });
+      M.plan.problems = [];
+    }
+  } catch (e) { M.plan = null; }
+  showPlan();
+  drawMap();
+}
+function showPlan() {
+  const p = M.plan, s = feedSettings();
+  if (!p) {
+    $('fdPlan').innerHTML = '';
+    $('fdWarn').innerHTML = curBox() ? '' : '<li>Measure the cow box first: Detect from map.</li>';
+    return;
+  }
+  const lapS = p.lap_length / s.speed + 4 * 3;  // about 3 s per turn
+  const fed = p.sides.filter((sd) => sd.door).length;
+  $('fdPlan').innerHTML = `
+    <span class="stat">Lap <b>${p.lap_length.toFixed(1)} m</b></span>
+    <span class="stat amber">Door open <b>${p.door_length.toFixed(2)} m</b> per lap, ${fed} side${fed === 1 ? '' : 's'}</span>
+    <span class="stat">About <b>${Math.round(lapS)} s</b> per lap</span>`;
+  const notes = [...(p.warnings || []), ...(p.problems || []).map((q) => q.text)];
+  $('fdWarn').innerHTML = notes.map((n) => `<li>${n}</li>`).join('');
+}
+
+async function putBox(b) {
+  try {
+    const res = await fetch('/api/box', {method: 'PUT', headers: HEADERS, body: JSON.stringify(
+      {cx: b.cx, cy: b.cy, yaw: b.yaw, length: b.length, width: b.width})});
+    if (res.status === 403) throw new Error('View only: another device is in control');
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    if (M.state && M.state.feed) M.state.feed.box = {...b};
+    schedulePlan();
+    poll();
+  } catch (e) { toast(String(e.message || e), true); }
+}
+$('fdDetect').addEventListener('click', async () => { await action('/api/box/detect'); await poll(); schedulePlan(); });
+$('fdSnap').addEventListener('click', async () => {
+  const b = $('fdSnap');
+  b.disabled = true;
+  try { await action('/api/box/snap'); await poll(); schedulePlan(); } finally { b.disabled = false; }
+});
+function editSize() {
+  const b = curBox();
+  if (!b) return;
+  const L = parseFloat($('fdLen').value) / 100, W = parseFloat($('fdWid').value) / 100;
+  if (!(L > 0.05 && W > 0.05)) return;
+  putBox({...b, length: Math.max(L, W), width: Math.min(L, W)});
+}
+$('fdLen').addEventListener('change', editSize);
+$('fdWid').addEventListener('change', editSize);
+const rotate = (deg) => { const b = curBox(); if (b) putBox({...b, yaw: b.yaw + deg * Math.PI / 180}); };
+$('fdRotL').addEventListener('click', () => rotate(1));
+$('fdRotR').addEventListener('click', () => rotate(-1));
+
+$('fdStart').addEventListener('click', () => {
+  const s = feedSettings();
+  if (!s.dry_run && !confirm(`Real run: the door opens to ${Math.round(s.door_open * 100)}% beside the box. Start?`)) return;
+  action('/api/lap/start', s);
+});
+$('fdStop').addEventListener('click', () => action('/api/lap/stop'));
+
+const RUN_TEXT = {idle: 'Ready', done: 'Laps done', approach: 'Driving to the first corner'};
+function showFeed(s) {
+  const f = s.feed;
+  M.state = s;
+  if (!f) {
+    $('fdRunText').textContent = 'Feed needs the feed_mission package';
+    return;
+  }
+  applySavedSettings(f);
+  refreshMapData();
+  // box
+  const b = f.box;
+  const boxKey = b ? `${b.cx},${b.cy},${b.yaw},${b.length},${b.width}` : '';
+  if (boxKey !== showFeed.boxKey) { showFeed.boxKey = boxKey; schedulePlan(); }
+  $('fdBoxInfo').textContent = b
+    ? `${Math.round(b.length * 100)} × ${Math.round(b.width * 100)} cm, ${Math.round(b.yaw * 180 / Math.PI)}°` : 'Not measured yet';
+  if (b && document.activeElement !== $('fdLen')) $('fdLen').value = Math.round(b.length * 100);
+  if (b && document.activeElement !== $('fdWid')) $('fdWid').value = Math.round(b.width * 100);
+  // run
+  const p = f.progress;
+  const running = !!p && ['approach', 'turn', 'straight', 'blocked'].includes(p.state);
+  const bad = !!p && (p.state === 'failed' || p.state === 'blocked');
+  const text = !p ? 'Lap driver not running: ros2 launch feed_mission mission.launch.py'
+    : running && p.lap ? `Lap ${p.lap} of ${p.laps}${p.dry_run ? ' (dry run)' : ''}` : (RUN_TEXT[p.state] || p.text);
+  $('fdRunText').textContent = text;
+  let sub = running ? p.text : (p && p.state === 'failed' ? p.text : '');
+  if (running && f.run_start_kg !== null && f.run_start_kg !== undefined && s.weight !== null) {
+    sub += ` · ${(f.run_start_kg - s.weight).toFixed(2)} kg out so far`;
+  }
+  $('fdRunSub').textContent = sub;
+  $('fdRunbar').classList.toggle('run', running && !bad);
+  $('fdRunbar').classList.toggle('bad', bad);
+  $('fdRunDot').className = `dot ${running && !bad ? 'on' : bad ? '' : 'idle'}`;
+  $('fdStart').className = running ? 'running' : 'primary';
+  $('feedBadge').hidden = !running;
+  showRuns(f.runs || []);
+  drawMap();
+}
+function showRuns(runs) {
+  const key = JSON.stringify(runs);
+  if (key === showRuns.key) return;
+  showRuns.key = key;
+  if (!runs.length) return;
+  const kg = (v) => (v === null || v === undefined ? '—' : v.toFixed(2));
+  $('fdRuns').innerHTML = `<table class="runs"><thead><tr>
+      <th>When</th><th>Door</th><th>Speed</th><th>Laps</th><th>Out, kg</th><th>kg/m</th></tr></thead><tbody>
+    ${runs.map((r) => `<tr class="${r.dry_run ? 'dry' : ''} ${r.result !== 'done' ? 'bad' : ''}">
+      <td>${(r.time || '').slice(11, 16)}${r.dry_run ? '<span class="tag">dry</span>' : ''}${r.result !== 'done' ? `<span class="tag">${r.result}</span>` : ''}</td>
+      <td>${Math.round(r.door_open * 100)}%</td><td>${r.speed.toFixed(2)}</td><td>${r.laps}</td>
+      <td>${kg(r.dispensed_kg)}</td><td>${r.kg_per_m === null || r.kg_per_m === undefined ? '—' : r.kg_per_m.toFixed(3)}</td></tr>`).join('')}
+    </tbody></table>`;
 }
 
 // ---- cameras ----
@@ -1084,7 +1725,7 @@ function showLap(st) {
 let camsOn = store.get('camsOn') !== 'false';
 let cams = [];
 let big = Math.max(0, parseInt(store.get('bigCam') || '0', 10) || 0);
-const streaming = () => camsOn && !document.hidden && !(phone.matches && view !== 'drive');
+const streaming = () => camsOn && !document.hidden && stageMode !== 'map' && !(phone.matches && view !== 'drive');
 function streamInto(img, n) {
   const want = streaming() && n !== null && n < cams.length ? `/api/camera/${n}.mjpg` : null;
   if (img.dataset.stream === String(want)) return;
@@ -1101,21 +1742,27 @@ for (const img of [$('camMain'), $('camPip')]) {
   });
 }
 function buildCamPick() {
-  $('camPick').innerHTML = cams.map((c, i) =>
-    `<button data-cam="${i}" aria-pressed="${i === big}">Camera ${i + 1}</button>`).join('');
+  $('camPick').innerHTML = cams.map((c, i) => `<button data-cam="${i}">Camera ${i + 1}</button>`).join('')
+    + '<button data-cam="map">Map</button>';
   $('camPick').querySelectorAll('button').forEach((b) =>
-    b.addEventListener('click', () => setBig(+b.dataset.cam)));
+    b.addEventListener('click', () => (b.dataset.cam === 'map' ? setStage('map') : setBig(+b.dataset.cam))));
+  markCamPick();
+}
+function markCamPick() {
+  $('camPick').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(
+    b.dataset.cam === 'map' ? stageMode === 'map' : stageMode !== 'map' && +b.dataset.cam === big)));
 }
 function setBig(n) {
   big = n;
   store.set('bigCam', String(n));
-  $('camPick').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.cam === n)));
+  if (stageMode === 'map') { setStage('cam'); return; }
+  markCamPick();
   applyCams();
 }
 const other = () => (cams.length > 1 ? (big + 1) % cams.length : null);
 $('pip').addEventListener('click', () => { if (other() !== null) setBig(other()); });
 $('camToggle').addEventListener('click', () => { camsOn = !camsOn; store.set('camsOn', String(camsOn)); applyCams(); });
-document.addEventListener('visibilitychange', applyCams);
+document.addEventListener('visibilitychange', () => { applyCams(); placeMap(); });
 
 function camText(c) {
   if (!c) return '';
@@ -1128,7 +1775,7 @@ function applyCams() {
   const o = other();
   streamInto($('camMain'), big);
   streamInto($('camPip'), o);
-  $('pip').hidden = o === null || !camsOn;
+  $('pip').hidden = o === null || !camsOn || stageMode === 'map';
   $('camMainName').textContent = `Camera ${big + 1}`;
   $('camMain').alt = `Camera ${big + 1}, live view`;
   if (o !== null) { $('camPipName').textContent = `Camera ${o + 1}`; $('camPip').alt = `Camera ${o + 1}`; }
@@ -1283,7 +1930,7 @@ async function poll() {
     showExplorer(s.explorer);
     showHazards(s.hazards);
     showPoses(s);
-    showLap(s.lap);
+    showFeed(s);
     const fresh = s.weight !== null && s.weight_age_s < 2;
     $('weight').textContent = s.weight === null ? '—' : s.weight.toFixed(3);
     $('weightBox').style.opacity = fresh ? 1 : 0.45;

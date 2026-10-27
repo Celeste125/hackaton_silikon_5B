@@ -35,10 +35,27 @@ def test_unknown_name_is_refused(tmp_path):
         poses.save_pose('silo4', 0, 0, 0, path=tmp_path / 'p.yaml')
 
 
-def test_lap_corners_need_all_four_in_order(tmp_path):
+def test_box_feed_settings_and_poses_live_side_by_side(tmp_path):
     f = tmp_path / 'p.yaml'
-    for i, c in enumerate(poses.LAP_CORNERS[:3]):
-        poses.save_pose(c, i, 0, 0, path=f)
-    assert poses.lap_corners(poses.load(f)) is None
-    poses.save_pose('lap4', 3, 0, 0, path=f)
-    assert poses.lap_corners(poses.load(f)) == [(0, 0), (1, 0), (2, 0), (3, 0)]
+    poses.save_pose('silo1', 1, 2, 0, path=f)
+    poses.save_box({'cx': 0.5, 'cy': -0.4, 'yaw': 1.2, 'length': 1.0, 'width': 0.5}, path=f)
+    poses.save_feed({'gap': 0.1, 'door_open': 0.2}, path=f)
+    poses.save_pose('start', 0, 0, 0, path=f)  # rewriting a pose keeps the rest
+    assert set(poses.load(f)) == {'silo1', 'start'}
+    box = poses.load_box(f)
+    assert (box['cx'], box['length']) == (0.5, 1.0) and box['saved']
+    assert poses.load_feed(f) == {'gap': 0.1, 'door_open': 0.2}
+
+
+def test_no_box_yet(tmp_path):
+    assert poses.load_box(tmp_path / 'p.yaml') is None
+    assert poses.load_feed(tmp_path / 'p.yaml') == {}
+
+
+def test_runs_are_appended_next_to_the_poses_file(tmp_path):
+    f = tmp_path / 'p.yaml'
+    poses.add_run({'door_open': 0.2, 'dispensed_kg': 0.31}, path=f)
+    runs = poses.add_run({'door_open': 0.3, 'dispensed_kg': 0.52}, path=f)
+    assert [r['door_open'] for r in runs] == [0.2, 0.3]
+    assert poses.load_runs(f) == runs and runs[0]['time']
+    assert (tmp_path / 'feed_runs.yaml').exists()

@@ -15,8 +15,9 @@ It is only a front end for topics of other nodes, mostly esp_driver_node:
   /Team2/battery_state (battery), /Team2/hazard_detection (bump, cliff, stall;
   needs irobot_create_msgs), /frontier_explorer/status (mapping progress).
   Setup tab: the robot's pose (TF map -> base_link) is saved under a name
-  (silo1..3, start, lap1..4) in the feed_mission poses file. Laps:
-  /lap/start, /lap/stop, /lap/status and the parameters of /lap_driver.
+  (silo1..3, start) in the feed_mission poses file; /relocalize.
+  Feed tab and map view (feed.py): /map, /scan, the cow box, the lap plan,
+  /lap/start, /lap/stop, /lap/status, /lap/progress, /lap_driver parameters.
 
 Needs: pip install fastapi uvicorn
 
@@ -44,8 +45,6 @@ from pydantic import BaseModel, Field
 from rclpy.executors import ExternalShutdownException
 from rclpy.time import Time
 from geometry_msgs.msg import Twist
-from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
-from rcl_interfaces.srv import SetParameters
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, CompressedImage
@@ -55,10 +54,11 @@ from tf2_ros import Buffer, TransformException, TransformListener
 
 from web_panel.control_lease import ControlLease
 
-try:  # taught poses and laps need feed_mission; the rest works without it
+try:  # taught poses, the map view and laps need feed_mission; the rest works without it
     from feed_mission import poses as pose_store
+    from web_panel import feed as feed_mod
 except ImportError:
-    pose_store = None
+    pose_store = feed_mod = None
 
 try:  # Create 3 hazards are optional: without the messages they are not shown
     from irobot_create_msgs.msg import HazardDetection, HazardDetectionVector
@@ -150,7 +150,6 @@ class WebControlNode(Node):
         self.tf_listener = TransformListener(self.tf, self)
         self.lap_status = None
         self.create_subscription(String, 'lap/status', self._on_lap_status, latched)
-        self.lap_params = self.create_client(SetParameters, '/lap_driver/set_parameters')
 
         self.lease = ControlLease(CONTROL_TIMEOUT_S)
         self.lock = threading.Lock()
@@ -169,6 +168,14 @@ class WebControlNode(Node):
         self.create_timer(1.0 / PUBLISH_HZ, self._publish_shake)
         self.create_timer(0.1, self._check_dose)
         self.create_timer(0.1, self._publish_drive)
+        self.feed = feed_mod.Feed(self, self.tf, self.poses_file, self.current_weight) \
+            if feed_mod else None
+
+    def current_weight(self):
+        """kg, or None without a fresh reading."""
+        with self.lock:
+            fresh = time.monotonic() - self.last_weight_t < WEIGHT_MAX_AGE_S
+            return self.weight if fresh else None
 
     def _on_weight(self, msg):
         with self.lock:
@@ -228,24 +235,6 @@ class WebControlNode(Node):
         except Exception as e:  # a broken file must not take the panel down
             self.get_logger().warn(f'cannot read {self.poses_file}: {e}', throttle_duration_sec=30.0)
             return {}
-
-    def set_lap_params(self, laps, door_sides):
-        if not self.lap_params.wait_for_service(timeout_sec=1.0):
-            return False, 'lap_driver is not running: ros2 launch feed_mission mission.launch.py'
-        req = SetParameters.Request()
-        req.parameters = [
-            Parameter(name='laps', value=ParameterValue(
-                type=ParameterType.PARAMETER_INTEGER, integer_value=int(laps))),
-            Parameter(name='door_sides', value=ParameterValue(
-                type=ParameterType.PARAMETER_STRING, string_value=door_sides)),
-        ]
-        done = threading.Event()
-        future = self.lap_params.call_async(req)
-        future.add_done_callback(lambda _: done.set())
-        if not done.wait(SERVICE_TIMEOUT_S):
-            return False, 'lap_driver did not answer'
-        bad = [r.reason for r in future.result().results if not r.successful]
-        return (False, '; '.join(bad)) if bad else (True, '')
 
     def _on_explorer_status(self, msg):
         with self.lock:
@@ -458,6 +447,7 @@ class WebControlNode(Node):
         # Outside the lock: TF and the poses file have their own.
         state['pose'] = self.robot_pose()
         state['poses'] = self.saved_poses()
+        state['feed'] = self.feed.state() if self.feed else None
         return state
 
 
@@ -491,12 +481,6 @@ class ValveBody(BaseModel):
 class DoseBody(BaseModel):
     target_kg: float = Field(..., gt=0.0, le=50.0, description='weight to add')
     percent: float = Field(100.0, gt=0.0, le=100.0)
-
-
-class LapBody(BaseModel):
-    laps: int = Field(1, ge=1, le=50)
-    door_sides: str = Field('none', pattern='^(none|long|all)$',
-                            description='door open on no sides, the two long sides, or all')
 
 
 class ClaimBody(BaseModel):
@@ -683,19 +667,9 @@ def create_app(ros):
         pose_store.clear_pose(name, path=ros.poses_file)
         return {'ok': True, 'message': f'Cleared {name}'}
 
-    @app.post('/api/lap/start', dependencies=[Depends(require_control)])
-    def lap_start(body: LapBody):
-        ok, msg = ros.set_lap_params(body.laps, body.door_sides)
-        if not ok:
-            return {'ok': False, 'message': msg}
-        ok, msg = ros.call('lap/start')
-        return {'ok': ok, 'message': msg}
-
-    @app.post('/api/lap/stop')
-    def lap_stop(request: Request):
-        client_id(request)  # stopping is always safe, so any device may do it
-        ok, msg = ros.call('lap/stop')
-        return {'ok': ok, 'message': msg}
+    if ros.feed is not None:
+        feed_mod.add_routes(app, ros, ros.feed, require_control, client_id, Depends,
+                            HTTPException, Request)
 
     @app.post('/api/tare', dependencies=[Depends(require_control)])
     def tare():
