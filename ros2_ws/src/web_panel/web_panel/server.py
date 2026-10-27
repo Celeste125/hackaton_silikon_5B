@@ -46,7 +46,8 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
-from rclpy.executors import ExternalShutdownException
+from rcl_interfaces.msg import ParameterDescriptor
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.time import Time
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
@@ -133,10 +134,15 @@ class WebControlNode(Node):
         # by the ROS thread, read by the web streams; a tuple swap is atomic.
         self.declare_parameter('camera_topics', CAMERA_TOPICS)
         self.camera_topics = list(self.get_parameter('camera_topics').value)
-        self.declare_parameter('camera_devices', [''])
+        # 'dev0,dev1' (as bringup passes it) or a list; empty: no direct cameras
+        self.declare_parameter('camera_devices', '',
+                               ParameterDescriptor(dynamic_typing=True))
         self.declare_parameter('camera_width', 640)
         self.declare_parameter('camera_height', 480)
-        devices = [d for d in self.get_parameter('camera_devices').value if d]
+        devices = self.get_parameter('camera_devices').value or []
+        if isinstance(devices, str):
+            devices = devices.split(',')
+        devices = [d.strip() for d in devices if d.strip()]
         self.camera_frames = [None] * len(self.camera_topics)
         self.direct_cameras = []
         if devices:
@@ -799,7 +805,9 @@ def main(args=None):
     host = node.get_parameter('host').value
     port = int(node.get_parameter('port').value)
 
-    spinner = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    spinner = threading.Thread(target=executor.spin, daemon=True)
     spinner.start()
     node.get_logger().info(f'Web control on http://{host}:{port}')
     try:
@@ -807,11 +815,17 @@ def main(args=None):
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
+        for cam in node.direct_cameras:  # before the node goes: they publish on it
+            cam.stop()
         node.set_motors([0.0] * node.num_motors)
         node._publish_motors()
         node._publish_shake()
         node.set_drive(0.0, 0.0)
         node._publish_drive()
+        # Stop the spinner before Python exits: killed inside rclpy at exit,
+        # the thread aborts the whole process ('terminate called ...').
+        executor.shutdown(timeout_sec=2.0)
+        spinner.join(timeout=2.0)
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

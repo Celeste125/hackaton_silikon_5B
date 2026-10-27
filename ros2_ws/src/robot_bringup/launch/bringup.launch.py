@@ -82,7 +82,9 @@ def generate_launch_description():
             **web_panel,
             parameters=[{
                 'cmd_vel_topic': LaunchConfiguration('cmd_vel_topic'),
-                'camera_devices': [LaunchConfiguration('camera0_device'),
+                # one string, 'dev0,dev1': a list of substitutions would be
+                # joined into one string without the comma
+                'camera_devices': [LaunchConfiguration('camera0_device'), ',',
                                    LaunchConfiguration('camera1_device')],
             }],
             condition=when(direct),

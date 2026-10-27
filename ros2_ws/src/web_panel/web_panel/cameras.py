@@ -14,6 +14,7 @@ cannot do MJPG at all has its frames encoded here, at most FPS_MAX a second.
 A camera that is unplugged or busy is retried every couple of seconds.
 """
 
+import os
 import threading
 import time
 
@@ -74,7 +75,7 @@ class DirectCamera:
         self.device, self.on_frame = device, on_frame
         self.width, self.height, self.quality = width, height, quality
         self.log = log or (lambda msg: None)
-        self.stopping = False
+        self.stopping = threading.Event()
         self.thread = threading.Thread(target=self._run, name=f'camera {device}', daemon=True)
 
     def start(self):
@@ -83,10 +84,15 @@ class DirectCamera:
             return
         self.thread.start()
 
-    def stop(self):
-        self.stopping = True
+    def stop(self, timeout=1.0):
+        """Stop and wait for the thread: it must not call on_frame after this."""
+        self.stopping.set()
+        if self.thread.is_alive():
+            self.thread.join(timeout)
 
     def _open(self, raw_jpeg):
+        if not os.path.exists(self.device):  # unplugged; OpenCV would warn every retry
+            return None
         cap = cv2.VideoCapture(self.device, cv2.CAP_V4L2)
         if not cap.isOpened():
             return None
@@ -105,19 +111,19 @@ class DirectCamera:
     def _run(self):
         raw_jpeg = True   # until the camera shows it cannot do MJPG
         warned = False
-        while not self.stopping:
+        while not self.stopping.is_set():
             cap = self._open(raw_jpeg)
             if cap is None:
                 if not warned:
                     self.log(f'{self.device}: cannot open (unplugged, or used by another program?); retrying')
                     warned = True
-                time.sleep(RETRY_S)
+                self.stopping.wait(RETRY_S)
                 continue
             if warned:
                 self.log(f'{self.device}: open')
                 warned = False
             last = 0.0
-            while not self.stopping:
+            while not self.stopping.is_set():
                 ok, frame = cap.read()
                 if not ok:
                     self.log(f'{self.device}: no frame, reopening')
@@ -136,7 +142,7 @@ class DirectCamera:
                         jpeg = with_huffman_tables(jpeg)
                 else:
                     jpeg = self._encode(frame)
-                if jpeg:
+                if jpeg and not self.stopping.is_set():
                     self.on_frame(jpeg)
             cap.release()
-            time.sleep(0.5)
+            self.stopping.wait(0.5)
