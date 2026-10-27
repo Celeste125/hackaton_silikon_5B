@@ -7,8 +7,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from feed_mission.lap_driver import (  # noqa: E402
-    blocked_ahead, line_offset, rejoin_decision, side_contact, straight_command, turn_blocked,
-    turn_command, wrap,
+    blocked_ahead, door_zone, line_offset, outside, rejoin_decision, side_contact, straight_command,
+    turn_blocked, turn_command, wrap,
 )
 
 DT = 0.05
@@ -94,3 +94,17 @@ def test_side_contact_only_right_beside_the_body():
     assert not side_contact(np.array([[0.0, -0.245]]), hl, hw)    # inside the body: its own door
     assert not side_contact(np.array([[0.0, -0.32]]), hl, hw)     # 6 cm away
     assert not side_contact(np.array([[0.30, -0.265]]), hl, hw)   # ahead of the corner, not beside
+
+
+def test_open_door_is_not_something_touching_the_side():
+    # bag 2026-10-27: the open door showed at x -0.06..+0.03, y -0.26..-0.27
+    hl, hw = 0.17, 0.26
+    door = np.array([[-0.054, -0.261], [-0.003, -0.262], [0.028, -0.270]])
+    assert side_contact(door, hl, hw)
+    zone = door_zone(0.0, hw)
+    assert not side_contact(outside(door, zone), hl, hw)
+    assert not turn_blocked(outside(door, zone), hl, hw)
+    # still seen: the left side, the right side past the door, and the box further out
+    others = np.array([[0.0, 0.265], [0.15, -0.265], [0.0, -0.40]])
+    assert len(outside(others, zone)) == 3
+    assert side_contact(outside(np.vstack([door, others[:1]]), zone), hl, hw)

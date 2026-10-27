@@ -46,7 +46,7 @@ class FeedSettings(BaseModel):
     feed: str = Field('long', pattern='^(long|all|none)$')
     gap: float = Field(0.10, ge=0.0, le=0.6, description='m, robot side to a fed face')
     end_gap: float = Field(0.15, ge=0.0, le=0.8, description='m, to the other faces')
-    door_open: float = Field(0.2, ge=0.0, le=1.0, description='door opening, 0..1')
+    door_open: float = Field(0.3, ge=0.0, le=1.0, description='door opening, 0..1')
     door_margin: float = Field(0.05, ge=0.0, le=0.5)
     door_x: float = Field(0.0, ge=-0.3, le=0.3, description='m, door ahead of the centre')
     speed: float = Field(0.15, ge=0.03, le=0.3)

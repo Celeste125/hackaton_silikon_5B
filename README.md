@@ -229,7 +229,10 @@ box instead of from taught corners:
    faces. The corners fall past the ends of the box, so the robot's own
    corners (0.31 m from its centre) clear the box when it turns on the spot.
    Red on the map: the saved map shows a wall in the way there.
-3. **Door.** It opens by *Door opening* (part open, e.g. 20%) only while the
+   Keep the other gap at 10 cm or more: the robot stops for anything within
+   2 cm beside its front, so at 5 cm a few cm of error at a corner stops it
+   (bag of 2026-10-27, side 3).
+3. **Door.** It opens by *Door opening* (part open, e.g. 30%) only while the
    door is beside a fed face (*Long faces*, *All faces* or *None*), starting
    and stopping *margin* inside each end of the face, and is closed for the
    turns. *Door position on the robot* moves that stretch if the door is not
@@ -247,7 +250,8 @@ stopped and the mixer off. The last settings are kept for next time.
 in the mixer (default 0.5 kg; 0 = never) and runs at *Mix speed* until the
 laps end, so the last of the feed does not stay stuck in a corner. The weight
 is the median over the last second, so the robot rocking does not start it
-early. Not in a dry run.
+early. Not in a dry run. For mixing during the whole feeding run, set *Mix
+below* to the full load (e.g. 4 kg).
 
 By hand (`gap`, `end_gap`, `feed`, `door_open`, `door_margin`, `door_x`,
 `speed`, `dry_run`, `laps`, `mix_below_kg` and `mix_speed` are parameters of
@@ -271,6 +275,7 @@ When something gets in the way:
 | On the dock | undocks first |
 | Someone drives it by hand | pauses (door closed, sends nothing), rejoins when they let go |
 | Obstacle in front, or something touching its side | stops and waits; gives up after 20 s. Blocked longer than 1.5 s: rejoins |
+| Its own open door | the door sticks out about 1.5 cm past the side and the lidar sees it; while it is open (and 1.5 s after it closes) the side checks skip `door_x` +- `door_half_length` (0.10 m), out to `door_reach` (0.04 m) past the right side |
 | More than 20 cm off the line | rejoins |
 | Position lost (under 35% of the lidar on the map for 3 s) | pauses until AMCL is back, then rejoins |
 
@@ -338,6 +343,18 @@ does it at the start of every run.
 The recipe is a total in kg and a share per silo (40 / 40 / 20 % of 2 kg is
 0.8 / 0.8 / 0.4 kg); with the same feed in every silo it runs the same way.
 Tap a step to leave it out, e.g. only *Feed the cows* to test the laps.
+
+**Mixing while filling** keeps the feed from piling up under the chute:
+*While pouring* (the default) runs the mixer at its own speed (50%) while a
+valve is open; *After each silo* mixes a few seconds with the valve closed;
+*Off*. In the bag of 2026-10-27 the scale stayed within about 10 g with the
+mixer at 50-60% and the robot standing, but jumped by up to 0.8 kg at 100%,
+so above about 60% a silo can stop early; use *After each silo* if you need
+it faster. While filling with the mixer on, the weight is the median over 1 s
+instead of 0.6 s.
+
+Running the mixer by hand in the panel takes it over: the mission and the
+lap driver leave it alone while you do (`/mixer/manual`).
 *Dry run* (the default) drives everything with the valves and the door
 closed. Stop, or STOP ALL, closes the valves and the door and stops the
 mixer, the laps and Nav2.

@@ -67,7 +67,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Float32, String
+from std_msgs.msg import Bool, Float32, String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -86,6 +86,8 @@ DOCK_STALE_S = 3.0
 LOOP_HZ = 20.0
 PROGRESS_HZ = 5.0
 ACTIVE = ('undock', 'approach', 'rejoin', 'turn', 'straight')  # a run is going on
+DOOR_CLOSE_S = 1.5   # s the door takes to close: still in the lidar's view meanwhile
+MANUAL_MIX_S = 1.0   # s after the web panel's last 'mixer/manual' it has the mixer
 
 
 def wrap(a):
@@ -159,8 +161,26 @@ def side_contact(points, half_len, half_w, margin=0.015):
     if len(points) == 0:
         return False
     x, y = np.abs(points[:, 0]), np.abs(points[:, 1])
-    # only just outside the body: inside it is the robot itself (its door)
+    # only just outside the body: inside it is the robot itself
     return bool(np.any((x <= half_len) & (y >= half_w) & (y < half_w + margin)))
+
+
+def door_zone(door_x, half_w, half_len=0.10, reach=0.04):
+    """(x0, x1, y0, y1) in base_link: the open door on the right side.
+
+    It sticks out a few cm past the body, so the lidar sees it as something
+    touching the side; the scan filter only removes what is inside the body.
+    """
+    return (door_x - half_len, door_x + half_len, -(half_w + reach), 0.0)
+
+
+def outside(points, zone):
+    """points without those inside zone (x0, x1, y0, y1)."""
+    if zone is None or len(points) == 0:
+        return points
+    x0, x1, y0, y1 = zone
+    x, y = points[:, 0], points[:, 1]
+    return points[~((x >= x0) & (x <= x1) & (y >= y0) & (y <= y1))]
 
 
 def blocked_ahead(points, half_len, half_w, stop_distance):
@@ -193,12 +213,14 @@ class LapDriver(Node):
         p('feed', 'long')              # faces to feed: long, all or none
         p('gap', 0.10)                 # m, robot's side to a fed face
         p('end_gap', 0.15)             # m, robot's side to the other faces
-        p('door_open', 0.2)            # how far the door opens, 0..1
+        p('door_open', 0.3)            # how far the door opens, 0..1
         p('door_margin', 0.05)         # m, door opens this far inside each end of a face
         p('door_x', 0.0)               # m, door position ahead of the robot's centre
         p('dry_run', False)            # drive the laps, keep the door closed
         p('mix_below_kg', 0.5)         # mixer on once the container is down to this (0: never)
         p('mix_speed', 0.5)            # -1..1 for both mixer motors
+        p('door_reach', 0.04)          # m the open door sticks out past the side
+        p('door_half_length', 0.10)    # m along the robot, either side of door_x
         p('num_motors', 2)
         p('speed', 0.15)               # m/s on the straights
         p('turn_speed', 0.6)           # rad/s max on the spot
@@ -236,6 +258,8 @@ class LapDriver(Node):
         self.motor_pubs = [self.create_publisher(Float32, f'mixer/motor_{i}', 10)
                            for i in range(int(self.g('num_motors')))]
         self.create_timer(0.1, self._mix)  # the ESP stops a motor after 1 s without a command
+        self.manual_mix_t = 0.0  # last 'mixer/manual' from the web panel: hands off the mixer
+        self.create_subscription(Bool, 'mixer/manual', self._on_manual_mix, 10)
         self.create_service(Trigger, 'lap/start', self._on_start)
         self.create_service(Trigger, 'lap/stop', self._on_stop)
         self.nav = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -269,6 +293,7 @@ class LapDriver(Node):
         self.blocked_since = None
         self.nav_goal = None
         self.door_open = False   # commanded
+        self.door_closed_t = 0.0  # when it was last told to close (it takes a moment)
         self.door_wanted = False  # by the plan, also in a dry run
         self._set_status('idle')
         self.create_timer(1.0 / LOOP_HZ, self._step)
@@ -282,6 +307,13 @@ class LapDriver(Node):
     def _on_weight(self, msg):
         now = time.monotonic()
         self.weights = [w for w in self.weights if now - w[0] < 1.0] + [(now, float(msg.data))]
+
+    def _on_manual_mix(self, msg):
+        self.manual_mix_t = time.monotonic() if msg.data else 0.0
+
+    def _manual_mix(self):
+        """Someone runs the mixer from the web panel: theirs wins."""
+        return time.monotonic() - self.manual_mix_t < MANUAL_MIX_S
 
     def _mix(self):
         """Keep the mixer running once the container is low, while laps run."""
@@ -298,6 +330,8 @@ class LapDriver(Node):
             self._mixer(float(self.g('mix_speed')))
 
     def _mixer(self, speed):
+        if self._manual_mix():
+            return
         for pub in self.motor_pubs:
             pub.publish(Float32(data=speed))
 
@@ -576,6 +610,9 @@ class LapDriver(Node):
         side = self._side()
         pts = self._scan_points()
         hl, hw = self.g('half_length'), self.g('half_width')
+        if self.door_open or time.monotonic() - self.door_closed_t < DOOR_CLOSE_S:
+            pts = outside(pts, door_zone(self.g('door_x'), hw, self.g('door_half_length'),
+                                         self.g('door_reach')))
 
         if self.state == 'turn':
             self._door(False)
@@ -659,6 +696,8 @@ class LapDriver(Node):
         open_ = wanted and not self.g('dry_run') and self.g('door_open') > 0.0
         if open_ != self.door_open:
             self.door_open = open_
+            if not open_:
+                self.door_closed_t = time.monotonic()
             # door/position: 0 = fully open, 1 = closed
             pos = 1.0 - max(0.0, min(1.0, float(self.g('door_open')))) if open_ else 1.0
             self.door_pub.publish(Float32(data=pos))

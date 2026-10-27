@@ -649,6 +649,21 @@
               <div class="top"><label for="msMixSpeed">Mixer speed</label><output id="msMixSpeedVal" for="msMixSpeed"></output></div>
               <input type="range" id="msMixSpeed" min="0.1" max="1" step="0.05" value="0.6">
             </div>
+            <div class="card-head" style="margin-top: 10px"><h3>Mixing while filling</h3></div>
+            <div class="seg" role="group" aria-label="Mixing while filling" id="msFillMix">
+              <button data-mode="pour" aria-pressed="true" title="Mixer runs while a valve is open">While pouring</button>
+              <button data-mode="between" aria-pressed="false" title="Mixer runs after each silo, valve closed">After each silo</button>
+              <button data-mode="off" aria-pressed="false">Off</button>
+            </div>
+            <div class="slider" id="msFillSpeedRow">
+              <div class="top"><label for="msFillSpeed">Mixer speed while filling</label><output id="msFillSpeedVal" for="msFillSpeed"></output></div>
+              <input type="range" id="msFillSpeed" min="0.1" max="1" step="0.05" value="0.5">
+            </div>
+            <div class="slider" id="msFillSecsRow" hidden>
+              <div class="top"><label for="msFillSecs">Mixing after each silo</label><output id="msFillSecsVal" for="msFillSecs"></output></div>
+              <input type="range" id="msFillSecs" min="1" max="15" step="1" value="3">
+            </div>
+            <p class="hint" id="msFillHint">Keeps the feed from piling up under the chute. Above about 60% the mixer shakes the scale, and the silos may stop early.</p>
             <div class="row" style="margin-top: 10px">
               <label class="field">Laps at most<input type="number" id="msLaps" min="1" max="50" step="1" value="6" inputmode="numeric"></label>
               <label class="field">Stop feeding below, kg<input type="number" id="msEmpty" min="0" max="5" step="0.01" value="0.05" inputmode="decimal"></label>
@@ -740,7 +755,7 @@
             </div>
             <div class="slider">
               <div class="top"><label for="fdDoor">Door opening</label><output id="fdDoorVal" for="fdDoor"></output></div>
-              <input type="range" id="fdDoor" min="0" max="1" step="0.05" value="0.2">
+              <input type="range" id="fdDoor" min="0" max="1" step="0.05" value="0.3">
             </div>
             <div class="slider">
               <div class="top"><label for="fdGap">Gap to the box, fed faces</label><output id="fdGapVal" for="fdGap"></output></div>
@@ -2219,6 +2234,7 @@ const STEP_LABEL = {
 const STEP_ORDER = ['localize', 'undock', 'fill', 'mix', 'feed', 'dock'];
 let msSteps = new Set(STEP_ORDER);
 let msLoaded = false;
+let msFillMix = 'pour';
 function buildMission() {
   $('msSilos').innerHTML = [1, 2, 3].map((n) => `
     <div class="slider silo-share">
@@ -2231,7 +2247,11 @@ function buildMission() {
     if (msSteps.has(b.dataset.step)) msSteps.delete(b.dataset.step); else msSteps.add(b.dataset.step);
     showMissionSettings();
   }));
-  for (const id of ['msS1', 'msS2', 'msS3', 'msMix', 'msMixSpeed']) $(id).addEventListener('input', showMissionSettings);
+  for (const id of ['msS1', 'msS2', 'msS3', 'msMix', 'msMixSpeed', 'msFillSpeed', 'msFillSecs']) $(id).addEventListener('input', showMissionSettings);
+  $('msFillMix').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    msFillMix = b.dataset.mode;
+    showMissionSettings();
+  }));
   $('msTotal').addEventListener('input', showMissionSettings);
 }
 function missionSettings() {
@@ -2241,6 +2261,8 @@ function missionSettings() {
     recipe_kg: Math.max(0, parseFloat($('msTotal').value) || 0),
     recipe: [1, 2, 3].map((n) => parseFloat($(`msS${n}`).value)),
     mix_s: parseFloat($('msMix').value), mix_speed: parseFloat($('msMixSpeed').value),
+    fill_mix: msFillMix, fill_mix_speed: parseFloat($('msFillSpeed').value),
+    fill_mix_s: parseFloat($('msFillSecs').value),
     laps_max: Math.max(1, parseInt($('msLaps').value, 10) || 1),
     empty_kg: Math.max(0, parseFloat($('msEmpty').value) || 0),
   };
@@ -2257,6 +2279,14 @@ function showMissionSettings() {
   $('msMixSpeedVal').textContent = `${Math.round(m.mix_speed * 100)}%`;
   paintRange($('msMix'));
   paintRange($('msMixSpeed'));
+  $('msFillMix').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m.fill_mix)));
+  $('msFillSpeedRow').hidden = m.fill_mix === 'off';
+  $('msFillSecsRow').hidden = m.fill_mix !== 'between';
+  $('msFillHint').hidden = m.fill_mix === 'off';
+  $('msFillSpeedVal').textContent = `${Math.round(m.fill_mix_speed * 100)}%`;
+  $('msFillSecsVal').textContent = `${m.fill_mix_s} s`;
+  paintRange($('msFillSpeed'));
+  paintRange($('msFillSecs'));
   $('msSteps').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(msSteps.has(b.dataset.step))));
   const dry = m.dry_run;
   $('msDry').textContent = dry ? 'Dry run: valves and door stay closed' : 'Real run: valves and door open';
@@ -2269,6 +2299,9 @@ function applyMissionSettings(st) {
   (st.recipe || []).forEach((v, i) => { if ($(`msS${i + 1}`)) $(`msS${i + 1}`).value = v; });
   if (typeof st.mix_s === 'number') $('msMix').value = st.mix_s;
   if (typeof st.mix_speed === 'number') $('msMixSpeed').value = st.mix_speed;
+  if (['pour', 'between', 'off'].includes(st.fill_mix)) msFillMix = st.fill_mix;
+  if (typeof st.fill_mix_speed === 'number') $('msFillSpeed').value = st.fill_mix_speed;
+  if (typeof st.fill_mix_s === 'number') $('msFillSecs').value = st.fill_mix_s;
   if (st.laps_max) $('msLaps').value = st.laps_max;
   if (typeof st.empty_kg === 'number') $('msEmpty').value = st.empty_kg;
   if (Array.isArray(st.steps)) msSteps = new Set(st.steps);

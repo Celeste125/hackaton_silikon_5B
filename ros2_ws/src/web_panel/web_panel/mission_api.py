@@ -11,6 +11,7 @@ import json
 import math
 import threading
 import time
+from typing import Literal
 
 from pydantic import BaseModel, Field
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -41,6 +42,9 @@ class MissionSettings(BaseModel):
     valve_percent: float = Field(100.0, ge=5.0, le=100.0)
     mix_s: float = Field(60.0, ge=0.0, le=900.0)
     mix_speed: float = Field(0.6, ge=0.0, le=1.0)
+    fill_mix: Literal['pour', 'between', 'off'] = 'pour'
+    fill_mix_speed: float = Field(0.5, ge=0.0, le=1.0)
+    fill_mix_s: float = Field(3.0, ge=0.0, le=60.0)
     laps_max: int = Field(6, ge=1, le=50)
     empty_kg: float = Field(0.05, ge=0.0, le=5.0)
 
@@ -127,6 +131,8 @@ class MissionApi:
             _param('valve_percent', float(s.valve_percent)), _param('mix_s', float(s.mix_s)),
             _param('mix_speed', float(s.mix_speed)), _param('laps_max', int(s.laps_max)),
             _param('empty_kg', float(s.empty_kg)),
+            _param('fill_mix', str(s.fill_mix)), _param('fill_mix_speed', float(s.fill_mix_speed)),
+            _param('fill_mix_s', float(s.fill_mix_s)),
         ]
         res = self._call(self.params, req)
         if res is None:

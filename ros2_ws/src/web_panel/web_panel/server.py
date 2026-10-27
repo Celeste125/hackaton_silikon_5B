@@ -53,7 +53,7 @@ from geometry_msgs.msg import Twist
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, CompressedImage
-from std_msgs.msg import Float32, Float32MultiArray, String
+from std_msgs.msg import Bool, Float32, Float32MultiArray, String
 from std_srvs.srv import Trigger
 from action_msgs.srv import CancelGoal
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -189,6 +189,8 @@ class WebControlNode(Node):
         self.last_motor_t = 0.0
         self._motors_active = False
         self.shake_pub = self.create_publisher(Float32MultiArray, 'mixer/shake', 10)
+        # True while the mixer runs from here: the mission and lap driver leave it alone
+        self.manual_mix_pub = self.create_publisher(Bool, 'mixer/manual', 10)
         self.shake = None  # {'fwd_ms', 'rev_ms', 'speeds'} while shaking
         self.last_shake_t = 0.0
         self._shake_active = False
@@ -414,6 +416,7 @@ class WebControlNode(Node):
             publish = running or self._motors_active
             self._motors_active = running
         if publish:
+            self.manual_mix_pub.publish(Bool(data=running))
             for pub, s in zip(self.motor_pubs, speeds):
                 pub.publish(Float32(data=s))
 
