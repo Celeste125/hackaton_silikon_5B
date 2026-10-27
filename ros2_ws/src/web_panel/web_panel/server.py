@@ -11,8 +11,9 @@ It is only a front end for topics of other nodes, mostly esp_driver_node:
   /Team2/cmd_vel (geometry_msgs/Twist; parameters teleop_topic, cmd_vel_topic)
   /valve1..3/percent (published), /valve1..3/angle (feedback). The valves are
   driven by silo_controller/valve_controller.py on the Pi, which must be running.
-  /camera0, /camera1 image_raw/compressed (JPEG, parameter camera_topics), from
-  cameras.launch.py. Streamed to the page as MJPEG at /api/camera/<n>.mjpg.
+  /camera0 image_raw/compressed and /grain_analyzer/overlay/compressed (JPEG,
+  parameter camera_topics), from cameras.launch.py and grain_mixing. Streamed to
+  the page as MJPEG at /api/camera/<n>.mjpg.
   /Team2/battery_state (battery), /Team2/hazard_detection (bump, cliff, stall;
   needs irobot_create_msgs), /frontier_explorer/status (mapping progress).
   Setup tab: the robot's pose (TF map -> base_link) is saved under a name
@@ -82,7 +83,9 @@ DRIVE_TIMEOUT_S = 0.5
 VALVES = (1, 2, 3)
 DOSE_TIMEOUT_S = 120.0  # a dose that has not reached its weight by then is aborted
 WEIGHT_MAX_AGE_S = 1.0  # no fresh load cell reading -> abort the dose
-CAMERA_TOPICS = ['/camera0/image_raw/compressed', '/camera1/image_raw/compressed']
+# the second view is the segmented grain mixer from the grain_mixing package;
+# set camera_topics to put /camera1/image_raw/compressed back
+CAMERA_TOPICS = ['/camera0/image_raw/compressed', '/grain_analyzer/overlay/compressed']
 CAMERA_STREAM_FPS = 10.0  # per browser; caps Wi-Fi use, the cameras run at 15
 CAMERA_STALE_S = 2.0
 HAZARD_HOLD_S = 0.6  # a hazard stays on the page this long after its last report
