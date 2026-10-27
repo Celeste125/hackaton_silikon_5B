@@ -8,7 +8,7 @@ import rclpy
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Float32
 from std_msgs.msg import Header
 
@@ -83,6 +83,8 @@ class GrainAnalyzer(Node):
                 image_qos(self.get_parameter('reliable_image').value))
         self.pub_overlay = self.create_publisher(Image, '~/overlay', 1)
         self.pub_stacked = self.create_publisher(Image, '~/stacked', 1)
+        # JPEG of the overlay: small enough (about 50 kB) for the web panel to stream
+        self.pub_overlay_jpeg = self.create_publisher(CompressedImage, '~/overlay/compressed', 1)
         self.pub_coverage = self.create_publisher(Float32, '~/coverage', 10)
         self.pub_homogeneity = self.create_publisher(Float32, '~/homogeneity', 10)
         self.pub_area = {g: self.create_publisher(Float32, f'~/area/{g}', 10) for g in GRAIN_TYPES}
@@ -164,6 +166,14 @@ class GrainAnalyzer(Node):
         # only encode images somebody is listening to
         if self.pub_overlay.get_subscription_count():
             self.pub_overlay.publish(bgr_to_image(result.overlay, header))
+        if self.pub_overlay_jpeg.get_subscription_count():
+            ok, jpeg = cv2.imencode('.jpg', result.overlay, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if ok:
+                out = CompressedImage()
+                out.header = header
+                out.format = 'jpeg'
+                out.data = array.array('B', jpeg.tobytes())
+                self.pub_overlay_jpeg.publish(out)
         if self.pub_stacked.get_subscription_count():
             stacked = np.vstack([result.raw, result.overlay])
             self.pub_stacked.publish(bgr_to_image(stacked, header))
