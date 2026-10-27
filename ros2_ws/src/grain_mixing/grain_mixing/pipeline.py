@@ -85,22 +85,24 @@ class GrainPipeline:
         if circles is None:
             return cv2.bitwise_and(mask, region)
 
-        # reject circles whose inside is not smooth (wheat has a groove)
+        # reject circles whose inside is not smooth (wheat has a groove):
+        # more than 10% steep pixels in a box of the same area as the inner disk.
+        # An integral image gives every box sum at once, with no per-circle loop.
         blur = cv2.GaussianBlur(gray, (5, 5), 0)
         gradient = np.hypot(cv2.Sobel(blur, cv2.CV_32F, 1, 0),
                             cv2.Sobel(blur, cv2.CV_32F, 0, 1)) / 8
+        integral = cv2.integral((gradient > p.pea_max_gradient).astype(np.uint8))
+
+        circles = np.round(circles[0]).astype(int)
+        x, y, radius = circles.T
+        half = np.maximum((radius * 0.7 * 0.886).astype(int), 1)
         h, w = gray.shape
-        for x, y, radius in np.round(circles[0]).astype(int):
-            inner = max(int(radius * 0.7), 2)
-            x0, x1 = max(x - inner, 0), min(x + inner + 1, w)
-            y0, y1 = max(y - inner, 0), min(y + inner + 1, h)
-            yy, xx = np.ogrid[y0:y1, x0:x1]
-            disk = (xx - x) ** 2 + (yy - y) ** 2 <= inner ** 2
-            if disk.sum() < 5:
-                continue
-            steepest = np.percentile(gradient[y0:y1, x0:x1][disk], 90)
-            if steepest <= p.pea_max_gradient:
-                cv2.circle(mask, (x, y), radius, 255, thickness=-1)
+        x0, x1 = np.clip(x - half, 0, w), np.clip(x + half + 1, 0, w)
+        y0, y1 = np.clip(y - half, 0, h), np.clip(y + half + 1, 0, h)
+        steep = integral[y1, x1] - integral[y0, x1] - integral[y1, x0] + integral[y0, x0]
+        smooth = steep <= 0.1 * (x1 - x0) * (y1 - y0)
+        for cx, cy, r in circles[smooth]:
+            cv2.circle(mask, (int(cx), int(cy)), int(r), 255, thickness=-1)
         return cv2.bitwise_and(mask, region)
 
     def rapeseed_filter(self, img, roi):
